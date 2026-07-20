@@ -14,7 +14,7 @@ import type { QueueState } from './state-machine.js';
 
 export const OFFLINE_SCHEMA: LocalSchema = {
   databaseName: 'tauros-offline',
-  version: 1,
+  version: 2,
   migrations: [
     {
       toVersion: 1,
@@ -26,6 +26,11 @@ export const OFFLINE_SCHEMA: LocalSchema = {
         { name: 'tombstones' },
         { name: 'meta' },
       ],
+    },
+    {
+      toVersion: 2,
+      description: 'Outbox durável de auditoria (6.2.8) + quarentena de eventos',
+      stores: [{ name: 'audit_outbox' }, { name: 'audit_quarantine' }],
     },
   ],
 };
