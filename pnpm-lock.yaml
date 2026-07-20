@@ -241,6 +241,9 @@ importers:
       '@tauros/application':
         specifier: workspace:*
         version: link:../application
+      '@tauros/config-engine':
+        specifier: workspace:*
+        version: link:../config-engine
       '@tauros/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -250,7 +253,16 @@ importers:
       idb:
         specifier: ^8.0.0
         version: 8.0.3
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
     devDependencies:
+      '@tauros/config':
+        specifier: workspace:*
+        version: link:../config
+      fake-indexeddb:
+        specifier: ^6.0.0
+        version: 6.2.5
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -2292,6 +2304,10 @@ packages:
 
   extendable-error@0.1.7:
     resolution: {integrity: sha512-UOiS2in6/Q0FK0R0q6UY9vYpQ21mr/Qn1KOnte7vsACuNJf514WvCCUHSRCPcgjPT2bAhNIJdlE6bVap1GKmeg==}
+
+  fake-indexeddb@6.2.5:
+    resolution: {integrity: sha512-CGnyrvbhPlWYMngksqrSSUT1BAVP49dZocrHuK0SvtR0D5TMs5wP0o3j7jexDJW01KSadjBp1M/71o/KR3nD1w==}
+    engines: {node: '>=18'}
 
   fast-check@3.23.2:
     resolution: {integrity: sha512-h5+1OzzfCC3Ef7VbtKdcv7zsstUQwUDlYpUTvjeUsJAssPgLn7QzbboPtL5ro04Mq0rPOsMzl7q5hIbRs2wD1A==}
@@ -5342,6 +5358,8 @@ snapshots:
   exsolve@1.1.0: {}
 
   extendable-error@0.1.7: {}
+
+  fake-indexeddb@6.2.5: {}
 
   fast-check@3.23.2:
     dependencies:
