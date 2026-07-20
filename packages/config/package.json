@@ -5,7 +5,7 @@
   "type": "module",
   "exports": {
     "./eslint": "./eslint.preset.mjs",
-    "./vitest": "./vitest.preset.ts"
+    "./vitest": "./vitest.preset.mjs"
   },
   "devDependencies": {
     "typescript": "^5.7.2",
