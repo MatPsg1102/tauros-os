@@ -5,6 +5,13 @@
  */
 module.exports = {
   forbidden: [
+    {
+      name: 'ui-no-external-backend',
+      comment: 'Pacotes de UI nunca importam Prisma/Supabase (backend fica atrás de ports).',
+      severity: 'error',
+      from: { path: '^packages/ui-' },
+      to: { path: 'node_modules/(@prisma|prisma|@supabase)' },
+    },
     { name: 'no-circular', severity: 'error', from: {}, to: { circular: true } },
 
     // --- Clean Architecture (SAS §2) ---

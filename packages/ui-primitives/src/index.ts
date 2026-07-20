@@ -47,4 +47,47 @@ export { Text, type TextProps, type TextRole, type TextTone } from './primitives
 export { MissingAccessibleNameError } from './shared/accessibility.js';
 export { cx, type ClassValue } from './shared/class-names.js';
 export type { PolymorphicProps, PolymorphicRef } from './shared/polymorphic.js';
-export { injectUiStyles, taurosUiStyles } from './styles.js';
+export { IncompatibleStylesElementError, injectUiStyles, taurosUiStyles } from './styles.js';
+
+// ===== Form Components (6.3.4) =====
+export { Field, type FieldProps } from './forms/field/field.js';
+export { useFieldContext, type FieldContextValue } from './forms/field/field-context.js';
+export { Input, type InputProps, type InputType } from './forms/input/input.js';
+export { TextArea, type TextAreaProps } from './forms/textarea/text-area.js';
+export {
+  NumberInput,
+  type NumberChange,
+  type NumberInputProps,
+} from './forms/number-input/number-input.js';
+export {
+  CurrencyInput,
+  type CurrencyChange,
+  type CurrencyInputProps,
+} from './forms/currency-input/currency-input.js';
+export { SearchInput, type SearchInputProps } from './forms/search-input/search-input.js';
+export { Select, type SelectProps } from './forms/select/select.js';
+export {
+  MultiSelect,
+  type MultiSelectOption,
+  type MultiSelectProps,
+} from './forms/multi-select/multi-select.js';
+export { Checkbox, type CheckboxProps } from './forms/checkbox/checkbox.js';
+export { Radio, RadioGroup, type RadioGroupProps, type RadioProps } from './forms/radio/radio.js';
+export { Switch, type SwitchProps } from './forms/switch/switch.js';
+export {
+  DatePicker,
+  isValidCivilDate,
+  type CivilDateString,
+  type DatePickerProps,
+} from './forms/date-picker/date-picker.js';
+export {
+  isValidLocalTime,
+  TimePicker,
+  type LocalTimeString,
+  type TimePickerProps,
+} from './forms/time-picker/time-picker.js';
+export {
+  InvalidPinLengthError,
+  PinInput,
+  type PinInputProps,
+} from './forms/pin-input/pin-input.js';
