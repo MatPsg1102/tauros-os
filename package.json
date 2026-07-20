@@ -28,7 +28,10 @@
     "db:format": "prisma format",
     "db:validate": "prisma validate",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev"
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:apply-sql": "node tooling/apply-sql.mjs",
+    "db:seed": "node tooling/apply-sql.mjs --seeds-only"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.10",

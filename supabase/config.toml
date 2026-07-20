@@ -33,3 +33,7 @@ file_size_limit = "50MiB"
 
 [edge_runtime]
 enabled = true
+
+[auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/public/custom_access_token"
