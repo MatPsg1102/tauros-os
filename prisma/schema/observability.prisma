@@ -1,0 +1,63 @@
+// Auditoria, Notificações e Desempenho (Generic/Supporting).
+
+/// Trilha imutável (DB-owned via trigger). actor_id sem FK forte (SAS §3).
+model AuditLog {
+  id              String   @id @default(uuid()) @db.Uuid
+  storeId         String   @map("store_id") @db.Uuid
+  actorId         String?  @map("actor_id") @db.Uuid
+  entity          String
+  entityId        String   @map("entity_id") @db.Uuid
+  action          String
+  diff            Json     @db.JsonB
+  ip              String?
+  device          String?
+  serverTimestamp DateTime @default(now()) @map("server_timestamp") @db.Timestamptz(6)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([storeId, entity, createdAt])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id                 String    @id @default(uuid()) @db.Uuid
+  storeId            String    @map("store_id") @db.Uuid
+  recipientProfileId String?   @map("recipient_profile_id") @db.Uuid
+  targetRoleId       String?   @map("target_role_id") @db.Uuid
+  title              String
+  body               String?
+  readAt             DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([storeId, recipientProfileId])
+  @@map("notifications")
+}
+
+model Goal {
+  id          String   @id @default(uuid()) @db.Uuid
+  storeId     String   @map("store_id") @db.Uuid
+  metric      String
+  targetValue Decimal  @map("target_value") @db.Decimal(12, 3)
+  periodStart DateTime @map("period_start") @db.Date
+  periodEnd   DateTime @map("period_end") @db.Date
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([storeId])
+  @@map("goals")
+}
+
+/// Snapshot imutável de KPI (reconstruível a partir de eventos + config).
+model KpiSnapshot {
+  id               String   @id @default(uuid()) @db.Uuid
+  storeId          String   @map("store_id") @db.Uuid
+  kpiKey           String   @map("kpi_key")
+  grain            KpiGrain
+  periodStart      DateTime @map("period_start") @db.Date
+  value            Decimal  @db.Decimal(14, 4)
+  computedAt       DateTime @map("computed_at") @db.Timestamptz(6)
+  configVersionRef String?  @map("config_version_ref") @db.Uuid
+  sourceHash       String?  @map("source_hash")
+
+  @@unique([storeId, kpiKey, grain, periodStart])
+  @@index([storeId])
+  @@map("kpi_snapshots")
+}

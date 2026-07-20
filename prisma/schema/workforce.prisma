@@ -1,0 +1,74 @@
+// Força de trabalho — cargos, posições operacionais, equipes, atribuições.
+// Cargos e posições são DADOS configuráveis (ADR-019).
+
+model JobTitle {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+  name    String
+
+  employees Employee[]
+
+  @@index([storeId])
+  @@map("job_titles")
+}
+
+/// Posição de turno (Encarregado/Atendimento/Produção/Apoio) como dado.
+model OperationalPosition {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+  key     String
+  name    String
+
+  assignments          EmployeeAssignment[]
+  staffingRequirements TeamStaffingRequirement[]
+  taskTemplates        TaskTemplate[]
+
+  @@unique([storeId, key])
+  @@index([storeId])
+  @@map("operational_positions")
+}
+
+model Team {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+  name    String
+
+  assignments      EmployeeAssignment[]
+  shiftOccurrences ShiftOccurrence[]
+  shiftOverrides   ShiftOverride[]
+
+  @@index([storeId])
+  @@map("teams")
+}
+
+/// Atribuição temporal de um employee a equipe/posição.
+model EmployeeAssignment {
+  id                    String    @id @default(uuid()) @db.Uuid
+  storeId               String    @map("store_id") @db.Uuid
+  employeeId            String    @map("employee_id") @db.Uuid
+  teamId                String?   @map("team_id") @db.Uuid
+  operationalPositionId String    @map("operational_position_id") @db.Uuid
+  validFrom             DateTime  @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validUntil            DateTime? @map("valid_until") @db.Timestamptz(6)
+
+  employee            Employee            @relation(fields: [employeeId], references: [id])
+  team                Team?               @relation(fields: [teamId], references: [id])
+  operationalPosition OperationalPosition @relation(fields: [operationalPositionId], references: [id])
+
+  @@index([storeId])
+  @@index([employeeId])
+  @@map("employee_assignments")
+}
+
+/// Composição mínima exigida por posição (staffing).
+model TeamStaffingRequirement {
+  id                    String @id @default(uuid()) @db.Uuid
+  storeId               String @map("store_id") @db.Uuid
+  operationalPositionId String @map("operational_position_id") @db.Uuid
+  minCount              Int    @map("min_count")
+
+  operationalPosition OperationalPosition @relation(fields: [operationalPositionId], references: [id])
+
+  @@index([storeId])
+  @@map("team_staffing_requirements")
+}

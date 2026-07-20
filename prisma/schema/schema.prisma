@@ -1,0 +1,25 @@
+// Tauros OS — Prisma schema (Etapa 6.2.1)
+// Fonte: SAS v1.3 (Modelo de Dados congelado). Não reinterpretar.
+//
+// Papel do Prisma (ADR-002): migrations, seeds e relatórios administrativos
+// (service-role). O fluxo operacional em runtime usa supabase-js + RLS —
+// o Prisma NÃO é usado no caminho do usuário final.
+//
+// Convenções (ADR-018A):
+// - Tabelas/colunas em snake_case via @@map/@map; modelos em PascalCase.
+// - `store_id` (multi-tenant) e referências de autoria/ator (`*_by_*`, `actor_*`,
+//   `changed_by`, `recipient_*`) são colunas UUID indexadas SEM relação Prisma;
+//   suas FKs e o RLS são declarados nas migrations Supabase (ADR-002/003/014).
+//   A auditoria não tem FK forte para o ator (SAS §3).
+// - Relações estruturais (agregados e FKs de consulta) são modeladas no Prisma.
+// - CHECK constraints (ex.: pai único de Attachment) e políticas RLS/triggers
+//   vão nas migrations Supabase (Etapas 6.2.2/6.2.3), não no schema Prisma.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

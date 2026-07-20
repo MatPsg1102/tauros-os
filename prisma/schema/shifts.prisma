@@ -1,0 +1,75 @@
+// Escala — padrões, definições, ocorrências e overrides.
+// Valores iniciais (12x36, 07:30–19:30) são SEEDS de configuração, não código.
+
+model ShiftPattern {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+  name    String
+
+  days ShiftPatternDay[]
+
+  @@index([storeId])
+  @@map("shift_patterns")
+}
+
+model ShiftPatternDay {
+  id        String  @id @default(uuid()) @db.Uuid
+  patternId String  @map("pattern_id") @db.Uuid
+  dayIndex  Int     @map("day_index")
+  works     Boolean @default(true)
+
+  pattern ShiftPattern @relation(fields: [patternId], references: [id], onDelete: Cascade)
+
+  @@unique([patternId, dayIndex])
+  @@map("shift_pattern_days")
+}
+
+/// Janela do turno (config). `config_version_ref` é coluna solta (Config Engine).
+model ShiftDefinition {
+  id               String  @id @default(uuid()) @db.Uuid
+  storeId          String  @map("store_id") @db.Uuid
+  name             String
+  startTime        String  @map("start_time")
+  endTime          String  @map("end_time")
+  breaks           Json?   @db.JsonB
+  configVersionRef String? @map("config_version_ref") @db.Uuid
+
+  occurrences ShiftOccurrence[]
+
+  @@index([storeId])
+  @@map("shift_definitions")
+}
+
+/// Turno materializado numa data para uma equipe.
+model ShiftOccurrence {
+  id                String   @id @default(uuid()) @db.Uuid
+  storeId           String   @map("store_id") @db.Uuid
+  workDate          DateTime @map("work_date") @db.Date
+  teamId            String   @map("team_id") @db.Uuid
+  shiftDefinitionId String   @map("shift_definition_id") @db.Uuid
+
+  team            Team            @relation(fields: [teamId], references: [id])
+  shiftDefinition ShiftDefinition @relation(fields: [shiftDefinitionId], references: [id])
+  overrides       ShiftOverride[]
+
+  @@unique([storeId, workDate])
+  @@index([storeId, workDate])
+  @@map("shift_occurrences")
+}
+
+/// Exceções da escala (troca, folga, feriado, dobra).
+model ShiftOverride {
+  id                String   @id @default(uuid()) @db.Uuid
+  storeId           String   @map("store_id") @db.Uuid
+  shiftOccurrenceId String?  @map("shift_occurrence_id") @db.Uuid
+  workDate          DateTime @map("work_date") @db.Date
+  teamId            String   @map("team_id") @db.Uuid
+  reason            String?
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  shiftOccurrence ShiftOccurrence? @relation(fields: [shiftOccurrenceId], references: [id])
+  team            Team             @relation(fields: [teamId], references: [id])
+
+  @@index([storeId, workDate])
+  @@map("shift_overrides")
+}

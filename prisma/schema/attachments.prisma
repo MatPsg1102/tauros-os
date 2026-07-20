@@ -1,0 +1,22 @@
+// Anexos (ADR-012) — FKs tipadas e nullable. O CHECK "exatamente um pai
+// preenchido" é criado na migration Supabase (Prisma não expressa CHECK).
+// Binário no Supabase Storage; aqui só o path + metadados.
+
+model Attachment {
+  id           String   @id @default(uuid()) @db.Uuid
+  storeId      String   @map("store_id") @db.Uuid
+  storagePath  String   @map("storage_path")
+  executionId  String?  @map("execution_id") @db.Uuid
+  incidentId   String?  @map("incident_id") @db.Uuid
+  lossRecordId String?  @map("loss_record_id") @db.Uuid
+  productId    String?  @map("product_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  execution  TaskExecution? @relation(fields: [executionId], references: [id])
+  incident   Incident?      @relation(fields: [incidentId], references: [id])
+  lossRecord LossRecord?    @relation(fields: [lossRecordId], references: [id])
+  product    Product?       @relation(fields: [productId], references: [id])
+
+  @@index([storeId])
+  @@map("attachments")
+}
