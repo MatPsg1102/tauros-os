@@ -1,8 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
-// Preset compartilhado. Coverage já estruturado; os thresholds ficam em 0
-// (efetivamente desabilitados) e serão elevados por pacote quando houver testes
-// — ver docs/adr/ADR-018A-implementation-conventions.md.
+// Preset compartilhado (formato .mjs: executável em qualquer Node, incl. CI Node 20).
+// Coverage estruturado; thresholds sobem por pacote quando houver testes (ADR-018A).
 export default defineConfig({
   test: {
     globals: true,
