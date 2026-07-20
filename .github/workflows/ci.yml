@@ -10,8 +10,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -24,26 +22,20 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
-  # Validações de arquitetura preparadas — não bloqueiam ainda (serão exigidas
-  # quando o código crescer). Ver ADR-018A.
+  # Validações de arquitetura preparadas — não bloqueiam ainda. Ver ADR-018A.
   architecture:
     runs-on: ubuntu-latest
     needs: verify
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # imports circulares + dependências proibidas entre workspaces (já ativo)
       - run: pnpm boundaries
-      # dependências/exports não utilizados (preparado, não-bloqueante)
       - run: pnpm knip
         continue-on-error: true
-      # cobertura mínima por pacote (preparado; thresholds elevados quando houver testes)
       - run: pnpm test:coverage
         continue-on-error: true
