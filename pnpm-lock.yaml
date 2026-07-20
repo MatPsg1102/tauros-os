@@ -198,6 +198,9 @@ importers:
         specifier: workspace:*
         version: link:../domain
     devDependencies:
+      '@tauros/config':
+        specifier: workspace:*
+        version: link:../config
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
