@@ -31,7 +31,9 @@ function kebab(key: string): string {
 /** Tema → mapa determinístico de variáveis CSS (ordenado por chave). */
 export function toCssVariables(theme: ResolvedTheme): Readonly<Record<string, string>> {
   const out: Record<string, string> = {};
-  const { name: _name, ...rest } = theme;
+  // `name` identifica o tema; não vira variável CSS.
+  const rest: Omit<ResolvedTheme, 'name'> & { name?: string } = { ...theme };
+  delete rest.name;
   flatten(rest, [], out);
   return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
 }
