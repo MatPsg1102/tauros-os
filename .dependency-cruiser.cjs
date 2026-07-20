@@ -33,6 +33,15 @@ module.exports = {
 
     // --- Component Library Governance (categories, unidirectional) ---
     {
+      name: 'theme-only-tokens',
+      comment: 'O ThemeProvider so consome @tauros/tokens — nunca infra/dominio/ui.',
+      severity: 'error',
+      from: { path: '^packages/theme/' },
+      to: {
+        path: '^packages/(?!tokens|theme|config/)[^/]+/|^apps/',
+      },
+    },
+    {
       name: 'primitives-only-tokens',
       severity: 'error',
       from: { path: '^packages/ui-primitives/' },
