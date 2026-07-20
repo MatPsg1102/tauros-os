@@ -1,0 +1,30 @@
+{
+  "name": "@tauros/storybook",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "storybook dev -p 6006 --no-open",
+    "build": "storybook build",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"no unit tests in storybook app\""
+  },
+  "dependencies": {
+    "@tauros/tokens": "workspace:*",
+    "@tauros/ui-composites": "workspace:*",
+    "@tauros/ui-infrastructure": "workspace:*",
+    "@tauros/ui-layouts": "workspace:*",
+    "@tauros/ui-operational": "workspace:*",
+    "@tauros/ui-primitives": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@storybook/react": "^8.4.7",
+    "@storybook/react-vite": "^8.4.7",
+    "@types/react": "^19.0.2",
+    "storybook": "^8.4.7",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,2 @@
+# Supabase local config. DDL, RLS, triggers e Edge Functions entram na Etapa 6.2.
+project_id = "tauros-os"

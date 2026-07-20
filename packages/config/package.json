@@ -1,0 +1,14 @@
+{
+  "name": "@tauros/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./eslint": "./eslint.preset.mjs",
+    "./vitest": "./vitest.preset.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

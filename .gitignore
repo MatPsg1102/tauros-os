@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.next/
+out/
+.turbo/
+coverage/
+storybook-static/
+playwright-report/
+*.log
+.env
+.env.local
+.env.*.local
+.DS_Store
+.vercel/
+*.tsbuildinfo

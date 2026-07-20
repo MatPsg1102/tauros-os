@@ -1,0 +1,42 @@
+{
+  "name": "@tauros/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.62.7",
+    "@tauros/application": "workspace:*",
+    "@tauros/config-engine": "workspace:*",
+    "@tauros/contracts": "workspace:*",
+    "@tauros/domain": "workspace:*",
+    "@tauros/infrastructure": "workspace:*",
+    "@tauros/interaction": "workspace:*",
+    "@tauros/tokens": "workspace:*",
+    "@tauros/ui-composites": "workspace:*",
+    "@tauros/ui-infrastructure": "workspace:*",
+    "@tauros/ui-layouts": "workspace:*",
+    "@tauros/ui-metadata": "workspace:*",
+    "@tauros/ui-operational": "workspace:*",
+    "@tauros/ui-primitives": "workspace:*",
+    "next": "^15.1.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-hook-form": "^7.54.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
