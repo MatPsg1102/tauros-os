@@ -31,7 +31,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:apply-sql": "node tooling/apply-sql.mjs",
-    "db:seed": "node tooling/apply-sql.mjs --seeds-only"
+    "db:seed": "node tooling/apply-sql.mjs --seeds-only",
+    "check:hardcoded": "node tooling/check-hardcoded-styles.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.10",
