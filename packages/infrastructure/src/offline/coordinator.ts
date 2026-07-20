@@ -3,7 +3,7 @@
 // Nenhuma responsabilidade própria além da ordem de chamada.
 
 import type { ConnectivityPort } from './connectivity.js';
-import type { TechnicalEventPort } from './events.js';
+import { makeEvent, type TechnicalEventPort } from './events.js';
 import type { QueueProcessor, ProcessResult } from './processor.js';
 import type { LocalQueueRepository } from './queue-repository.js';
 import type { QueueScheduler } from './scheduler.js';
@@ -31,20 +31,18 @@ export class SyncCoordinator {
    * conectividade → recuperação de leases → promoção → lotes até esvaziar.
    * Reentrância é ignorada (um drain por vez).
    */
-  async drain(): Promise<DrainReport> {
+  async drain(signal?: AbortSignal): Promise<DrainReport> {
     if (this.draining) return { ready: false, reclaimed: 0, processed: [] };
     this.draining = true;
     try {
       const readiness = await this.connectivity.assess();
       if (!readiness.readyToSync) {
-        this.events.emit({
-          type: 'offline_detected',
-          at: this.clock(),
-          detail: { ...readiness },
-        });
+        this.events.emit(
+          makeEvent({ eventType: 'offline_detected', metadata: { ...readiness } }, this.clock()),
+        );
         return { ready: false, reclaimed: 0, processed: [] };
       }
-      this.events.emit({ type: 'online_restored', at: this.clock() });
+      this.events.emit(makeEvent({ eventType: 'online_restored' }, this.clock()));
 
       const reclaimed = (await this.repo.reclaimExpiredLeases()).length;
       const processed: ProcessResult[] = [];
@@ -52,10 +50,13 @@ export class SyncCoordinator {
       // Lotes sucessivos: cada seleção retorna itens mutuamente independentes,
       // então o paralelismo dentro do lote é seguro (RA-QUEUE-01 §4).
       for (;;) {
+        // Cancelamento cooperativo entre lotes (§8): shutdown, troca de loja,
+        // encerramento de sessão ou invalidação de autorização abortam aqui.
+        if (signal?.aborted) break;
         await this.scheduler.promote();
         const batch = await this.scheduler.selectReady();
         if (batch.length === 0) break;
-        const results = await Promise.all(batch.map((i) => this.processor.process(i.id)));
+        const results = await Promise.all(batch.map((i) => this.processor.process(i.id, signal)));
         processed.push(...results);
         // Itens que permaneceram acionáveis (ex.: requeue imediato) voltam
         // em ciclos futuros — evita loop infinito no mesmo drain.

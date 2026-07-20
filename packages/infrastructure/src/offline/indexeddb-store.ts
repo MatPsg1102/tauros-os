@@ -1,10 +1,17 @@
 // Adapter IndexedDB do LocalStorePort (produção, via `idb`).
-// Mesmo contrato do MemoryLocalStore — os testes de contrato rodam na memória;
-// este adapter mantém-se fino de propósito.
+// Mesmo contrato do MemoryLocalStore — comprovado pela suíte de contrato
+// compartilhada (local-store-contract.ts) rodando sobre fake-indexeddb.
+//
+// Diferenças deliberadas vs MemoryLocalStore (documentadas):
+// - Persistência durável entre instâncias/reaberturas (memória é process-lifetime).
+// - Versão futura desconhecida ⇒ FutureVersionError (memória não versiona em disco).
 
-import { openDB, type IDBPDatabase } from 'idb';
+import { deleteDB, openDB, type IDBPDatabase } from 'idb';
 
+import type { TechnicalEventPort } from './events.js';
+import { makeEvent } from './events.js';
 import {
+  FutureVersionError,
   LocalStoreError,
   type LocalSchema,
   type LocalStorePort,
@@ -19,23 +26,50 @@ export class IndexedDbLocalStore implements LocalStorePort {
   private async open(): Promise<IDBPDatabase> {
     if (this.db) return this.db;
     const { migrations } = this.schema;
-    this.db = await openDB(this.schema.databaseName, this.schema.version, {
-      upgrade(db, oldVersion) {
-        for (const migration of [...migrations].sort((a, b) => a.toVersion - b.toVersion)) {
-          if (migration.toVersion <= oldVersion) continue;
-          for (const store of migration.stores) {
-            const os = db.objectStoreNames.contains(store.name)
-              ? null
-              : db.createObjectStore(store.name);
-            if (os && store.indexes) {
-              for (const [indexName, keyPath] of Object.entries(store.indexes)) {
-                os.createIndex(indexName, keyPath);
+    let migrationError: unknown;
+    try {
+      this.db = await openDB(this.schema.databaseName, this.schema.version, {
+        upgrade(db, oldVersion, _newVersion, transaction) {
+          transaction.done.catch(() => undefined);
+          try {
+            // Incremental e atômico: hook que lança aborta o upgrade inteiro
+            // (o IndexedDB garante rollback da transação de versão).
+            for (const migration of [...migrations].sort((a, b) => a.toVersion - b.toVersion)) {
+              if (migration.toVersion <= oldVersion) continue;
+              migration.onUpgrade?.();
+              for (const store of migration.stores) {
+                const os = db.objectStoreNames.contains(store.name)
+                  ? null
+                  : db.createObjectStore(store.name);
+                if (os && store.indexes) {
+                  for (const [indexName, keyPath] of Object.entries(store.indexes)) {
+                    os.createIndex(indexName, keyPath);
+                  }
+                }
               }
             }
+          } catch (error) {
+            // Aborta o upgrade inteiro: o banco permanece na versão anterior.
+            migrationError = error;
+            transaction.abort();
           }
-        }
-      },
-    });
+        },
+        blocked() {
+          // Outra aba segura a versão antiga; a abertura aguarda.
+        },
+      });
+    } catch (error) {
+      if (migrationError !== undefined) {
+        throw new LocalStoreError('Migration local falhou; banco permanece na versão anterior.', {
+          cause: migrationError,
+        });
+      }
+      if (error instanceof Error && error.name === 'VersionError') {
+        // Banco numa versão MAIOR que a suportada: rejeitar, nunca apagar.
+        throw new FutureVersionError(this.schema.databaseName);
+      }
+      throw new LocalStoreError('Falha ao abrir o banco local.', { cause: error });
+    }
     return this.db;
   }
 
@@ -71,12 +105,16 @@ export class IndexedDbLocalStore implements LocalStorePort {
       await idbTx.done;
       return result;
     } catch (error) {
+      // Evita unhandled rejection do done após abort.
+      idbTx.done.catch(() => undefined);
       try {
         idbTx.abort();
       } catch {
         // transação já finalizada — nada a abortar
       }
-      throw new LocalStoreError('Transação IndexedDB abortada.', { cause: error });
+      throw error instanceof LocalStoreError
+        ? error
+        : new LocalStoreError('Transação IndexedDB abortada.', { cause: error });
     }
   }
 
@@ -84,4 +122,23 @@ export class IndexedDbLocalStore implements LocalStorePort {
     this.db?.close();
     this.db = null;
   }
+}
+
+/**
+ * Destruição COMPLETA do banco local — ação EXCEPCIONAL, explícita e auditável
+ * (evento técnico obrigatório). Nunca usada como caminho normal de migration.
+ */
+export async function destroyLocalDatabase(
+  schema: LocalSchema,
+  events: TechnicalEventPort,
+  clock: () => Date,
+  reason: string,
+): Promise<void> {
+  await deleteDB(schema.databaseName);
+  events.emit(
+    makeEvent(
+      { eventType: 'database_destroyed', metadata: { database: schema.databaseName, reason } },
+      clock(),
+    ),
+  );
 }

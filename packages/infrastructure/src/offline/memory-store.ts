@@ -20,8 +20,11 @@ export class MemoryLocalStore implements LocalStorePort {
   private closed = false;
 
   constructor(readonly schema: LocalSchema) {
+    // Migrations incrementais; onUpgrade que lança aborta a construção inteira
+    // (nenhum estado parcial — a instância não chega a existir).
     for (const migration of [...schema.migrations].sort((a, b) => a.toVersion - b.toVersion)) {
       if (migration.toVersion > schema.version) continue;
+      migration.onUpgrade?.();
       for (const store of migration.stores) {
         this.definitions.set(store.name, store);
         if (!this.data.has(store.name)) this.data.set(store.name, new Map());

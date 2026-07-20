@@ -28,12 +28,33 @@ export interface SnapshotInput {
   readonly authOrigin: AuthOrigin;
 }
 
+/** Campos que NUNCA podem existir num snapshot (§9 — segurança local). */
+const FORBIDDEN_FIELD_PATTERN =
+  /token|secret|password|senha|pin|credential|authorization|api[_-]?key|service[_-]?role/i;
+
+export class SnapshotSecurityError extends Error {
+  constructor(readonly offendingFields: readonly string[]) {
+    super(
+      `Snapshot rejeitado: campos proibidos [${offendingFields.join(', ')}]. ` +
+        `O snapshot carrega CONTEXTO de autorização, nunca o segredo que a concedeu.`,
+    );
+    this.name = 'SnapshotSecurityError';
+  }
+}
+
+/** Rejeita objetos externos que tentem embutir material de segredo. */
+function assertNoSecretMaterial(input: object): void {
+  const offending = Object.keys(input).filter((k) => FORBIDDEN_FIELD_PATTERN.test(k));
+  if (offending.length > 0) throw new SnapshotSecurityError(offending);
+}
+
 /** Captura um snapshot com validade explícita (ttl vem da configuração). */
 export function captureSnapshot(
   input: SnapshotInput,
   ttlMs: number,
   clock: () => Date,
 ): AuthorizationSnapshot {
+  assertNoSecretMaterial(input);
   const capturedAt = clock();
   return {
     operatorProfileId: input.operatorProfileId,

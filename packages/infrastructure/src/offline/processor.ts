@@ -1,12 +1,13 @@
 // Processador da fila (RA-QUEUE-01 §4/§5/§7/§8).
-// Lease atômico impede processamento duplo; toda mudança de estado passa pela
-// máquina; snapshot expirado NUNCA é enviado às cegas; conflito preserva
-// evidência e consulta a estratégia injetada.
+// Lease com FENCING TOKEN: só o portador do token vigente persiste desfechos
+// (§6). Cancelamento cooperativo via AbortSignal (§8): item volta a PENDING,
+// nunca vira falha permanente. Snapshot expirado nunca é enviado às cegas.
 
 import { isSnapshotValid } from './authorization-snapshot.js';
 import { buildConflictRecord, type ConflictResolverRegistry } from './conflict.js';
-import type { TechnicalEventPort } from './events.js';
-import type { QueueItem } from './queue-item.js';
+import { makeEvent, type TechnicalEventPort } from './events.js';
+import type { OfflineTechnicalParameters } from './offline-parameters.js';
+import type { ErrorClassification, QueueItem } from './queue-item.js';
 import type { LocalQueueRepository } from './queue-repository.js';
 import type { RetryPolicy } from './retry-policy.js';
 import { transition, type TransitionTrigger } from './state-machine.js';
@@ -15,14 +16,7 @@ import type { SyncTransportPort } from './sync-transport.js';
 export interface ProcessResult {
   readonly itemId: string;
   readonly finalState: QueueItem['state'];
-  readonly trigger: TransitionTrigger | 'SKIPPED';
-}
-
-export interface ProcessorOptions {
-  /** Identifica esta instância (lease owner). */
-  readonly instanceId: string;
-  /** TTL da lease local; expirada ⇒ recuperável após crash. */
-  readonly leaseTtlMs: number;
+  readonly trigger: TransitionTrigger | 'SKIPPED' | 'FENCED';
 }
 
 export class QueueProcessor {
@@ -33,42 +27,50 @@ export class QueueProcessor {
     private readonly conflicts: ConflictResolverRegistry,
     private readonly events: TechnicalEventPort,
     private readonly clock: () => Date,
-    private readonly options: ProcessorOptions,
+    private readonly params: Pick<OfflineTechnicalParameters, 'instanceId' | 'leaseTtlMs'>,
   ) {}
 
-  /** Processa UM item (lease → SYNCING → desfecho). Idempotente e crash-safe. */
-  async process(itemId: string): Promise<ProcessResult> {
+  /** Processa UM item. Toda persistência pós-claim é guardada pelo token. */
+  async process(itemId: string, signal?: AbortSignal): Promise<ProcessResult> {
     const leased = await this.repo.claimLease(
       itemId,
-      this.options.instanceId,
-      this.options.leaseTtlMs,
+      this.params.instanceId,
+      this.params.leaseTtlMs,
     );
     if (leased === undefined) {
-      // Já SYNCED, em processamento por outra instância ou não elegível.
       const current = await this.repo.get(itemId);
       return { itemId, finalState: current?.state ?? 'SYNCED', trigger: 'SKIPPED' };
     }
+    const token = leased.lease!.token;
 
     const started = this.applyTransition(leased, 'LEASE_ACQUIRED');
-    await this.repo.put(started);
+    if (!(await this.repo.putIfLeaseHolder(started, token))) {
+      return { itemId, finalState: started.state, trigger: 'FENCED' };
+    }
 
-    // Snapshot expirado ⇒ revisão local; o servidor seguiria sendo a autoridade,
-    // mas não enviamos algo já sabidamente inválido (Confidence Before Speed).
+    // Cancelamento cooperativo ANTES do envio: volta a PENDING, lease liberada.
+    if (signal?.aborted) {
+      return this.finalize(started, token, 'CANCELLED', { clearLease: true });
+    }
+
+    // Snapshot expirado ⇒ revisão local, sem envio cego (Confidence Before Speed).
     if (!isSnapshotValid(started.authorization, this.clock())) {
-      this.events.emit({ type: 'snapshot_expired', at: this.clock(), itemId });
-      const reviewed = this.applyTransition(
-        {
-          ...started,
-          lastError: {
-            classification: 'AUTHORSHIP_REVIEW',
-            message: 'Snapshot de autorização expirado antes do envio.',
-            at: this.clock(),
-          },
-        },
-        'REVIEW_REQUIRED',
+      this.events.emit(
+        makeEvent(
+          { eventType: 'snapshot_expired', queueItemId: itemId, storeId: started.trace.storeId },
+          this.clock(),
+        ),
       );
-      await this.repo.put({ ...reviewed, lease: undefined });
-      return { itemId, finalState: reviewed.state, trigger: 'REVIEW_REQUIRED' };
+      return this.finalize(
+        this.withError(
+          started,
+          'AUTHORSHIP_REVIEW',
+          'Snapshot de autorização expirado antes do envio.',
+        ),
+        token,
+        'REVIEW_REQUIRED',
+        { clearLease: true },
+      );
     }
 
     const attempted: QueueItem = {
@@ -79,28 +81,25 @@ export class QueueProcessor {
 
     const outcome = await this.transport.submit(attempted);
 
-    switch (outcome.kind) {
-      case 'persisted': {
-        const done = this.applyTransition(attempted, 'SERVER_PERSISTED');
-        await this.repo.put({ ...done, lease: undefined, lastError: undefined });
-        return { itemId, finalState: done.state, trigger: 'SERVER_PERSISTED' };
-      }
+    // Cancelado DURANTE o envio: o desfecho remoto (se houve) será reconciliado
+    // pela idempotência no próximo retry; localmente volta a PENDING.
+    if (signal?.aborted && outcome.kind === 'transient') {
+      return this.finalize(attempted, token, 'CANCELLED', { clearLease: true });
+    }
 
-      case 'review': {
-        const reviewed = this.applyTransition(
-          {
-            ...attempted,
-            lastError: {
-              classification: 'AUTHORSHIP_REVIEW',
-              message: outcome.reason,
-              at: this.clock(),
-            },
-          },
+    switch (outcome.kind) {
+      case 'persisted':
+        return this.finalize({ ...attempted, lastError: undefined }, token, 'SERVER_PERSISTED', {
+          clearLease: true,
+        });
+
+      case 'review':
+        return this.finalize(
+          this.withError(attempted, 'AUTHORSHIP_REVIEW', outcome.reason),
+          token,
           'REVIEW_REQUIRED',
+          { clearLease: true },
         );
-        await this.repo.put({ ...reviewed, lease: undefined });
-        return { itemId, finalState: reviewed.state, trigger: 'REVIEW_REQUIRED' };
-      }
 
       case 'conflict': {
         const record = buildConflictRecord(
@@ -112,45 +111,55 @@ export class QueueProcessor {
         );
         await this.repo.saveConflict(record as never);
 
-        const conflicted = this.applyTransition(
-          {
-            ...attempted,
-            lastError: { classification: 'CONFLICT', message: outcome.message, at: this.clock() },
-          },
+        const conflictResult = await this.finalize(
+          this.withError(attempted, 'CONFLICT', outcome.message),
+          token,
           'CONFLICT_DETECTED',
+          { clearLease: false },
         );
-        await this.repo.put({ ...conflicted, lease: undefined });
+        if (conflictResult.trigger === 'FENCED') return conflictResult;
 
-        // Estratégia injetada decide o encaminhamento (default: manual).
         const strategy = this.conflicts.strategyFor(attempted.entityType, attempted.operation);
-        const resolution = await strategy.resolve(record, conflicted);
+        const resolution = await strategy.resolve(record, (await this.repo.get(itemId))!);
         if (resolution.action === 'requeue') {
+          const conflicted = (await this.repo.get(itemId))!;
           const requeued = this.applyTransition(conflicted, 'RESOLVED_REQUEUE');
-          await this.repo.put({
-            ...requeued,
-            payload: resolution.patchedPayload ?? requeued.payload,
-          });
-          return { itemId, finalState: requeued.state, trigger: 'RESOLVED_REQUEUE' };
+          const persisted = await this.repo.putIfLeaseHolder(
+            {
+              ...requeued,
+              payload: resolution.patchedPayload ?? requeued.payload,
+              lease: undefined,
+            },
+            token,
+          );
+          return persisted
+            ? { itemId, finalState: requeued.state, trigger: 'RESOLVED_REQUEUE' }
+            : { itemId, finalState: conflicted.state, trigger: 'FENCED' };
         }
         if (resolution.action === 'discard') {
+          const conflicted = (await this.repo.get(itemId))!;
           const discarded = this.applyTransition(conflicted, 'DISCARDED');
-          await this.repo.put(discarded);
-          return { itemId, finalState: discarded.state, trigger: 'DISCARDED' };
+          const persisted = await this.repo.putIfLeaseHolder(
+            { ...discarded, lease: undefined },
+            token,
+          );
+          return persisted
+            ? { itemId, finalState: discarded.state, trigger: 'DISCARDED' }
+            : { itemId, finalState: conflicted.state, trigger: 'FENCED' };
         }
-        return { itemId, finalState: conflicted.state, trigger: 'CONFLICT_DETECTED' };
+        // manual: preserva CONFLICT com lease liberada
+        const conflicted = (await this.repo.get(itemId))!;
+        await this.repo.putIfLeaseHolder({ ...conflicted, lease: undefined }, token);
+        return { itemId, finalState: 'CONFLICT', trigger: 'CONFLICT_DETECTED' };
       }
 
-      case 'rejected': {
-        const failed = this.applyTransition(
-          {
-            ...attempted,
-            lastError: { classification: 'PERMANENT', message: outcome.message, at: this.clock() },
-          },
+      case 'rejected':
+        return this.finalize(
+          this.withError(attempted, 'PERMANENT', outcome.message),
+          token,
           'PERMANENT_ERROR',
+          { clearLease: true },
         );
-        await this.repo.put({ ...failed, lease: undefined });
-        return { itemId, finalState: failed.state, trigger: 'PERMANENT_ERROR' };
-      }
 
       case 'transient': {
         const classification = outcome.authExpired ? 'AUTH_RETRYABLE' : 'RECOVERABLE';
@@ -162,38 +171,81 @@ export class QueueProcessor {
         );
 
         if (!decision.retry) {
-          const exhausted = this.applyTransition(
-            {
-              ...attempted,
-              lastError: {
-                classification: 'PERMANENT',
-                message: `Tentativas esgotadas (${attempted.attemptCount}): ${outcome.message}`,
-                at: this.clock(),
-              },
-            },
+          return this.finalize(
+            this.withError(
+              attempted,
+              'PERMANENT',
+              `Tentativas esgotadas (${attempted.attemptCount}): ${outcome.message}`,
+            ),
+            token,
             'PERMANENT_ERROR',
+            { clearLease: true },
           );
-          await this.repo.put({ ...exhausted, lease: undefined });
-          return { itemId, finalState: exhausted.state, trigger: 'PERMANENT_ERROR' };
         }
 
-        const scheduled = this.applyTransition(
+        return this.finalize(
           {
-            ...attempted,
-            lastError: { classification, message: outcome.message, at: this.clock() },
+            ...this.withError(attempted, classification, outcome.message),
             nextAttemptAt: new Date(this.clock().getTime() + decision.delayMs),
           },
+          token,
           'TRANSIENT_ERROR',
+          { clearLease: true, attempt: attempted.attemptCount },
         );
-        await this.repo.put({ ...scheduled, lease: undefined });
-        return { itemId, finalState: scheduled.state, trigger: 'TRANSIENT_ERROR' };
       }
     }
   }
 
-  private applyTransition(item: QueueItem, trigger: TransitionTrigger): QueueItem {
+  /** Persiste o desfecho SOMENTE se ainda formos o portador do token (§6). */
+  private async finalize(
+    item: QueueItem,
+    token: string,
+    trigger: TransitionTrigger,
+    opts: { clearLease: boolean; attempt?: number },
+  ): Promise<ProcessResult> {
+    const next = this.applyTransition(item, trigger, opts.attempt);
+    const toPersist: QueueItem = opts.clearLease ? { ...next, lease: undefined } : next;
+    const persisted = await this.repo.putIfLeaseHolder(toPersist, token);
+    if (!persisted) {
+      // Worker antigo: outro processador assumiu — nada foi gravado por nós.
+      const current = await this.repo.get(item.id);
+      return { itemId: item.id, finalState: current?.state ?? next.state, trigger: 'FENCED' };
+    }
+    return { itemId: item.id, finalState: next.state, trigger };
+  }
+
+  private withError(
+    item: QueueItem,
+    classification: ErrorClassification,
+    message: string,
+  ): QueueItem {
+    return { ...item, lastError: { classification, message, at: this.clock() } };
+  }
+
+  private applyTransition(
+    item: QueueItem,
+    trigger: TransitionTrigger,
+    attempt?: number,
+  ): QueueItem {
     const def = transition(item.state, trigger);
-    this.events.emit({ type: def.technicalEvent, at: this.clock(), itemId: item.id });
+    this.events.emit(
+      makeEvent(
+        {
+          eventType: def.technicalEvent,
+          queueItemId: item.id,
+          storeId: item.trace.storeId,
+          sessionId: item.trace.sessionId,
+          correlationId: item.idempotencyKey,
+          attempt: attempt ?? item.attemptCount,
+          previousState: item.state,
+          nextState: def.to,
+          error: item.lastError
+            ? { name: item.lastError.classification, message: item.lastError.message }
+            : undefined,
+        },
+        this.clock(),
+      ),
+    );
     return { ...item, state: def.to };
   }
 }

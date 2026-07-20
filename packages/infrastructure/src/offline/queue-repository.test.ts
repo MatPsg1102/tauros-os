@@ -5,6 +5,7 @@ import { CapturingEventEmitter } from './events.js';
 import { MemoryLocalStore } from './memory-store.js';
 import { LocalQueueRepository, OFFLINE_SCHEMA, SafeCleanupError } from './queue-repository.js';
 import { makeClock, makeNewItem, makeSnapshot, makeWorld } from './test-helpers.js';
+import { resolveOfflineParameters } from './offline-parameters.js';
 
 describe('LocalQueueRepository (RA-QUEUE-01 §1/§2/§4)', () => {
   it('enfileira com todos os campos obrigatórios persistidos', async () => {
@@ -34,27 +35,49 @@ describe('LocalQueueRepository (RA-QUEUE-01 §1/§2/§4)', () => {
   it('recupera itens após reinício (novo repo sobre o mesmo store)', async () => {
     const clock = makeClock();
     const store = new MemoryLocalStore(OFFLINE_SCHEMA);
-    const repoA = new LocalQueueRepository(store, new CapturingEventEmitter(), clock.fn);
+    const repoA = new LocalQueueRepository(
+      store,
+      new CapturingEventEmitter(),
+      clock.fn,
+      resolveOfflineParameters({ instanceId: 't' }),
+    );
     await repoA.enqueue(makeNewItem('persisted', makeSnapshot(clock)));
 
     // "Reinício": nova instância de repositório sobre a mesma persistência.
-    const repoB = new LocalQueueRepository(store, new CapturingEventEmitter(), clock.fn);
+    const repoB = new LocalQueueRepository(
+      store,
+      new CapturingEventEmitter(),
+      clock.fn,
+      resolveOfflineParameters({ instanceId: 't' }),
+    );
     const reloaded = await repoB.get('persisted');
     expect(reloaded?.id).toBe('persisted');
     expect(reloaded?.state).toBe('PENDING');
     expect(reloaded?.authorization.validUntil).toBeInstanceOf(Date);
   });
 
-  it('rejeita ciclo com erro auditável e emite cycle_detected', async () => {
-    const { repo, events, clock } = makeWorld();
+  it('ciclo (só possível por corrupção) é rejeitado com erro auditável', async () => {
+    // A validação de existência no enqueue torna ciclos impossíveis pelo fluxo
+    // normal; assertAcyclic permanece como defesa contra corrupção local.
+    const { repo, store, events, clock } = makeWorld();
     const snap = makeSnapshot(clock);
-    await repo.enqueue(makeNewItem('x', snap, { dependsOn: ['y'] }));
-    await expect(repo.enqueue(makeNewItem('y', snap, { dependsOn: ['x'] }))).rejects.toThrow(
+    const a = await repo.enqueue(makeNewItem('a', snap));
+    const b = await repo.enqueue(makeNewItem('b', snap, { dependsOn: ['a'] }));
+    // corrupção: cria o ciclo a<->b direto na persistência
+    const { encodeQueueItem } = await import('./codec.js');
+    await store.transaction(['queue_items'], 'write', (tx) =>
+      tx.put('queue_items', 'a', encodeQueueItem({ ...a, dependsOn: ['b'] })),
+    );
+    void b;
+
+    await expect(repo.enqueue(makeNewItem('z', snap, { dependsOn: ['a'] }))).rejects.toThrow(
       CycleDetectedError,
     );
-    expect(events.events.some((e) => e.type === 'cycle_detected' && e.itemId === 'y')).toBe(true);
-    // A fila NÃO travou: outro item entra normalmente.
-    await expect(repo.enqueue(makeNewItem('z', snap))).resolves.toMatchObject({ state: 'PENDING' });
+    expect(
+      events.events.some((e) => e.eventType === 'cycle_detected' && e.queueItemId === 'z'),
+    ).toBe(true);
+    // A fila NÃO travou: item sem relação com o ciclo entra normalmente.
+    await expect(repo.enqueue(makeNewItem('w', snap))).resolves.toMatchObject({ state: 'PENDING' });
   });
 
   it('lease é atômica: segunda instância não processa o mesmo item', async () => {

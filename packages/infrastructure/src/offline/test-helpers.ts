@@ -9,6 +9,7 @@ import { MemoryLocalStore } from './memory-store.js';
 import { ConflictResolverRegistry } from './conflict.js';
 import type { NewQueueItem } from './queue-item.js';
 import { LocalQueueRepository, OFFLINE_SCHEMA } from './queue-repository.js';
+import { resolveOfflineParameters, type OfflineTechnicalParameters } from './offline-parameters.js';
 import { QueueProcessor } from './processor.js';
 import { QueueScheduler } from './scheduler.js';
 import { RetryPolicy } from './retry-policy.js';
@@ -77,14 +78,20 @@ export function makeNewItem(
 /** Transporte stub: outcomes programados por id (FIFO); default = persisted. */
 export class FakeTransport implements SyncTransportPort {
   readonly submitted: string[] = [];
+  /** Chaves de idempotência recebidas — prova de estabilidade entre retries. */
+  readonly submittedKeys: string[] = [];
+  /** Hook opcional executado no envio (ex.: abortar um AbortController). */
+  onSubmit: (() => void) | undefined;
   private readonly plans = new Map<string, SubmitOutcome[]>();
 
   plan(itemId: string, ...outcomes: SubmitOutcome[]): void {
     this.plans.set(itemId, [...(this.plans.get(itemId) ?? []), ...outcomes]);
   }
 
-  submit(item: { id: string }): Promise<SubmitOutcome> {
+  submit(item: { id: string; idempotencyKey: string }): Promise<SubmitOutcome> {
     this.submitted.push(item.id);
+    this.submittedKeys.push(item.idempotencyKey);
+    this.onSubmit?.();
     const queue = this.plans.get(item.id);
     const outcome = queue?.shift() ?? { kind: 'persisted' as const };
     return Promise.resolve(outcome);
@@ -102,6 +109,7 @@ export interface World {
   readonly processor: QueueProcessor;
   readonly scheduler: QueueScheduler;
   readonly config: ConfigResolver;
+  readonly params: OfflineTechnicalParameters;
   coordinator(probes?: Partial<ConnectivityProbes>): SyncCoordinator;
 }
 
@@ -109,15 +117,13 @@ export function makeWorld(random: () => number = () => 0.5): World {
   const clock = makeClock();
   const store = new MemoryLocalStore(OFFLINE_SCHEMA);
   const events = new CapturingEventEmitter();
-  const repo = new LocalQueueRepository(store, events, clock.fn);
+  const params = resolveOfflineParameters({ instanceId: 'proc-A' });
+  const repo = new LocalQueueRepository(store, events, clock.fn, params);
   const config = new ConfigResolver({ loadStoreOverrides: () => Promise.resolve([]) }, clock.fn);
   const retry = new RetryPolicy(config, random);
   const registry = new ConflictResolverRegistry();
   const transport = new FakeTransport();
-  const processor = new QueueProcessor(repo, transport, retry, registry, events, clock.fn, {
-    instanceId: 'proc-A',
-    leaseTtlMs: 60_000,
-  });
+  const processor = new QueueProcessor(repo, transport, retry, registry, events, clock.fn, params);
   const scheduler = new QueueScheduler(repo, config, events, clock.fn);
 
   const online: ConnectivityProbes = {
@@ -131,6 +137,7 @@ export function makeWorld(random: () => number = () => 0.5): World {
     clock,
     store,
     repo,
+    params,
     events,
     transport,
     retry,

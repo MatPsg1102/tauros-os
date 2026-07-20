@@ -3,19 +3,9 @@
 // explicitamente (InvalidTransitionError) — nunca strings soltas pelo código.
 
 import type { TechnicalEventType } from './events.js';
+import { QUEUE_STATES, type QueueState } from './states.js';
 
-export const QUEUE_STATES = [
-  'PENDING',
-  'BLOCKED_BY_DEPENDENCY',
-  'SYNCING',
-  'SYNCED',
-  'RETRY_SCHEDULED',
-  'CONFLICT',
-  'NEEDS_REVIEW',
-  'PERMANENT_FAILURE',
-] as const;
-
-export type QueueState = (typeof QUEUE_STATES)[number];
+export { QUEUE_STATES, type QueueState };
 
 export type TransitionTrigger =
   | 'DEPS_SATISFIED'
@@ -28,7 +18,9 @@ export type TransitionTrigger =
   | 'BACKOFF_ELAPSED'
   | 'RESOLVED_REQUEUE'
   | 'DISCARDED'
-  | 'LEASE_EXPIRED';
+  | 'LEASE_EXPIRED'
+  | 'CANCELLED'
+  | 'DEPENDENCY_MISSING';
 
 export interface TransitionDefinition {
   readonly from: QueueState;
@@ -106,6 +98,22 @@ export const TRANSITIONS: readonly TransitionDefinition[] = [
     retryable: true,
     requiresIntervention: false,
     technicalEvent: 'lease_reclaimed',
+  },
+  {
+    from: 'SYNCING',
+    trigger: 'CANCELLED',
+    to: 'PENDING',
+    retryable: true,
+    requiresIntervention: false,
+    technicalEvent: 'sync_cancelled',
+  },
+  {
+    from: 'BLOCKED_BY_DEPENDENCY',
+    trigger: 'DEPENDENCY_MISSING',
+    to: 'NEEDS_REVIEW',
+    retryable: false,
+    requiresIntervention: true,
+    technicalEvent: 'dependency_missing',
   },
   {
     from: 'RETRY_SCHEDULED',

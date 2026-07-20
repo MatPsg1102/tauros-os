@@ -25,6 +25,8 @@ export interface QueueTrace {
 
 export interface QueueLease {
   readonly owner: string;
+  /** Fencing token: só o portador do token vigente persiste o desfecho. */
+  readonly token: string;
   readonly expiresAt: Date;
 }
 

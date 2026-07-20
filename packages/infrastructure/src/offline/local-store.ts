@@ -13,6 +13,11 @@ export interface LocalMigration {
   readonly description: string;
   /** Stores criados/alterados nesta versão (aplicado pelo adapter). */
   readonly stores: readonly LocalStoreDefinition[];
+  /**
+   * Hook opcional executado DENTRO do upgrade. Se lançar, o upgrade inteiro
+   * aborta atomicamente (banco permanece na versão anterior).
+   */
+  readonly onUpgrade?: () => void;
 }
 
 /** Schema local versionado (migrations ordenadas e forward-only). */
@@ -45,6 +50,17 @@ export interface LocalStorePort {
   ): Promise<T>;
   /** Fecha conexões; segura para chamar em shutdown/fechamento inesperado. */
   close(): Promise<void>;
+}
+
+/** Versão persistida MAIOR que a suportada: rejeitar com segurança, nunca apagar. */
+export class FutureVersionError extends Error {
+  constructor(databaseName: string) {
+    super(
+      `Banco local '${databaseName}' está numa versão futura desconhecida. ` +
+        'Atualize a aplicação; os dados NÃO foram apagados.',
+    );
+    this.name = 'FutureVersionError';
+  }
 }
 
 export class LocalStoreError extends Error {

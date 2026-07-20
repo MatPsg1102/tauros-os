@@ -115,7 +115,7 @@ describe('processador + coordenador (RA-QUEUE-01 §4/§5/§7/§8)', () => {
     const result = await w.processor.process('stale');
     expect(result.finalState).toBe('NEEDS_REVIEW');
     expect(w.transport.submitted).not.toContain('stale');
-    expect(w.events.events.some((e) => e.type === 'snapshot_expired')).toBe(true);
+    expect(w.events.events.some((e) => e.eventType === 'snapshot_expired')).toBe(true);
   });
 
   it('conflito: evidências preservadas e estratégia default = manual', async () => {

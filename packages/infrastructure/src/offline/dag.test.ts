@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { assertAcyclic, CycleDetectedError, dependenciesSatisfied } from './dag.js';
+import { assertAcyclic, CycleDetectedError, dependencyStatus, resolveDependency } from './dag.js';
 import { makeClock, makeNewItem, makeSnapshot } from './test-helpers.js';
 import { createQueueItem, type QueueItem } from './queue-item.js';
 
@@ -14,22 +14,43 @@ function itemWith(id: string, deps: string[], state: QueueItem['state']): QueueI
   return { ...base, state };
 }
 
-describe('DAG de dependências (RA-QUEUE-01 §2)', () => {
-  it('dependência SYNCED conta como satisfeita; PENDING bloqueia', () => {
-    const parent = itemWith('a', [], 'SYNCED');
-    const pendingParent = itemWith('b', [], 'PENDING');
-    const byId = new Map([
-      ['a', parent],
-      ['b', pendingParent],
-    ]);
+const NO_TOMBSTONES: ReadonlySet<string> = new Set();
 
-    expect(dependenciesSatisfied({ dependsOn: ['a'] }, byId)).toBe(true);
-    expect(dependenciesSatisfied({ dependsOn: ['b'] }, byId)).toBe(false);
-    expect(dependenciesSatisfied({ dependsOn: ['a', 'b'] }, byId)).toBe(false);
+describe('DAG de dependências (RA-QUEUE-01 §2 · semântica §5)', () => {
+  it('resolve as quatro situações de uma dependência explicitamente', () => {
+    const byId = new Map([
+      ['done', itemWith('done', [], 'SYNCED')],
+      ['open', itemWith('open', [], 'PENDING')],
+    ]);
+    const tombstones = new Set(['cleaned']);
+
+    expect(resolveDependency('done', byId, tombstones)).toBe('completed');
+    expect(resolveDependency('open', byId, tombstones)).toBe('pending');
+    expect(resolveDependency('cleaned', byId, tombstones)).toBe('completed-removed');
+    expect(resolveDependency('ghost', byId, tombstones)).toBe('missing');
   });
 
-  it('dependência ausente (já limpa) conta como satisfeita', () => {
-    expect(dependenciesSatisfied({ dependsOn: ['ghost'] }, new Map())).toBe(true);
+  it('ausência SEM evidência NUNCA é sucesso: status aponta missing', () => {
+    const status = dependencyStatus({ dependsOn: ['ghost'] }, new Map(), NO_TOMBSTONES);
+    expect(status.satisfied).toBe(false);
+    expect(status.missing).toEqual(['ghost']);
+  });
+
+  it('tombstone é evidência de conclusão (satisfeito)', () => {
+    const status = dependencyStatus({ dependsOn: ['cleaned'] }, new Map(), new Set(['cleaned']));
+    expect(status.satisfied).toBe(true);
+    expect(status.missing).toHaveLength(0);
+  });
+
+  it('mistura de pendente + concluída bloqueia sem acusar missing', () => {
+    const byId = new Map([
+      ['a', itemWith('a', [], 'SYNCED')],
+      ['b', itemWith('b', [], 'PENDING')],
+    ]);
+    const status = dependencyStatus({ dependsOn: ['a', 'b'] }, byId, NO_TOMBSTONES);
+    expect(status.satisfied).toBe(false);
+    expect(status.pending).toEqual(['b']);
+    expect(status.missing).toHaveLength(0);
   });
 
   it('aceita cadeias e diamantes acíclicos', () => {
