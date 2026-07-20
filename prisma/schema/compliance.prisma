@@ -1,0 +1,46 @@
+// Conformidade sanitária (Core) — equipamentos e registros regulados.
+// Temperature/Cleaning especializam uma TaskExecution (execution_id).
+
+model Equipment {
+  id        String          @id @default(uuid()) @db.Uuid
+  storeId   String          @map("store_id") @db.Uuid
+  name      String
+  type      String
+  status    EquipmentStatus @default(OK)
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  temperatureLogs TemperatureLog[]
+  incidents       Incident[]
+
+  @@index([storeId])
+  @@map("equipment")
+}
+
+model TemperatureLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  storeId        String   @map("store_id") @db.Uuid
+  equipmentId    String   @map("equipment_id") @db.Uuid
+  executionId    String?  @unique @map("execution_id") @db.Uuid
+  readingCelsius Decimal  @map("reading_celsius") @db.Decimal(5, 2)
+  recordedAt     DateTime @map("recorded_at") @db.Timestamptz(6)
+
+  equipment Equipment      @relation(fields: [equipmentId], references: [id])
+  execution TaskExecution? @relation(fields: [executionId], references: [id])
+
+  @@index([storeId, equipmentId, recordedAt])
+  @@map("temperature_logs")
+}
+
+model CleaningLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  storeId     String   @map("store_id") @db.Uuid
+  area        String
+  productUsed String?  @map("product_used")
+  executionId String?  @unique @map("execution_id") @db.Uuid
+  recordedAt  DateTime @map("recorded_at") @db.Timestamptz(6)
+
+  execution TaskExecution? @relation(fields: [executionId], references: [id])
+
+  @@index([storeId, recordedAt])
+  @@map("cleaning_logs")
+}

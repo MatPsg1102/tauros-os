@@ -1,0 +1,186 @@
+// Enums — vocabulário estrutural de domínio (fechado). Papéis, posições e cargos
+// NÃO são enums: são dados configuráveis (ADR-018/019).
+
+enum MembershipStatus {
+  ACTIVE
+  SUSPENDED
+  ENDED
+
+  @@map("membership_status")
+}
+
+enum OverrideEffect {
+  ALLOW
+  DENY
+
+  @@map("override_effect")
+}
+
+enum TaskFrequency {
+  ONCE
+  DAILY
+  PER_SHIFT
+  HOURLY
+  CUSTOM
+
+  @@map("task_frequency")
+}
+
+enum DailyTaskStatus {
+  PENDING
+  DONE
+  OVERDUE
+  SKIPPED
+
+  @@map("daily_task_status")
+}
+
+enum ExecutionResult {
+  PASS
+  FAIL
+  NA
+
+  @@map("execution_result")
+}
+
+enum ExecutionSource {
+  HUMAN
+  SYSTEM
+  INTEGRATION
+
+  @@map("execution_source")
+}
+
+enum SyncStatus {
+  PENDING
+  SYNCED
+  CONFLICT
+  REVIEW
+
+  @@map("sync_status")
+}
+
+enum ReviewReason {
+  TIME_OUT_OF_BOUNDS
+  AUTHORSHIP_UNVERIFIED
+  SESSION_UNVERIFIABLE
+  PERMISSION_MISMATCH
+  STORE_MISMATCH
+  UNFINISHED_SWITCH
+
+  @@map("review_reason")
+}
+
+enum SessionStatus {
+  ACTIVE
+  CLOSED_LOCAL
+  CLOSED_CONFIRMED
+  REJECTED
+  NEEDS_REVIEW
+
+  @@map("session_status")
+}
+
+enum SessionEndReason {
+  SWITCH
+  LOGOUT
+  EXPIRED
+  STORE_SWITCH
+
+  @@map("session_end_reason")
+}
+
+enum MovementType {
+  ENTRADA
+  SAIDA_VENDA
+  PRODUCAO_CONSUMO
+  PRODUCAO_SAIDA
+  PERDA
+  AJUSTE
+
+  @@map("movement_type")
+}
+
+enum LossReason {
+  QUEBRA
+  VENCIMENTO
+  CONTAMINACAO
+  AVARIA
+  OUTRO
+
+  @@map("loss_reason")
+}
+
+enum ProductionStatus {
+  DRAFT
+  REGISTERED
+  YIELD_REVIEW
+
+  @@map("production_status")
+}
+
+enum EquipmentStatus {
+  OK
+  ALERT
+  MAINTENANCE
+  FAULT
+
+  @@map("equipment_status")
+}
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+
+  @@map("incident_severity")
+}
+
+enum IncidentStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+
+  @@map("incident_status")
+}
+
+enum CalendarExceptionType {
+  HOLIDAY
+  SPECIAL
+
+  @@map("calendar_exception_type")
+}
+
+enum KpiGrain {
+  SHIFT
+  DAY
+  WEEK
+  MONTH
+
+  @@map("kpi_grain")
+}
+
+enum FieldType {
+  TEXT
+  NUMBER
+  DECIMAL
+  CURRENCY
+  TEMPERATURE
+  DATE
+  TIME
+  DATETIME
+  SELECT
+  MULTISELECT
+  CHECKLIST
+  IMAGE
+  SIGNATURE
+  QRCODE
+  BARCODE
+  LOCATION
+  NOTE
+  ATTACHMENT
+
+  @@map("field_type")
+}

@@ -1,0 +1,61 @@
+// Configuração (ADR-019) — parâmetros tipados, resolvidos pelo Configuration
+// Engine. Nenhum módulo lê estas tabelas direto. Estruturas tipadas (não JSONB).
+
+model StoreSettings {
+  id                   String   @id @default(uuid()) @db.Uuid
+  storeId              String   @unique @map("store_id") @db.Uuid
+  timezone             String
+  idleLockMs           Int      @default(900000) @map("idle_lock_ms")
+  sessionAbsoluteMs    Int      @default(43200000) @map("session_absolute_ms")
+  pinOfflineValidityMs Int      @default(259200000) @map("pin_offline_validity_ms")
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("store_settings")
+}
+
+model StoreOperatingHours {
+  id       String  @id @default(uuid()) @db.Uuid
+  storeId  String  @map("store_id") @db.Uuid
+  weekday  Int
+  isOpen   Boolean @default(true) @map("is_open")
+  opensAt  String? @map("opens_at")
+  closesAt String? @map("closes_at")
+
+  @@unique([storeId, weekday])
+  @@index([storeId])
+  @@map("store_operating_hours")
+}
+
+model StoreCalendarException {
+  id       String                @id @default(uuid()) @db.Uuid
+  storeId  String                @map("store_id") @db.Uuid
+  date     DateTime              @db.Date
+  type     CalendarExceptionType
+  isOpen   Boolean               @default(false) @map("is_open")
+  opensAt  String?               @map("opens_at")
+  closesAt String?               @map("closes_at")
+
+  @@unique([storeId, date])
+  @@index([storeId])
+  @@map("store_calendar_exceptions")
+}
+
+/// Versão de uma configuração (vigência/agendamento/autor/justificativa).
+model ConfigurationVersion {
+  id                String    @id @default(uuid()) @db.Uuid
+  storeId           String?   @map("store_id") @db.Uuid
+  entity            String
+  version           Int
+  effectiveFrom     DateTime  @map("effective_from") @db.Timestamptz(6)
+  scheduledAt       DateTime? @map("scheduled_at") @db.Timestamptz(6)
+  changedBy         String    @map("changed_by") @db.Uuid
+  justification     String?
+  previousVersionId String?   @map("previous_version_id") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  previousVersion ConfigurationVersion?  @relation("ConfigVersionHistory", fields: [previousVersionId], references: [id])
+  nextVersions    ConfigurationVersion[] @relation("ConfigVersionHistory")
+
+  @@index([entity, version])
+  @@map("configuration_versions")
+}

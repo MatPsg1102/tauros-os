@@ -1,0 +1,120 @@
+// UI Metadata Engine (ADR-020) — formulários/checklists dirigidos por metadados
+// versionados. O domínio continua a fonte da verdade; isto descreve a interface.
+// Referências a permissão (required_permission_id) são colunas soltas.
+
+model FormDefinition {
+  id            String    @id @default(uuid()) @db.Uuid
+  storeId       String?   @map("store_id") @db.Uuid
+  key           String
+  version       Int       @default(1)
+  effectiveFrom DateTime? @map("effective_from") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  sections FormSection[]
+  actions  ActionDefinition[]
+  layout   LayoutDefinition?
+
+  @@unique([storeId, key, version])
+  @@index([storeId])
+  @@map("form_definitions")
+}
+
+model FormSection {
+  id               String  @id @default(uuid()) @db.Uuid
+  formDefinitionId String  @map("form_definition_id") @db.Uuid
+  title            String?
+  sortOrder        Int     @map("sort_order")
+
+  form            FormDefinition    @relation(fields: [formDefinitionId], references: [id], onDelete: Cascade)
+  fields          FieldDefinition[]
+  visibilityRules VisibilityRule[]
+
+  @@map("form_sections")
+}
+
+model FieldDefinition {
+  id                   String    @id @default(uuid()) @db.Uuid
+  sectionId            String    @map("section_id") @db.Uuid
+  key                  String
+  type                 FieldType
+  required             Boolean   @default(false)
+  readOnly             Boolean   @default(false) @map("read_only")
+  hidden               Boolean   @default(false)
+  defaultValue         String?   @map("default_value")
+  min                  Decimal?  @db.Decimal(14, 4)
+  max                  Decimal?  @db.Decimal(14, 4)
+  mask                 String?
+  unit                 String?
+  requiredPermissionId String?   @map("required_permission_id") @db.Uuid
+  requiresPhoto        Boolean   @default(false) @map("requires_photo")
+  requiresComment      Boolean   @default(false) @map("requires_comment")
+  requiresApproval     Boolean   @default(false) @map("requires_approval")
+  sortOrder            Int       @map("sort_order")
+
+  section         FormSection      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  validationRules ValidationRule[]
+  permissionRules PermissionRule[]
+  visibilityRules VisibilityRule[]
+
+  @@unique([sectionId, key])
+  @@map("field_definitions")
+}
+
+model ValidationRule {
+  id         String  @id @default(uuid()) @db.Uuid
+  fieldId    String  @map("field_id") @db.Uuid
+  expression String
+  message    String?
+
+  field FieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@map("validation_rules")
+}
+
+/// Condição de exibição de um campo OU seção.
+model VisibilityRule {
+  id        String  @id @default(uuid()) @db.Uuid
+  fieldId   String? @map("field_id") @db.Uuid
+  sectionId String? @map("section_id") @db.Uuid
+  condition String
+
+  field   FieldDefinition? @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  section FormSection?     @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@map("visibility_rules")
+}
+
+/// Capacidade necessária para ver/editar um campo (não é fronteira de segurança).
+model PermissionRule {
+  id           String @id @default(uuid()) @db.Uuid
+  fieldId      String @map("field_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+  mode         String
+
+  field FieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@map("permission_rules")
+}
+
+model LayoutDefinition {
+  id               String  @id @default(uuid()) @db.Uuid
+  formDefinitionId String  @unique @map("form_definition_id") @db.Uuid
+  density          String?
+  config           Json?   @db.JsonB
+
+  form FormDefinition @relation(fields: [formDefinitionId], references: [id], onDelete: Cascade)
+
+  @@map("layout_definitions")
+}
+
+model ActionDefinition {
+  id               String  @id @default(uuid()) @db.Uuid
+  formDefinitionId String  @map("form_definition_id") @db.Uuid
+  key              String
+  label            String?
+  kind             String
+
+  form FormDefinition @relation(fields: [formDefinitionId], references: [id], onDelete: Cascade)
+
+  @@map("action_definitions")
+}

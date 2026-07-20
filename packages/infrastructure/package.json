@@ -12,6 +12,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@prisma/client": "^6.1.0",
     "@supabase/supabase-js": "^2.47.10",
     "@tauros/application": "workspace:*",
     "@tauros/contracts": "workspace:*",

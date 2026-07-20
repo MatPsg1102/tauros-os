@@ -1,0 +1,71 @@
+// RBAC de permissões efetivas (ADR-018). Papéis e permissões são DADOS.
+
+/// Papel de acesso (dado, não enum). storeId nulo = template global.
+model AccessRole {
+  id      String  @id @default(uuid()) @db.Uuid
+  storeId String? @map("store_id") @db.Uuid
+  key     String
+  name    String
+
+  rolePermissions RolePermission[]
+  memberships     MembershipRole[]
+
+  @@unique([storeId, key])
+  @@index([storeId])
+  @@map("access_roles")
+}
+
+/// Catálogo global de capacidades (ex.: inventory.adjust, loss.approve).
+model Permission {
+  id          String  @id @default(uuid()) @db.Uuid
+  key         String  @unique
+  description String?
+
+  rolePermissions RolePermission[]
+  overrides       MembershipPermissionOverride[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String @id @default(uuid()) @db.Uuid
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       AccessRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+/// Papel atribuído a um vínculo, com vigência (papéis temporários).
+model MembershipRole {
+  id           String    @id @default(uuid()) @db.Uuid
+  membershipId String    @map("membership_id") @db.Uuid
+  roleId       String    @map("role_id") @db.Uuid
+  validFrom    DateTime  @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validUntil   DateTime? @map("valid_until") @db.Timestamptz(6)
+
+  membership StoreMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  role       AccessRole      @relation(fields: [roleId], references: [id])
+
+  @@index([membershipId])
+  @@map("membership_roles")
+}
+
+/// Override temporal ALLOW/DENY de permissão por vínculo (DENY vence).
+model MembershipPermissionOverride {
+  id           String         @id @default(uuid()) @db.Uuid
+  membershipId String         @map("membership_id") @db.Uuid
+  permissionId String         @map("permission_id") @db.Uuid
+  effect       OverrideEffect
+  validFrom    DateTime       @default(now()) @map("valid_from") @db.Timestamptz(6)
+  validUntil   DateTime?      @map("valid_until") @db.Timestamptz(6)
+
+  membership StoreMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  permission Permission      @relation(fields: [permissionId], references: [id])
+
+  @@index([membershipId])
+  @@map("membership_permission_overrides")
+}

@@ -1,0 +1,99 @@
+// Estoque & Razão (Core) — razão imutável (stock_movements), projeção (inventory),
+// produção e perdas emitem movimentos. `approved_by` é coluna solta (autoria).
+
+model Product {
+  id        String   @id @default(uuid()) @db.Uuid
+  storeId   String   @map("store_id") @db.Uuid
+  sku       String
+  name      String
+  unit      String
+  category  String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  inventory         Inventory?
+  movements         StockMovement[]
+  productionOutputs ProductionOutput[]
+  productionInputs  ProductionRecord[] @relation("ProductionInput")
+  losses            LossRecord[]
+  attachments       Attachment[]
+
+  @@unique([storeId, sku])
+  @@index([storeId])
+  @@map("products")
+}
+
+/// Razão imutável — fonte única da verdade de estoque. quantity carrega o sinal.
+model StockMovement {
+  id         String       @id @default(uuid()) @db.Uuid
+  storeId    String       @map("store_id") @db.Uuid
+  productId  String       @map("product_id") @db.Uuid
+  type       MovementType
+  quantity   Decimal      @db.Decimal(10, 3)
+  sourceType String?      @map("source_type")
+  sourceId   String?      @map("source_id") @db.Uuid
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([storeId, productId, createdAt])
+  @@map("stock_movements")
+}
+
+/// Projeção do saldo (cache do razão).
+model Inventory {
+  id        String   @id @default(uuid()) @db.Uuid
+  storeId   String   @map("store_id") @db.Uuid
+  productId String   @unique @map("product_id") @db.Uuid
+  onHand    Decimal  @map("on_hand") @db.Decimal(10, 3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([storeId])
+  @@map("inventory")
+}
+
+/// Documento de produção: consome 1 insumo, gera N saídas.
+model ProductionRecord {
+  id             String           @id @default(uuid()) @db.Uuid
+  storeId        String           @map("store_id") @db.Uuid
+  inputProductId String           @map("input_product_id") @db.Uuid
+  inputQty       Decimal          @map("input_qty") @db.Decimal(10, 3)
+  status         ProductionStatus @default(REGISTERED)
+  producedAt     DateTime         @map("produced_at") @db.Timestamptz(6)
+
+  inputProduct Product            @relation("ProductionInput", fields: [inputProductId], references: [id])
+  outputs      ProductionOutput[]
+
+  @@index([storeId, producedAt])
+  @@map("production_records")
+}
+
+model ProductionOutput {
+  id           String  @id @default(uuid()) @db.Uuid
+  productionId String  @map("production_id") @db.Uuid
+  productId    String  @map("product_id") @db.Uuid
+  quantity     Decimal @db.Decimal(10, 3)
+
+  production ProductionRecord @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  product    Product          @relation(fields: [productId], references: [id])
+
+  @@map("production_outputs")
+}
+
+/// Perda; só emite movimento após aprovação (Encarregado+). approved_by solto.
+model LossRecord {
+  id         String     @id @default(uuid()) @db.Uuid
+  storeId    String     @map("store_id") @db.Uuid
+  productId  String     @map("product_id") @db.Uuid
+  quantity   Decimal    @db.Decimal(10, 3)
+  reason     LossReason
+  approvedBy String?    @map("approved_by") @db.Uuid
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  product     Product      @relation(fields: [productId], references: [id])
+  attachments Attachment[]
+
+  @@index([storeId, createdAt])
+  @@map("loss_records")
+}

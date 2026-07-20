@@ -1,0 +1,33 @@
+// Sessões de operador (ADR-015/016/017). id = UUID gerado no cliente (definitivo).
+// Ator (actor_*) é coluna solta; membership é relação estrutural.
+
+model OperatorSession {
+  id                     String            @id @db.Uuid
+  storeId                String            @map("store_id") @db.Uuid
+  membershipId           String?           @map("membership_id") @db.Uuid
+  actorProfileId         String            @map("actor_profile_id") @db.Uuid
+  actorEmployeeId        String            @map("actor_employee_id") @db.Uuid
+  deviceId               String            @map("device_id")
+  openedAt               DateTime?         @map("opened_at") @db.Timestamptz(6)
+  closedAt               DateTime?         @map("closed_at") @db.Timestamptz(6)
+  clientOpenedAt         DateTime          @map("client_opened_at") @db.Timestamptz(6)
+  clientClosedAt         DateTime?         @map("client_closed_at") @db.Timestamptz(6)
+  serverReceivedAt       DateTime?         @map("server_received_at") @db.Timestamptz(6)
+  openedOffline          Boolean           @default(false) @map("opened_offline")
+  closedOffline          Boolean           @default(false) @map("closed_offline")
+  status                 SessionStatus     @default(ACTIVE)
+  endReason              SessionEndReason? @map("end_reason")
+  authorizationSnapshot  Json?             @map("authorization_snapshot") @db.JsonB
+  permissionModelVersion Int?              @map("permission_model_version")
+  configVersionRef       String?           @map("config_version_ref") @db.Uuid
+  idempotencyKey         String            @map("idempotency_key")
+  createdAt              DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  membership StoreMembership? @relation(fields: [membershipId], references: [id])
+  executions TaskExecution[]
+
+  @@unique([storeId, idempotencyKey])
+  @@index([storeId])
+  @@map("operator_sessions")
+}

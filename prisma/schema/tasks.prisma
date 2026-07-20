@@ -1,0 +1,104 @@
+// Execução operacional (Core) — cadeia TaskTemplate → DailyTask → TaskExecution.
+
+model TaskTemplate {
+  id               String        @id @default(uuid()) @db.Uuid
+  storeId          String        @map("store_id") @db.Uuid
+  title            String
+  frequency        TaskFrequency
+  targetPositionId String?       @map("target_position_id") @db.Uuid
+  requiresPhoto    Boolean       @default(false) @map("requires_photo")
+  expectedMin      Decimal?      @map("expected_min") @db.Decimal(6, 2)
+  expectedMax      Decimal?      @map("expected_max") @db.Decimal(6, 2)
+  active           Boolean       @default(true)
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  targetPosition OperationalPosition? @relation(fields: [targetPositionId], references: [id])
+  checklistItems ChecklistItem[]
+  dailyTasks     DailyTask[]
+
+  @@index([storeId])
+  @@map("task_templates")
+}
+
+model Checklist {
+  id      String @id @default(uuid()) @db.Uuid
+  storeId String @map("store_id") @db.Uuid
+  name    String
+
+  items ChecklistItem[]
+
+  @@index([storeId])
+  @@map("checklists")
+}
+
+/// Junção ordenada checklist ↔ template (reuso de definição).
+model ChecklistItem {
+  id          String @id @default(uuid()) @db.Uuid
+  checklistId String @map("checklist_id") @db.Uuid
+  templateId  String @map("template_id") @db.Uuid
+  sortOrder   Int    @map("sort_order")
+
+  checklist Checklist    @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  template  TaskTemplate @relation(fields: [templateId], references: [id])
+
+  @@unique([checklistId, templateId])
+  @@map("checklist_items")
+}
+
+/// Materialização do dia; congela snapshot da faixa esperada.
+model DailyTask {
+  id                  String          @id @default(uuid()) @db.Uuid
+  storeId             String          @map("store_id") @db.Uuid
+  templateId          String          @map("template_id") @db.Uuid
+  workDate            DateTime        @map("work_date") @db.Date
+  dueAt               DateTime        @map("due_at") @db.Timestamptz(6)
+  status              DailyTaskStatus @default(PENDING)
+  expectedMinSnapshot Decimal?        @map("expected_min_snapshot") @db.Decimal(6, 2)
+  expectedMaxSnapshot Decimal?        @map("expected_max_snapshot") @db.Decimal(6, 2)
+  configVersionRef    String?         @map("config_version_ref") @db.Uuid
+
+  template   TaskTemplate    @relation(fields: [templateId], references: [id])
+  executions TaskExecution[]
+
+  @@index([storeId, workDate, status])
+  @@map("daily_tasks")
+}
+
+/// Registro append-only do que foi feito; offline-first. id = UUID do cliente.
+/// performed_by / synced_by são colunas de autoria (ADR-014); FKs no Supabase.
+model TaskExecution {
+  id                    String          @id @db.Uuid
+  storeId               String          @map("store_id") @db.Uuid
+  dailyTaskId           String          @map("daily_task_id") @db.Uuid
+  operatorSessionId     String          @map("operator_session_id") @db.Uuid
+  executionSource       ExecutionSource @default(HUMAN) @map("execution_source")
+  performedByProfileId  String          @map("performed_by_profile_id") @db.Uuid
+  performedByEmployeeId String          @map("performed_by_employee_id") @db.Uuid
+  syncedByProfileId     String?         @map("synced_by_profile_id") @db.Uuid
+  syncedBySessionId     String?         @map("synced_by_session_id") @db.Uuid
+  deviceId              String          @map("device_id")
+  result                ExecutionResult
+  numericValue          Decimal?        @map("numeric_value") @db.Decimal(6, 2)
+  notes                 String?
+  eventTime             DateTime        @map("event_time") @db.Timestamptz(6)
+  clientTimestamp       DateTime        @map("client_timestamp") @db.Timestamptz(6)
+  serverTimestamp       DateTime        @default(now()) @map("server_timestamp") @db.Timestamptz(6)
+  resolvedShiftId       String?         @map("resolved_shift_id") @db.Uuid
+  syncStatus            SyncStatus      @default(PENDING) @map("sync_status")
+  reviewReason          ReviewReason?   @map("review_reason")
+  idempotencyKey        String          @map("idempotency_key")
+  schemaVersion         Int             @map("schema_version")
+  supersededById        String?         @map("superseded_by_id") @db.Uuid
+
+  dailyTask       DailyTask       @relation(fields: [dailyTaskId], references: [id])
+  operatorSession OperatorSession @relation(fields: [operatorSessionId], references: [id])
+  supersededBy    TaskExecution?  @relation("ExecutionSupersede", fields: [supersededById], references: [id])
+  supersedes      TaskExecution[] @relation("ExecutionSupersede")
+  temperatureLog  TemperatureLog?
+  cleaningLog     CleaningLog?
+  attachments     Attachment[]
+
+  @@unique([storeId, idempotencyKey])
+  @@index([storeId, eventTime])
+  @@map("task_executions")
+}

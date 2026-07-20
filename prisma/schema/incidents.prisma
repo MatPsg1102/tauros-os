@@ -1,0 +1,17 @@
+// Incidentes (Supporting) — problemas operacionais.
+
+model Incident {
+  id          String           @id @default(uuid()) @db.Uuid
+  storeId     String           @map("store_id") @db.Uuid
+  title       String
+  severity    IncidentSeverity
+  status      IncidentStatus   @default(OPEN)
+  equipmentId String?          @map("equipment_id") @db.Uuid
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  equipment   Equipment?   @relation(fields: [equipmentId], references: [id])
+  attachments Attachment[]
+
+  @@index([storeId, status])
+  @@map("incidents")
+}
