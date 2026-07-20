@@ -1,0 +1,17 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    "apps/web": {
+      "entry": ["next.config.mjs", "src/app/**/{page,layout,route}.tsx"],
+      "project": "src/**/*.{ts,tsx}"
+    },
+    "apps/storybook": {
+      "entry": [".storybook/{main,preview}.ts"],
+      "project": ".storybook/**/*.ts"
+    },
+    "packages/*": {
+      "entry": ["src/index.ts"],
+      "project": "src/**/*.{ts,tsx}"
+    }
+  }
+}

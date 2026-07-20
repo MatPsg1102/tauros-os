@@ -1,0 +1,9 @@
+#!/bin/sh
+# Conventional Commits.
+msg_file="$1"
+head1=$(head -n1 "$msg_file")
+pattern='^(feat|fix|chore|docs|refactor|test|build|ci|perf|style|revert)(\([a-z0-9-]+\))?!?: .+'
+echo "$head1" | grep -Eq "$pattern" && exit 0
+echo "[commit-msg] Fora do padrao Conventional Commits: \"$head1\""
+echo "  Ex.: feat(estoque): ... | fix(sync): ... | chore: ..."
+exit 1
