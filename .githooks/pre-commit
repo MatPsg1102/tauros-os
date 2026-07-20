@@ -1,0 +1,4 @@
+#!/bin/sh
+# Guard rápido — as checagens completas rodam no CI.
+echo "[pre-commit] format:check + boundaries"
+pnpm format:check && pnpm boundaries

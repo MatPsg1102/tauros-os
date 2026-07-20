@@ -1,0 +1,10 @@
+#!/bin/sh
+# Bloqueia push direto na branch protegida — use branch + PR.
+protected="main"
+while read local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = "refs/heads/$protected" ]; then
+    echo "[pre-push] Push direto para '$protected' bloqueado. Abra um branch + Pull Request."
+    exit 1
+  fi
+done
+exit 0
