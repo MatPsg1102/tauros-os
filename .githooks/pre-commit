@@ -1,4 +1,13 @@
 #!/bin/sh
 # Guard rápido — as checagens completas rodam no CI.
+
+# Bloqueio de segredos em arquivos staged (exceto o próprio diretório de hooks,
+# que contém os padrões de busca).
+if git diff --cached -U0 -- . ':!.githooks' | grep -E '^\+' | grep -qE 'postgresql://[^:]+:[^@\$\{<]{4,}@|eyJhbGciOi|sb_secret|service_role.{0,5}=.{20,}'; then
+  echo "[pre-commit] BLOQUEADO: possível segredo em arquivo staged (connection string/JWT)."
+  echo "  Segredos pertencem SOMENTE ao .env (ignorado pelo Git)."
+  exit 1
+fi
+
 echo "[pre-commit] format:check + boundaries"
 pnpm format:check && pnpm boundaries
