@@ -17,10 +17,12 @@
     "@tauros/application": "workspace:*",
     "@tauros/contracts": "workspace:*",
     "@tauros/domain": "workspace:*",
-    "idb": "^8.0.0"
+    "idb": "^8.0.0",
+    "@tauros/config-engine": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "@tauros/config": "workspace:*"
   }
 }

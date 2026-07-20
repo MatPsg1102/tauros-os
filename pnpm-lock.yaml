@@ -241,6 +241,9 @@ importers:
       '@tauros/application':
         specifier: workspace:*
         version: link:../application
+      '@tauros/config-engine':
+        specifier: workspace:*
+        version: link:../config-engine
       '@tauros/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -251,6 +254,9 @@ importers:
         specifier: ^8.0.0
         version: 8.0.3
     devDependencies:
+      '@tauros/config':
+        specifier: workspace:*
+        version: link:../config
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
