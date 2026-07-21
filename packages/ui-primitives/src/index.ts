@@ -211,3 +211,44 @@ export {
   type ContextMenuProps,
   type ContextMenuTriggerProps,
 } from './navigation/context-menu/context-menu.js';
+
+// ===== Layout Components (6.3.7) =====
+// Equivalências documentadas (não criados): PageContent = Page + Container;
+// DashboardGrid = ResponsiveGrid; MasterDetail = SplitView (alternância é da
+// aplicação); StackedLayout = Stack; ScrollArea = PanelBody/overflow por CSS;
+// Inset = Box padding; Cluster = Flex wrap.
+export {
+  AppShell,
+  type AppShellProps,
+  type AppShellSkipLink,
+} from './layouts/app-shell/app-shell.js';
+export {
+  Container,
+  type ContainerProps,
+  type ContainerSize,
+} from './layouts/container/container.js';
+export { Page, type PageProps } from './layouts/page/page.js';
+export { PageHeader, type PageHeaderProps } from './layouts/page-header/page-header.js';
+export {
+  Panel,
+  PanelBody,
+  PanelFooter,
+  PanelHeader,
+  type PanelBodyProps,
+  type PanelFooterProps,
+  type PanelHeaderProps,
+  type PanelProps,
+} from './layouts/panel/panel.js';
+export {
+  ResponsiveGrid,
+  type GridItemSize,
+  type ResponsiveGridProps,
+} from './layouts/responsive-grid/responsive-grid.js';
+export { Section, type SectionProps } from './layouts/section/section.js';
+export { MultipleMainLandmarksError } from './layouts/shared/landmark-context.js';
+export {
+  SplitView,
+  type SplitRatio,
+  type SplitViewProps,
+} from './layouts/split-view/split-view.js';
+export { StickyRegion, type StickyRegionProps } from './layouts/sticky-region/sticky-region.js';
