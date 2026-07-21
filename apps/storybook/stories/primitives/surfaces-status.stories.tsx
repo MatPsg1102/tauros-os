@@ -12,6 +12,7 @@ import {
   Chip,
   Divider,
   Flex,
+  Spacer,
   Grid,
   Heading,
   Stack,
@@ -97,12 +98,13 @@ export const Avatares: Story = {
 };
 
 export const Estruturais: Story = {
-  name: 'Box, Stack, Flex, Grid, Divider',
+  name: 'Box, Stack, Flex, Grid, Spacer, Divider',
   render: () => (
     <Stack gap={200}>
       <Box padding="md" style={{ background: 'var(--tauros-color-surface-sunken)' }}>
         Box com inset md
       </Box>
+      <Spacer size={300} />
       <Divider />
       <Flex justify="between">
         <Text>Distribuído</Text>

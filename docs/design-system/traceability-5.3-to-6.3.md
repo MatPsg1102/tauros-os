@@ -171,3 +171,72 @@ stories com as anotações reais (smoke render + play + axe por story).
 
 Achado corrigido pelo contrato executável: Button em loading perdia o nome
 acessível (visibility:hidden no conteúdo) — corrigido para opacity na folha.
+
+## Auditoria final (6.3.9) — classificação das pendências e congelamento
+
+### Pendências acumuladas — decisão formal
+
+| Pendência                               | Classificação                  | Justificativa                                                                                                                             |
+| --------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Token "measure" (20/24/30/40/65ch)      | adiada (candidata à próxima)   | Materializar exige grupo novo em ResolvedTheme (mudança estrutural em tokens congelados); valores permanecem centralizados na folha única |
+| letter-spacing de títulos de grupo      | adiada (candidata à próxima)   | Mesmo motivo; hoje usa token de espaço documentado                                                                                        |
+| Snackbar como configuração de Toast     | resolvida (aprovada 6.3.5)     | Uma fila, sem infraestrutura concorrente                                                                                                  |
+| Drawer/BottomSheet remanejados p/ 6.3.6 | resolvida                      | Implementados sobre a fundação de Dialog                                                                                                  |
+| TopBar ≠ NavigationBar                  | resolvida (documentada)        | App bar superior ≠ navegação inferior móvel (5.3)                                                                                         |
+| Componentes de layout não criados       | não necessária                 | Equivalências mecânicas registradas (PageContent, DashboardGrid, etc.)                                                                    |
+| MenuSub                                 | fora de escopo (catálogo)      | Extensão futura com contrato próprio                                                                                                      |
+| Breadcrumb collapse (via Menu)          | adiada                         | Caminho completo permanece acessível sem colapso                                                                                          |
+| BottomSheet drag                        | fora de escopo (não congelado) | Sem dependência de gesture                                                                                                                |
+| Long press (ContextMenu)                | fora de escopo (não congelado) | Clique secundário + Shift+F10 + tecla contextual cobrem o contrato                                                                        |
+| Toast visibilitychange                  | adiada                         | Não congelado; robustez opcional sem evidência de necessidade                                                                             |
+| inert em ancestrais                     | não necessária (documentada)   | Contenção de foco + aria-modal + backdrop cumprem o contrato; reavaliar com testes de leitor de tela reais                                |
+| maxColumns do ResponsiveGrid            | adiada                         | auto-fit puro não expressa cap sem hacks                                                                                                  |
+| SplitView resize                        | fora de escopo (não congelado) | Split estático responsivo é o contrato                                                                                                    |
+| Zoom 200/400% automatizado              | adiada (protocolo manual)      | Registrado abaixo; sem automação confiável local                                                                                          |
+
+Nenhuma pendência é bloqueante.
+
+### Allowlist do scanner — auditoria entrada a entrada
+
+| Entrada | Razão                                                  | Removível?                     |
+| ------- | ------------------------------------------------------ | ------------------------------ |
+| 1px     | Espessura de borda/divider (sem token de border-width) | Não (candidata a token futuro) |
+| 2px     | Focus ring congelado (alias 2px/2px) + glifos de check | Não                            |
+| -1px    | Técnica visually-hidden + ajuste de glifo              | Não                            |
+| 0s      | Parada de animação sob prefers-reduced-motion          | Não                            |
+| 0px     | Fallback estrutural de getComputedStyle (scroll lock)  | Não                            |
+
+Nenhuma entrada ampla; nenhuma ampliação na auditoria.
+
+### Correções da auditoria
+
+1. **box-sizing: border-box universal na folha oficial** — achado REAL de
+   navegador: Drawer (100% + inset) estourava a viewport em 48px sob
+   content-box. Verificado ao vivo antes (860>812) e depois (812=812).
+2. **Story de Spacer** — único componente sem story (lacuna de cobertura).
+3. **Segurança de devDependencies** — vitest 2→3.2.7 e vite ≥6.4.3 + override
+   de uuid: pnpm audit passou de 6 avisos (1 crítico, 1 alto — todos
+   dev-servers, produção limpa) para ZERO. Suíte completa verde após upgrade.
+4. Testes permanentes novos: inventário exato da API pública (88+10+2+7),
+   donos de safe-area por seletor, regressão do nome acessível em loading,
+   cobertura story-por-componente mecânica.
+
+### Protocolo de navegador real executado (Chromium via Storybook dev)
+
+Verificado por geometria (getBoundingClientRect/getComputedStyle):
+Button loading (nome/altura 64px/largura preservada) · modos combinados
+dark+industrial+glove (controlMin 64→72px real) · Tooltip flip no topo +
+aria-describedby + hover com atraso tokenizado · Popover na borda (viewport,
+foco entra/restaura, Escape) · ContextMenu na borda inferior (flip para cima,
+typeahead, nativo prevenido só na área) · Drawer direito (ancoragem, scroll
+lock liga/solta, altura exata pós-fix) · AppShell desktop 1280 e mobile 375
+(scroll único, sidebar↔navbar, alvos 64px, sem scroll horizontal).
+NÃO executado (protocolo manual registrado): zoom 200/400%, leitores de tela,
+dispositivo físico com notch — itens de verificação humana pré-produção.
+
+### Governança — estabilidade
+
+Famílias tokens/theme/primitives/forms/feedback/navigation/layouts/storybook:
+critérios de congelamento atendidos (API auditada por teste de inventário,
+a11y automatizada verde, SSR/hidratação testados, cobertura de stories
+mecânica, fronteiras mecânicas). Estabilidade: **stable (design-system-v1.0)**.

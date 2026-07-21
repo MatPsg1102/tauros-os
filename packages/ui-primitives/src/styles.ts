@@ -16,6 +16,11 @@ const bp = core.breakpoint;
 
 /** Folha de estilos oficial dos primitivos — determinística. */
 export const taurosUiStyles: string = `
+/* ===== modelo de caixa (auditoria 6.3.9) =====
+   border-box universal: dimensões percentuais + padding nunca transbordam
+   (achado real: Drawer 100% + inset estourava a viewport em content-box). */
+*, *::before, *::after { box-sizing: border-box; }
+
 /* ===== foco unificado (§17) — alias focusRing dos tokens ===== */
 .t-focusable:focus-visible {
   outline: 2px solid ${v('color-border-focus')};
