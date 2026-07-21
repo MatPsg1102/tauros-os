@@ -12,7 +12,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@tauros/tokens": "workspace:*"
+    "@tauros/tokens": "workspace:*",
+    "@floating-ui/dom": "^1.6.13"
   },
   "peerDependencies": {
     "react": ">=19",

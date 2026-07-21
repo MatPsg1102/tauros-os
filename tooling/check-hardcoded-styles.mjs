@@ -17,7 +17,8 @@ import { join, relative } from 'node:path';
 const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/(?=[A-Za-z]:)/, '');
 const TARGET = join(ROOT, 'packages', 'ui-primitives', 'src');
 
-const ALLOWED = new Set(['1px', '2px', '-1px', '0s']);
+//   - '0px'  → zero estrutural (fallback de getComputedStyle no scroll lock)
+const ALLOWED = new Set(['1px', '2px', '-1px', '0s', '0px']);
 
 const RULES = [
   { name: 'cor hex literal', re: /#[0-9a-fA-F]{3,8}\b/g },
