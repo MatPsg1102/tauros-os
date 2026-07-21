@@ -29,6 +29,35 @@ function tokenOffsetPx(reference: Element): number {
  * Posiciona `floating` relativo a `reference` com flip/shift de colisão e
  * atualização em scroll/resize. Retorna controlador com cleanup obrigatório.
  */
+/** Posiciona relativo a um PONTO (ContextMenu) — mesma estratégia/colisão. */
+export function positionOverlayAtPoint(
+  x: number,
+  y: number,
+  floating: HTMLElement,
+): PositionController {
+  const virtualReference = {
+    getBoundingClientRect: () => ({
+      x,
+      y,
+      top: y,
+      left: x,
+      bottom: y,
+      right: x,
+      width: 0,
+      height: 0,
+    }),
+  };
+  void computePosition(virtualReference, floating, {
+    placement: 'bottom-start',
+    middleware: [flip(), shift()],
+  }).then(({ x: fx, y: fy }) => {
+    if (!floating.isConnected) return;
+    floating.style.left = `${String(fx)}px`;
+    floating.style.top = `${String(fy)}px`;
+  });
+  return { destroy: () => undefined };
+}
+
 export function positionOverlay(
   reference: HTMLElement,
   floating: HTMLElement,

@@ -43,6 +43,11 @@ export interface DialogProps {
   readonly initialFocusRef?: { readonly current: HTMLElement | null };
   /** Rótulo do botão fechar; ausente ⇒ sem botão fechar embutido. */
   readonly closeLabel?: string;
+  /**
+   * Posição da superfície na camada (base de Drawer/BottomSheet — 6.3.6).
+   * 'center' (default) | 'left' | 'right' | 'bottom'.
+   */
+  readonly position?: 'center' | 'left' | 'right' | 'bottom';
   readonly className?: string;
   readonly children: ReactNode;
 }
@@ -58,6 +63,7 @@ export function Dialog({
   dismissable = true,
   initialFocusRef,
   closeLabel,
+  position = 'center',
   className,
   children,
 }: DialogProps): ReactNode {
@@ -125,6 +131,7 @@ export function Dialog({
       <div
         className={cx('t-dialog-layer', modal && 't-dialog-layer-modal')}
         data-modal={modal ? 'true' : undefined}
+        data-position={position}
         onClick={onBackdropClick}
       >
         <div

@@ -9,19 +9,19 @@ congelado foi omitido ou implementado duas vezes. Atualizada a cada subetapa.
 | ---------------- | ------------ | ----------------------------------------------------------------------------------------------------- |
 | Button           | 6.3.3        | Implementado (`@tauros/ui-primitives`)                                                                |
 | IconButton       | 6.3.3        | Implementado                                                                                          |
-| FAB              | 6.3.6        | Pendente (navegação/ação flutuante)                                                                   |
+| FAB              | 6.3.6        | Implementado (composição sobre Button)                                                                |
 | Input            | 6.3.4        | Implementado                                                                                          |
 | Select           | 6.3.4        | Implementado (nativo; variante composta = extensão futura explícita)                                  |
 | Checkbox         | 6.3.4        | Implementado                                                                                          |
 | Radio            | 6.3.4        | Implementado (+ RadioGroup)                                                                           |
 | Switch           | 6.3.4        | Implementado                                                                                          |
-| SegmentedControl | 6.3.6        | Pendente (padrão de navegação/filtro)                                                                 |
-| Tabs             | 6.3.6        | Pendente                                                                                              |
-| NavigationBar    | 6.3.6        | Pendente                                                                                              |
+| SegmentedControl | 6.3.6        | Implementado (radios nativos estilizados)                                                             |
+| Tabs             | 6.3.6        | Implementado (padrão ARIA completo)                                                                   |
+| NavigationBar    | 6.3.6        | Implementado (barra inferior móvel; compõe NavigationItem)                                            |
 | Card             | 6.3.3        | Implementado                                                                                          |
 | Dialog           | 6.3.5        | Implementado (fundação de overlays própria; Modal = variante modal)                                   |
-| Drawer           | 6.3.6/6.3.7  | Pendente (superfície de navegação/layout)                                                             |
-| BottomSheet      | 6.3.6/6.3.7  | Pendente (superfície de navegação/layout)                                                             |
+| Drawer           | 6.3.6        | Implementado (= Dialog lateral; fundação 6.3.5)                                                       |
+| BottomSheet      | 6.3.6        | Implementado (= Dialog bottom; sem gesto de arrastar — não congelado)                                 |
 | Badge            | 6.3.3        | Implementado                                                                                          |
 | Chip             | 6.3.3        | Implementado                                                                                          |
 | Avatar           | 6.3.3        | Implementado                                                                                          |
@@ -84,6 +84,20 @@ Fundação compartilhada (interna, não exportada): Portal, OverlayStack,
 FocusScope, ScrollLock, PositioningAdapter (@floating-ui/dom isolado) —
 usada por Dialog/Modal/ConfirmDialog/Tooltip/Popover.
 
+## Componentes 6.3.6 adicionais (estruturais autorizados na ordem da 6.3)
+
+| Componente      | Base                                                        | Status               |
+| --------------- | ----------------------------------------------------------- | -------------------- |
+| NavigationItem  | Unidade de navegação (Etapa 4 — telas/BottomNav)            | Implementado (6.3.6) |
+| NavigationGroup | Agrupamento (Progressive Disclosure, profundidade ≤ 2)      | Implementado (6.3.6) |
+| Sidebar         | Composição estrutural desktop (compõe NavigationItem)       | Implementado (6.3.6) |
+| TopBar          | App bar superior por slots (≠ NavigationBar 5.3)            | Implementado (6.3.6) |
+| Breadcrumb      | Trilha de localização (nav>ol, aria-current)                | Implementado (6.3.6) |
+| Stepper         | Etapas conhecidas (≠ Progress/Breadcrumb/Tabs)              | Implementado (6.3.6) |
+| Pagination      | Navegação paginada (links neutros OU callbacks)             | Implementado (6.3.6) |
+| Menu            | Padrão semântico de menu (fundação própria + overlay 6.3.5) | Implementado (6.3.6) |
+| ContextMenu     | Trigger contextual sobre a fundação de Menu                 | Implementado (6.3.6) |
+
 ## Pendências e dependências futuras registradas (não concluídas por consequência)
 
 - Select/MultiSelect compostos: extensão explícita futura — a existência de
@@ -94,6 +108,10 @@ usada por Dialog/Modal/ConfirmDialog/Tooltip/Popover.
 - Token de "measure" (largura máxima de leitura de Dialog/Popover/Toast):
   hoje medidas estruturais em ch (65ch/40ch); candidato a token futuro.
 - Atraso de exibição do LoadingState: não previsto; implementado sem timers.
+- Submenu (MenuSub): fora do catálogo congelado — extensão futura com contrato próprio.
+- Gesto de arrastar do BottomSheet: não congelado — sem dependência de gesture.
+- Colapso de itens intermediários do Breadcrumb (via Menu): registrado; caminho completo permanece acessível sem colapso.
+- Long press para ContextMenu em toque: não congelado.
 
 Regra de fechamento: ao final da 6.3, todo componente da 5.3 deve constar como
 Implementado em exatamente uma subetapa.
