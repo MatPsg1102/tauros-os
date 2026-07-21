@@ -149,3 +149,25 @@ hospedam componentes operacionais/infra via slots (regra layouts-organize-only).
 
 Regra de fechamento: ao final da 6.3, todo componente da 5.3 deve constar como
 Implementado em exatamente uma subetapa.
+
+## Cobertura de Storybook (6.3.8)
+
+Contrato executável em `apps/storybook` (Storybook 8.6, react-vite): stories
+consomem exclusivamente a API pública (regras depcruise storybook-no-backend e
+storybook-public-imports-only; `exports` do pacote bloqueia deep import).
+Toolbar de modos usa o ThemeProvider real (storage noop, sistema estático);
+folha oficial injetada explicitamente no preview. Teste vitest compõe TODAS as
+stories com as anotações reais (smoke render + play + axe por story).
+
+| Família    | Módulos de stories                            | Cobertura                                                      |
+| ---------- | --------------------------------------------- | -------------------------------------------------------------- |
+| Foundation | tokens, theme                                 | Rampas/tipos/espaço/z + amostra de runtime modes               |
+| Primitives | actions, typography, surfaces-status, loading | 19 componentes (estruturais demonstrados em composição)        |
+| Forms      | text-inputs, numeric, selection, datetime-pin | 14 componentes + Field (nativos preservados; PIN fictício)     |
+| Feedback   | messages, toast, overlays, tooltip-popover    | 13 componentes (colisão de bordas; falha segura do Confirm)    |
+| Navigation | items-structures, wayfinding, overlays        | 15 componentes (teclado via play; ContextMenu nas bordas)      |
+| Layouts    | appshell, structure                           | 9 componentes (scroll único, larguras, sticky, mestre–detalhe) |
+| Patterns   | patterns                                      | 6 composições demonstrativas sem domínio                       |
+
+Achado corrigido pelo contrato executável: Button em loading perdia o nome
+acessível (visibility:hidden no conteúdo) — corrigido para opacity na folha.

@@ -80,7 +80,7 @@ export const taurosUiStyles: string = `
 .t-btn[data-variant='danger'] { background: ${v('color-status-error-fg')}; color: ${v('color-text-on-accent')}; }
 .t-btn[data-variant='danger']:hover:not(:disabled) { background: ${v('color-status-critical-fg')}; }
 .t-btn:disabled { opacity: ${v('opacity-disabled')}; cursor: not-allowed; }
-.t-btn[data-loading='true'] .t-btn-content { visibility: hidden; }
+.t-btn[data-loading='true'] .t-btn-content { opacity: 0; }
 .t-btn[data-loading='true'] .t-btn-spinner { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 .t-iconbtn { min-width: ${v('size-control-min')}; padding-inline: 0; }
 

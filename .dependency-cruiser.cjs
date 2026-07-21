@@ -6,6 +6,22 @@
 module.exports = {
   forbidden: [
     {
+      name: 'storybook-no-backend',
+      comment: 'Storybook documenta o Design System; nunca importa backend/domínio (6.3.8 §26).',
+      severity: 'error',
+      from: { path: '^apps/storybook/' },
+      to: {
+        path: '^packages/(infrastructure|domain|application|config-engine|contracts)/|node_modules/(@supabase|@prisma|prisma)',
+      },
+    },
+    {
+      name: 'storybook-public-imports-only',
+      comment: 'Stories consomem apenas a API pública (index) dos pacotes do DS (6.3.8 §5).',
+      severity: 'error',
+      from: { path: '^apps/storybook/' },
+      to: { path: '^packages/(ui-[a-z-]+|theme|tokens)/src/(?!index.ts$).+' },
+    },
+    {
       name: 'ui-no-router',
       comment: 'Design System nunca acopla roteador (contrato neutro de links — 6.3.6 §1).',
       severity: 'error',
