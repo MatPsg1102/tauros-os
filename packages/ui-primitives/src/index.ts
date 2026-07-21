@@ -91,3 +91,41 @@ export {
   PinInput,
   type PinInputProps,
 } from './forms/pin-input/pin-input.js';
+
+// ===== Feedback Components (6.3.5) =====
+// Fundação de overlays (Portal, FocusScope, ScrollLock, OverlayStack,
+// PositioningAdapter) é INTERNA — sem export (6.3.5 §25).
+export { Alert, type AlertProps, type AlertStatus } from './feedback/alert/alert.js';
+export { Banner, type BannerProps, type BannerStatus } from './feedback/banner/banner.js';
+export {
+  ConfirmDialog,
+  type ConfirmDialogProps,
+} from './feedback/confirm-dialog/confirm-dialog.js';
+export {
+  Dialog,
+  DialogAccessibleNameError,
+  Modal,
+  type DialogProps,
+} from './feedback/dialog/dialog.js';
+export { EmptyState, type EmptyStateProps } from './feedback/empty-state/empty-state.js';
+export { ErrorState, type ErrorStateProps } from './feedback/error-state/error-state.js';
+export { LoadingState, type LoadingStateProps } from './feedback/loading-state/loading-state.js';
+export {
+  InvalidProgressRangeError,
+  Progress,
+  type ProgressProps,
+} from './feedback/progress/progress.js';
+export { Popover, type PopoverProps } from './feedback/popover/popover.js';
+export { Tooltip, type TooltipProps } from './feedback/tooltip/tooltip.js';
+export { TOAST_PARAMETERS, type ToastParameters } from './feedback/toast/toast-parameters.js';
+export {
+  ToastProvider,
+  ToastProviderMissingError,
+  useToast,
+  type ToastApi,
+  type ToastOptions,
+  type ToastPriority,
+  type ToastProviderProps,
+  type ToastRecord,
+} from './feedback/toast/toast-provider.js';
+export type { OverlayPlacement } from './feedback/overlay/positioning.js';

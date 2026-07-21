@@ -5,34 +5,34 @@ congelado foi omitido ou implementado duas vezes. Atualizada a cada subetapa.
 
 ## Primitivos do catálogo 5.3 (26)
 
-| Componente 5.3   | Subetapa 6.3 | Status                                                           |
-| ---------------- | ------------ | ---------------------------------------------------------------- |
-| Button           | 6.3.3        | Implementado (`@tauros/ui-primitives`)                           |
-| IconButton       | 6.3.3        | Implementado                                                     |
-| FAB              | 6.3.6        | Pendente (navegação/ação flutuante)                              |
-| Input            | 6.3.4        | Em implementação                                                 |
-| Select           | 6.3.4        | Em implementação                                                 |
-| Checkbox         | 6.3.4        | Em implementação                                                 |
-| Radio            | 6.3.4        | Em implementação                                                 |
-| Switch           | 6.3.4        | Em implementação                                                 |
-| SegmentedControl | 6.3.6        | Pendente (padrão de navegação/filtro)                            |
-| Tabs             | 6.3.6        | Pendente                                                         |
-| NavigationBar    | 6.3.6        | Pendente                                                         |
-| Card             | 6.3.3        | Implementado                                                     |
-| Dialog           | 6.3.5        | Pendente (feedback/overlay)                                      |
-| Drawer           | 6.3.5        | Pendente                                                         |
-| BottomSheet      | 6.3.5        | Pendente                                                         |
-| Badge            | 6.3.3        | Implementado                                                     |
-| Chip             | 6.3.3        | Implementado                                                     |
-| Avatar           | 6.3.3        | Implementado                                                     |
-| Tooltip          | 6.3.5        | Pendente (overlay)                                               |
-| Progress         | 6.3.5        | Pendente (Spinner 6.3.3 cobre a variante indeterminada circular) |
-| Skeleton         | 6.3.3        | Implementado                                                     |
-| Snackbar         | 6.3.5        | Pendente                                                         |
-| Toast            | 6.3.5        | Pendente                                                         |
-| EmptyState       | 6.3.5        | Pendente                                                         |
-| ErrorState       | 6.3.5        | Pendente                                                         |
-| LoadingState     | 6.3.5        | Pendente (compõe Spinner/Skeleton 6.3.3)                         |
+| Componente 5.3   | Subetapa 6.3 | Status                                                                                                |
+| ---------------- | ------------ | ----------------------------------------------------------------------------------------------------- |
+| Button           | 6.3.3        | Implementado (`@tauros/ui-primitives`)                                                                |
+| IconButton       | 6.3.3        | Implementado                                                                                          |
+| FAB              | 6.3.6        | Pendente (navegação/ação flutuante)                                                                   |
+| Input            | 6.3.4        | Implementado                                                                                          |
+| Select           | 6.3.4        | Implementado (nativo; variante composta = extensão futura explícita)                                  |
+| Checkbox         | 6.3.4        | Implementado                                                                                          |
+| Radio            | 6.3.4        | Implementado (+ RadioGroup)                                                                           |
+| Switch           | 6.3.4        | Implementado                                                                                          |
+| SegmentedControl | 6.3.6        | Pendente (padrão de navegação/filtro)                                                                 |
+| Tabs             | 6.3.6        | Pendente                                                                                              |
+| NavigationBar    | 6.3.6        | Pendente                                                                                              |
+| Card             | 6.3.3        | Implementado                                                                                          |
+| Dialog           | 6.3.5        | Implementado (fundação de overlays própria; Modal = variante modal)                                   |
+| Drawer           | 6.3.6/6.3.7  | Pendente (superfície de navegação/layout)                                                             |
+| BottomSheet      | 6.3.6/6.3.7  | Pendente (superfície de navegação/layout)                                                             |
+| Badge            | 6.3.3        | Implementado                                                                                          |
+| Chip             | 6.3.3        | Implementado                                                                                          |
+| Avatar           | 6.3.3        | Implementado                                                                                          |
+| Tooltip          | 6.3.5        | Implementado (posicionamento compartilhado com Popover)                                               |
+| Progress         | 6.3.5        | Implementado (linear det./indet.; circular indet. = Spinner 6.3.3; circular determinado não previsto) |
+| Skeleton         | 6.3.3        | Implementado                                                                                          |
+| Snackbar         | 6.3.5        | Implementado como Toast urgente/persistente (mesma fila — sem duplicação)                             |
+| Toast            | 6.3.5        | Implementado (ToastProvider + useToast)                                                               |
+| EmptyState       | 6.3.5        | Implementado (compõe Heading/Text)                                                                    |
+| ErrorState       | 6.3.5        | Implementado (compõe Heading/Text; conteúdo seguro por contrato)                                      |
+| LoadingState     | 6.3.5        | Implementado (compõe Spinner/Skeleton — sem duplicação)                                               |
 
 ## Primitivos estruturais/tipográficos autorizados na ordem da 6.3 (sem correspondente nomeado na 5.3)
 
@@ -69,6 +69,31 @@ congelado foi omitido ou implementado duas vezes. Atualizada a cada subetapa.
 | DatePicker       | Família Input (datas civis — vigência, validade, agenda)                  |
 | TimePicker       | Família Input (horários — turnos, agenda)                                 |
 | PinInput         | Sessões de operador com PIN (SAS/RA-QUEUE-01, ADR de sessão)              |
+
+## Componentes 6.3.5 adicionais (contratos da milestone 6.3)
+
+| Componente    | Base congelada                                                         | Status               |
+| ------------- | ---------------------------------------------------------------------- | -------------------- |
+| Alert         | Família feedback 5.3 (persistente no fluxo)                            | Implementado (6.3.5) |
+| Banner        | Família feedback 5.3 (comunicação global de alta visibilidade)         | Implementado (6.3.5) |
+| Modal         | Variante modal de Dialog (decisão formal — composição, sem duplicação) | Implementado (6.3.5) |
+| ConfirmDialog | Contrato especializado sobre Dialog (Confidence Before Speed)          | Implementado (6.3.5) |
+| Popover       | Overlay contextual não modal (base futura de padrões compostos)        | Implementado (6.3.5) |
+
+Fundação compartilhada (interna, não exportada): Portal, OverlayStack,
+FocusScope, ScrollLock, PositioningAdapter (@floating-ui/dom isolado) —
+usada por Dialog/Modal/ConfirmDialog/Tooltip/Popover.
+
+## Pendências e dependências futuras registradas (não concluídas por consequência)
+
+- Select/MultiSelect compostos: extensão explícita futura — a existência de
+  Popover NÃO os conclui nem autoriza conversão (decisão formal da 6.3.4).
+- Calendário visual de DatePicker/TimePicker: pendente; não incorporado na
+  6.3.5 por determinação expressa.
+- Progress circular determinado: não previsto no congelamento.
+- Token de "measure" (largura máxima de leitura de Dialog/Popover/Toast):
+  hoje medidas estruturais em ch (65ch/40ch); candidato a token futuro.
+- Atraso de exibição do LoadingState: não previsto; implementado sem timers.
 
 Regra de fechamento: ao final da 6.3, todo componente da 5.3 deve constar como
 Implementado em exatamente uma subetapa.
