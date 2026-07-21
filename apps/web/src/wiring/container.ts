@@ -3,10 +3,21 @@
 // Recuperação explícita: intenção durável (fila) sem registro local ⇒
 // reconcileFromQueue reconstrói o estado no boot (atomicidade §35).
 
-import { OpenOperatorSessionUseCase } from '@tauros/application';
+import {
+  CloseOperatorSessionUseCase,
+  LoadDailyTasksUseCase,
+  OpenOperatorSessionUseCase,
+  RecordTaskOutcomeUseCase,
+} from '@tauros/application';
 import { ConfigResolver } from '@tauros/config-engine';
-import type { EffectiveAuthorization, OperatorSessionRecord } from '@tauros/contracts';
-import { ENTITY_OPERATOR_SESSION } from '@tauros/contracts';
+import type {
+  CloseSessionQueuePayload,
+  EffectiveAuthorization,
+  OperatorSessionRecord,
+  TaskExecutionQueuePayload,
+  TaskTemplateSourcePort,
+} from '@tauros/contracts';
+import { ENTITY_OPERATOR_SESSION, ENTITY_TASK_EXECUTION } from '@tauros/contracts';
 import {
   AuditEventFactory,
   AuditingEventBridge,
@@ -31,14 +42,18 @@ import {
   type SyncTransportPort,
   type TechnicalEventPort,
 } from '@tauros/infrastructure';
+import type { SessionSyncStatus } from '@tauros/contracts';
 
 import {
   APP_STATE_SCHEMA,
   ConfigSessionPolicyAdapter,
+  LocalDailyTaskRepository,
   LocalOperatorSessionRepository,
   SessionAuditAdapter,
   SessionQueueAdapter,
+  TaskExecutionQueueAdapter,
 } from './adapters.js';
+import { FixtureTaskTemplateSource } from './fixtures.js';
 import { FakeSessionSyncTransport } from './transport-fake.js';
 
 export interface ContainerOptions {
@@ -49,6 +64,7 @@ export interface ContainerOptions {
   readonly transport?: SyncTransportPort;
   readonly deviceOnline?: () => boolean;
   readonly events?: TechnicalEventPort;
+  readonly templates?: TaskTemplateSourcePort;
 }
 
 export interface AppContainer {
@@ -59,8 +75,12 @@ export interface AppContainer {
   readonly queue: LocalQueueRepository;
   readonly transport: SyncTransportPort;
   readonly connectivity: ConnectivityPort;
+  readonly tasks: LocalDailyTaskRepository;
   readonly setAuthorization: (auth: EffectiveAuthorization | null) => void;
   readonly openSession: OpenOperatorSessionUseCase;
+  readonly closeSession: CloseOperatorSessionUseCase;
+  readonly loadDailyTasks: LoadDailyTasksUseCase;
+  readonly recordTaskOutcome: RecordTaskOutcomeUseCase;
   /** Drena a fila e reflete o desfecho no syncStatus do registro local. */
   readonly drainAndReflect: () => Promise<void>;
   /** Recuperação de boot: fila com intenção sem registro local ⇒ reconstrói. */
@@ -134,14 +154,39 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
   const queueAdapter = new SessionQueueAdapter(queue, authorization, deviceId, clock);
   const auditAdapter = new SessionAuditAdapter(factory, buffer);
   const policyAdapter = new ConfigSessionPolicyAdapter(config);
+  const ids = { uuid: (): string => crypto.randomUUID() };
 
   const openSession = new OpenOperatorSessionUseCase(
     { now: clock },
-    { uuid: () => crypto.randomUUID() },
+    ids,
     policyAdapter,
     sessions,
     queueAdapter,
     auditAdapter,
+  );
+
+  const closeSession = new CloseOperatorSessionUseCase(
+    { now: clock },
+    ids,
+    policyAdapter,
+    sessions,
+    queueAdapter,
+    auditAdapter,
+  );
+
+  // Quadro de tarefas do dia (7.2) — mesma infraestrutura congelada
+  const tasks = new LocalDailyTaskRepository(appStore);
+  const taskQueueAdapter = new TaskExecutionQueueAdapter(queue, authorization, deviceId, clock);
+  const loadDailyTasks = new LoadDailyTasksUseCase(
+    { now: clock },
+    options.templates ?? new FixtureTaskTemplateSource(),
+    tasks,
+  );
+  const recordTaskOutcome = new RecordTaskOutcomeUseCase(
+    { now: clock },
+    ids,
+    tasks,
+    taskQueueAdapter,
   );
 
   const queueItemForSession = async (sessionId: string): Promise<QueueItem | undefined> => {
@@ -151,40 +196,99 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     );
   };
 
+  /** Traduz o desfecho da fila para a linguagem de estado local. */
+  const syncStatusFor = (finalState: string): SessionSyncStatus | null => {
+    if (finalState === 'SYNCED') return 'synced';
+    if (finalState === 'CONFLICT') return 'conflict';
+    if (finalState === 'PERMANENT_FAILURE' || finalState === 'NEEDS_REVIEW') return 'failed';
+    return null;
+  };
+
   const drainAndReflect = async (): Promise<void> => {
     const report = await coordinator.drain();
     for (const result of report.processed) {
       const item = await queue.get(result.itemId);
-      const sessionId = item?.entityId;
-      if (sessionId === undefined || item?.entityType !== ENTITY_OPERATOR_SESSION) continue;
-      if (result.finalState === 'SYNCED') await sessions.updateSyncStatus(sessionId, 'synced');
-      else if (result.finalState === 'CONFLICT')
-        await sessions.updateSyncStatus(sessionId, 'conflict');
-      else if (result.finalState === 'PERMANENT_FAILURE' || result.finalState === 'NEEDS_REVIEW')
-        await sessions.updateSyncStatus(sessionId, 'failed');
+      if (item === undefined) continue;
+      const status = syncStatusFor(result.finalState);
+      if (status === null) continue;
+
+      if (item.entityType === ENTITY_OPERATOR_SESSION) {
+        // 'update' = fechamento; 'insert' = abertura (estados distintos)
+        if (item.operation === 'update') {
+          const current = await sessions.byId(item.entityId);
+          if (current !== null) {
+            await sessions.save({
+              ...current,
+              closeSyncStatus: status,
+              // confirmado pelo servidor: o turno passa a CLOSED_CONFIRMED
+              status: status === 'synced' ? 'CLOSED_CONFIRMED' : current.status,
+            });
+          }
+        } else {
+          await sessions.updateSyncStatus(item.entityId, status);
+        }
+        continue;
+      }
+
+      if (item.entityType === ENTITY_TASK_EXECUTION) {
+        await tasks.updateExecutionSyncStatus(item.entityId, status);
+        const payload = item.payload as TaskExecutionQueuePayload;
+        const task = await tasks.byId(payload.execution.dailyTaskId);
+        // conflito NUNCA apaga o desfecho local — só marca para revisão
+        if (task !== null) await tasks.save({ ...task, syncStatus: status });
+      }
     }
-    // itens SYNCED podem já ter sido limpos: reconcilia registros 'queued'
-    const pending = await queue.all();
-    const pendingIds = new Set(
-      pending
-        .filter((item) => item.entityType === ENTITY_OPERATOR_SESSION)
-        .map((item) => item.entityId),
-    );
-    // nada a fazer aqui além do reflexo acima; restauração completa no boot
-    void pendingIds;
   };
 
   const reconcileFromQueue = async (): Promise<void> => {
     const items = await queue.all();
     for (const item of items) {
-      if (item.entityType !== ENTITY_OPERATOR_SESSION) continue;
-      const payload = item.payload as { record?: OperatorSessionRecord };
-      const record = payload.record;
-      if (record === undefined) continue;
-      const existing = await sessions.byId(record.id);
-      if (existing === null) {
-        // intenção durável sem estado local (falha entre enqueue e save)
-        await sessions.save(record);
+      // 1) abertura enfileirada sem registro local (falha entre enqueue e save)
+      if (item.entityType === ENTITY_OPERATOR_SESSION && item.operation === 'insert') {
+        const payload = item.payload as { record?: OperatorSessionRecord };
+        const record = payload.record;
+        if (record === undefined) continue;
+        const existing = await sessions.byId(record.id);
+        if (existing === null) await sessions.save(record);
+        continue;
+      }
+
+      // 2) fechamento enfileirado que não chegou a marcar a sessão local
+      if (item.entityType === ENTITY_OPERATOR_SESSION && item.operation === 'update') {
+        const payload = item.payload as CloseSessionQueuePayload;
+        const existing = await sessions.byId(payload.sessionId);
+        if (existing !== null && existing.status === 'ACTIVE') {
+          await sessions.save({
+            ...existing,
+            status: 'CLOSED_LOCAL',
+            clientClosedAt: payload.clientClosedAt,
+            closedOffline: payload.closedOffline,
+            endReason: payload.endReason,
+            closeIdempotencyKey: item.idempotencyKey,
+            closeSyncStatus: 'queued',
+          });
+        }
+        continue;
+      }
+
+      // 3) execução enfileirada sem registro local (append-only reconstruído)
+      if (item.entityType === ENTITY_TASK_EXECUTION) {
+        const payload = item.payload as TaskExecutionQueuePayload;
+        const execution = payload.execution;
+        const known = await tasks.executionByIdempotencyKey(
+          execution.storeId,
+          execution.idempotencyKey,
+        );
+        if (known === null) await tasks.saveExecution(execution);
+        const task = await tasks.byId(execution.dailyTaskId);
+        if (task !== null && task.lastExecutionId === null) {
+          await tasks.save({
+            ...task,
+            status: execution.resultingStatus,
+            lastExecutionId: execution.id,
+            syncStatus: execution.syncStatus,
+          });
+        }
       }
     }
   };
@@ -197,10 +301,14 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     queue,
     transport,
     connectivity,
+    tasks,
     setAuthorization: (auth) => {
       currentAuth = auth;
     },
     openSession,
+    closeSession,
+    loadDailyTasks,
+    recordTaskOutcome,
     drainAndReflect,
     reconcileFromQueue,
     queueItemForSession,

@@ -8,6 +8,7 @@ import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'r
 import { ThemeProvider } from '@tauros/theme';
 import { injectUiStyles } from '@tauros/ui-primitives';
 
+import { OperatorSessionProvider } from '../controllers/operator-session-context.js';
 import { buildContainer, type AppContainer } from '../wiring/container.js';
 
 const ContainerContext = createContext<AppContainer | null>(null);
@@ -31,7 +32,9 @@ export function AppProviders({
   }, []);
   return (
     <ThemeProvider>
-      <ContainerContext.Provider value={value}>{children}</ContainerContext.Provider>
+      <ContainerContext.Provider value={value}>
+        <OperatorSessionProvider>{children}</OperatorSessionProvider>
+      </ContainerContext.Provider>
     </ThemeProvider>
   );
 }

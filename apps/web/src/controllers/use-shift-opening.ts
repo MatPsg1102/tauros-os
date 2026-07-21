@@ -16,6 +16,7 @@ import {
   identifyOperator,
   type FixtureOperator,
 } from '../wiring/fixtures.js';
+import { useOperatorSession } from './operator-session-context.js';
 
 export type ShiftOpeningPhase =
   | 'bootstrapping'
@@ -73,6 +74,7 @@ function toAuthorization(
 }
 
 export function useShiftOpening(container: AppContainer): [ShiftOpeningView, ShiftOpeningActions] {
+  const identity = useOperatorSession();
   const [phase, setPhase] = useState<ShiftOpeningPhase>('bootstrapping');
   const [operator, setOperator] = useState<FixtureOperator | null>(null);
   const [session, setSession] = useState<OperatorSessionRecord | null>(null);
@@ -133,6 +135,18 @@ export function useShiftOpening(container: AppContainer): [ShiftOpeningView, Shi
       authRef.current = authorization;
       container.setAuthorization(authorization);
       setOperator(identified.operator);
+      // publica no contexto de cliente: o quadro de tarefas usa a MESMA
+      // identificação, sem reidentificar ao navegar entre rotas
+      identity.identify(
+        {
+          employeeId: identified.operator.employeeId,
+          profileId: identified.operator.profileId,
+          membershipId: identified.operator.membershipId,
+          name: identified.operator.name,
+          permissions: identified.operator.permissions,
+        },
+        authorization,
+      );
 
       const active = await refreshSession(identified.operator.employeeId);
       if (active !== null) {
@@ -145,7 +159,7 @@ export function useShiftOpening(container: AppContainer): [ShiftOpeningView, Shi
       }
       setPhase('ready');
     },
-    [container, refreshConnectivity, refreshSession],
+    [container, identity, refreshConnectivity, refreshSession],
   );
 
   const openShift = useCallback(async () => {
@@ -218,8 +232,9 @@ export function useShiftOpening(container: AppContainer): [ShiftOpeningView, Shi
     setActionError(null);
     authRef.current = null;
     container.setAuthorization(null);
+    identity.clear();
     setPhase('identify');
-  }, [container]);
+  }, [container, identity]);
 
   const view: ShiftOpeningView = {
     phase,
