@@ -240,3 +240,30 @@ Famílias tokens/theme/primitives/forms/feedback/navigation/layouts/storybook:
 critérios de congelamento atendidos (API auditada por teste de inventário,
 a11y automatizada verde, SSR/hidratação testados, cobertura de stories
 mecânica, fronteiras mecânicas). Estabilidade: **stable (design-system-v1.0)**.
+
+## Etapa 7.1 — Vertical Slice: Abertura de Turno (fundação funcional)
+
+Reconciliação: "Abertura de Turno" = abertura de **OperatorSession** (modelo
+congelado operator_sessions; ShiftOccurrence é a escala). Framework: Next 15
+App Router em apps/web (scaffold oficial). Capability oficial única:
+`session.open` (constante em @tauros/contracts + migration aditiva
+20260721160000 — aplicação junto do deploy do backend real).
+
+| Camada       | Entrega                                                                                                              |
+| ------------ | -------------------------------------------------------------------------------------------------------------------- |
+| domain       | decideOpenSession puro (invariante 1 ACTIVE por loja+funcionário; idempotência por chave; data operacional canônica) |
+| contracts    | ports (clock/id/policy/repo/queue/audit), record serializável, capability                                            |
+| application  | OpenOperatorSessionUseCase (ADR-018 revalida; ADR-019 via port; enqueue→save→audit com recuperação)                  |
+| wiring (web) | adapters sobre a infra congelada; DB local próprio tauros-app-state v1; transporte fake contratual                   |
+| UI (web)     | /turno com AppShell/PageHeader/PinInput/estados operacionais; view model único                                       |
+
+Decisão ADR-020 registrada: confirmação simples ⇒ composição React explícita
+(sem UI Metadata Engine neste slice — sem campos parametrizáveis).
+
+Regras mecânicas novas: web-ui-no-infrastructure (UI só fala com contratos;
+wiring é o composition root) e core-no-react (domain/application/contracts
+nunca importam React/Next).
+
+Pendências 7.1: backend/transport real (Edge Function) substituindo o fake;
+aplicação do seed session.open no banco; identidade real (fixtures dev
+bloqueadas em produção); fechamento de turno (próximo slice).

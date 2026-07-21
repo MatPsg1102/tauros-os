@@ -6,6 +6,20 @@
 module.exports = {
   forbidden: [
     {
+      name: 'web-ui-no-infrastructure',
+      comment: 'UI do app fala com contratos de aplicação; só o wiring monta adapters (7.1 §42).',
+      severity: 'error',
+      from: { path: '^apps/web/src/(app|ui|controllers|navigation)/' },
+      to: { path: '^packages/(infrastructure|config-engine)/' },
+    },
+    {
+      name: 'core-no-react',
+      comment: 'Domínio/aplicação nunca importam React/Next/browser frameworks (7.1 §42).',
+      severity: 'error',
+      from: { path: '^packages/(domain|application|contracts)/' },
+      to: { path: '^(react|react-dom|next)($|/)|node_modules/(react|react-dom|next)/' },
+    },
+    {
       name: 'storybook-no-backend',
       comment: 'Storybook documenta o Design System; nunca importa backend/domínio (6.3.8 §26).',
       severity: 'error',
