@@ -98,6 +98,33 @@ usada por Dialog/Modal/ConfirmDialog/Tooltip/Popover.
 | Menu            | Padrão semântico de menu (fundação própria + overlay 6.3.5) | Implementado (6.3.6) |
 | ContextMenu     | Trigger contextual sobre a fundação de Menu                 | Implementado (6.3.6) |
 
+## Layout Components (6.3.7) — reconciliação formal do catálogo
+
+| Candidato      | Decisão           | Justificativa                                                         |
+| -------------- | ----------------- | --------------------------------------------------------------------- |
+| AppShell       | Implementado      | Estrutura por slots; 1 região de scroll; safe areas; skip link        |
+| Page           | Implementado      | Landmark main/section/div + guarda MultipleMainLandmarksError         |
+| PageHeader     | Implementado      | Contexto de página (≠ TopBar); slots; heading configurável            |
+| PageContent    | NÃO criado        | Atendido por Page (fluxo) + Container (largura) — sem resp. própria   |
+| Container      | Implementado      | narrow=65ch (leitura), standard/wide = breakpoint tokens, full        |
+| Section        | Implementado      | Região temática nomeada (aria-labelledby) ≠ Panel (superfície)        |
+| Panel(+H/B/F)  | Implementado      | Contrato operacional: corpo rolável independente, fill — ≠ Card       |
+| ResponsiveGrid | Implementado      | auto-fit por medida mínima (CSS puro) — ≠ Grid (colunas explícitas)   |
+| DashboardGrid  | NÃO criado        | Layout System não define widgets/spans — atendido por ResponsiveGrid  |
+| SplitView      | Implementado      | Split estático responsivo; sem resize (não congelado)                 |
+| MasterDetail   | NÃO criado        | = SplitView; alternância lista/detalhe pertence à aplicação/rota      |
+| StackedLayout  | NÃO criado        | = Stack (primitive 6.3.3)                                             |
+| StickyRegion   | Implementado      | Sticky tokenizado (z-sticky), safe area bottom, contrato de ancestral |
+| ScrollArea     | NÃO criado        | = overflow por CSS/PanelBody; sem scrollbar customizada               |
+| Inset          | NÃO criado        | = Box padding (primitive 6.3.3)                                       |
+| Cluster        | NÃO criado        | = Flex wrap (primitive 6.3.3)                                         |
+| SkipLink       | Parte do AppShell | Necessário com navegação antes do main; âncora pura, sem roteador     |
+
+Divergência registrada: família implementada em `ui-primitives/src/layouts/`
+(folha única + precedente aprovado 6.3.4–6.3.6); o pacote `@tauros/ui-layouts`
+permanece scaffold reservado para composições de nível de aplicação que
+hospedam componentes operacionais/infra via slots (regra layouts-organize-only).
+
 ## Pendências e dependências futuras registradas (não concluídas por consequência)
 
 - Select/MultiSelect compostos: extensão explícita futura — a existência de
@@ -112,6 +139,13 @@ usada por Dialog/Modal/ConfirmDialog/Tooltip/Popover.
 - Gesto de arrastar do BottomSheet: não congelado — sem dependência de gesture.
 - Colapso de itens intermediários do Breadcrumb (via Menu): registrado; caminho completo permanece acessível sem colapso.
 - Long press para ContextMenu em toque: não congelado.
+- Token de "measure" (formalizado na 6.3.7): narrow/standard/wide do Container
+  usam 65ch + breakpoint tokens; medidas de item do ResponsiveGrid (20/30/40ch)
+  e larguras de Sidebar/Drawer/Menu (24–40ch) na mesma família — proposta de
+  token semântico preparada para a auditoria final (6.3.9), sem alterar tokens
+  congelados agora.
+- maxColumns do ResponsiveGrid: fora do contrato (auto-fit puro não expressa
+  cap sem hacks) — extensão futura se o Layout System exigir.
 
 Regra de fechamento: ao final da 6.3, todo componente da 5.3 deve constar como
 Implementado em exatamente uma subetapa.
