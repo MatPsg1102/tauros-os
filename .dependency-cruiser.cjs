@@ -6,6 +6,15 @@
 module.exports = {
   forbidden: [
     {
+      name: 'ui-no-router',
+      comment: 'Design System nunca acopla roteador (contrato neutro de links — 6.3.6 §1).',
+      severity: 'error',
+      from: { path: '^packages/ui-' },
+      to: {
+        path: '^(react-router|react-router-dom|next/router|next/navigation|@tanstack/react-router)|node_modules/(react-router|@remix-run|@tanstack/react-router|next/(dist/)?client/(components/)?(navigation|router))',
+      },
+    },
+    {
       name: 'ui-no-external-backend',
       comment: 'Pacotes de UI nunca importam Prisma/Supabase (backend fica atrás de ports).',
       severity: 'error',

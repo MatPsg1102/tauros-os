@@ -129,3 +129,85 @@ export {
   type ToastRecord,
 } from './feedback/toast/toast-provider.js';
 export type { OverlayPlacement } from './feedback/overlay/positioning.js';
+
+// ===== Navigation Components (6.3.6) =====
+// Contrato neutro de links; roving focus/typeahead/stack são INTERNOS.
+export type { NavigationLinkAdapter } from './navigation/shared/link.js';
+export {
+  NavigationItem,
+  type NavigationItemProps,
+} from './navigation/navigation-item/navigation-item.js';
+export {
+  NavigationDepthExceededError,
+  NavigationGroup,
+  type NavigationGroupProps,
+} from './navigation/navigation-group/navigation-group.js';
+export { Sidebar, type SidebarProps } from './navigation/sidebar/sidebar.js';
+export { TopBar, type TopBarProps } from './navigation/topbar/topbar.js';
+export {
+  NavigationBar,
+  type NavigationBarProps,
+} from './navigation/navigation-bar/navigation-bar.js';
+export { Fab, type FabProps } from './navigation/fab/fab.js';
+export {
+  SegmentedControl,
+  type SegmentedControlOption,
+  type SegmentedControlProps,
+} from './navigation/segmented-control/segmented-control.js';
+export {
+  Breadcrumb,
+  type BreadcrumbItem,
+  type BreadcrumbProps,
+} from './navigation/breadcrumb/breadcrumb.js';
+export {
+  Tab,
+  TabList,
+  TabPanel,
+  Tabs,
+  TabsContextMissingError,
+  type TabListProps,
+  type TabPanelProps,
+  type TabProps,
+  type TabsProps,
+} from './navigation/tabs/tabs.js';
+export {
+  Stepper,
+  type StepDefinition,
+  type StepperProps,
+  type StepStatus,
+} from './navigation/stepper/stepper.js';
+export {
+  Pagination,
+  type PaginationLabels,
+  type PaginationProps,
+} from './navigation/pagination/pagination.js';
+export { Drawer, type DrawerProps } from './navigation/drawer/drawer.js';
+export { BottomSheet, type BottomSheetProps } from './navigation/bottom-sheet/bottom-sheet.js';
+export {
+  Menu,
+  MenuCheckboxItem,
+  MenuContextMissingError,
+  MenuContent,
+  MenuItem,
+  MenuLabel,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuSeparator,
+  MenuTrigger,
+  type MenuCheckboxItemProps,
+  type MenuContentProps,
+  type MenuLabelProps,
+  type MenuProps,
+  type MenuRadioGroupProps,
+  type MenuRadioItemProps,
+  type MenuTriggerProps,
+} from './navigation/menu/menu.js';
+export {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+  type ContextMenuProps,
+  type ContextMenuTriggerProps,
+} from './navigation/context-menu/context-menu.js';
