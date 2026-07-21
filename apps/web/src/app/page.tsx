@@ -1,3 +1,5 @@
-export default function Page() {
-  return <main>Tauros OS — scaffold (Etapa 6.1). Sem telas ainda.</main>;
+import { redirect } from 'next/navigation';
+
+export default function Home(): never {
+  redirect('/turno');
 }

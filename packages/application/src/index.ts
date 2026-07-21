@@ -1,3 +1,10 @@
-// @tauros/application
-// Scaffold (Etapa 6.1) — sem regra de negócio ainda.
-export {};
+// @tauros/application — casos de uso (7.1+).
+export {
+  OpenOperatorSessionUseCase,
+  operationalDateFor,
+} from './operator-session/open-operator-session.js';
+export type {
+  OpenOperatorSessionFailureCode,
+  OpenOperatorSessionInput,
+  OpenOperatorSessionResult,
+} from './operator-session/open-operator-session.js';
