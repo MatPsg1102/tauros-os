@@ -267,3 +267,64 @@ nunca importam React/Next).
 Pendências 7.1: backend/transport real (Edge Function) substituindo o fake;
 aplicação do seed session.open no banco; identidade real (fixtures dev
 bloqueadas em produção); fechamento de turno (próximo slice).
+
+## Etapa 7.2 — Fechamento de Turno + Quadro de Tarefas do Dia
+
+Reconciliação: o schema congelado JÁ expressa o fechamento (`closed_at`,
+`client_closed_at`, `closed_offline`, `session_status`, `session_end_reason`) —
+nenhuma migration estrutural foi necessária. Tarefas usam a cadeia oficial
+`task_templates → daily_tasks → task_executions`.
+
+**Divergência resolvida com decisão do responsável:** o escopo pedia "iniciar
+tarefa" e "tarefa bloqueada", que NÃO existem no modelo congelado
+(`daily_task_status` = PENDING|DONE|OVERDUE|SKIPPED; execução é append-only).
+Decisão: **ficar no modelo oficial** — sem estado intermediário, sem BLOCKED,
+sem ADR de ampliação. "Adiar" usa SKIPPED; OVERDUE é derivado de `due_at`.
+
+| Camada       | Entrega                                                                                                                     |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| contracts    | `CAPABILITY_SESSION_CLOSE`; `LocalSyncStatus` único; registro de sessão ampliado (fechamento); `daily-task/` (record+ports) |
+| domain       | `decideCloseSession` (só ACTIVE fecha; replay idempotente) e `decideTaskOutcome` + `isOverdue` (transições oficiais)        |
+| application  | `CloseOperatorSessionUseCase`, `LoadDailyTasksUseCase` (materialização idempotente), `RecordTaskOutcomeUseCase`             |
+| wiring (web) | app-state v1→v2 ADITIVO; `LocalDailyTaskRepository` (append-only); enfileiramento de fechamento e execução com DAG          |
+| UI (web)     | `/turno` com fechamento por ConfirmDialog + acesso ao quadro; `/turno/tarefas` (novo) com estados explícitos                |
+| view models  | `useShiftClosing`, `useDailyTasks`; operador ativo elevado a contexto de cliente (ADR-018A §4)                              |
+
+Chaves de idempotência determinísticas (sem timestamp):
+`session-close:{store}:{session}:{device}` e
+`task-complete|task-skip:{store}:{dailyTask}:{operator}`.
+
+Configuração: o catálogo congelado NÃO possui chaves de tarefa. A política de
+tarefa vem das colunas oficiais (`requires_photo`, `expected_min/max`,
+`due_at`); o fechamento usa `session.absoluteMaxMs` e `session.reauthOnAbsolute`.
+Nenhuma chave nova foi criada.
+
+Auditoria: fechamento usa o tipo oficial `auth.session.ended` (negação =
+`access.denied`); execuções de tarefa são auditadas pelo outbox durável via
+ponte da fila (`offline.operation.*`) — nenhum tipo de evento inventado.
+PIN, evidência e segredos nunca entram no registro.
+
+Migrations/seeds: `20260721170000_seed_session_close_permission.sql` (aditiva,
+idempotente, forward-only). Não aplicada em banco remoto nesta etapa; entra no
+MESMO plano de deploy do seed pendente de `session.open` (20260721160000).
+
+Testes: 36 de domínio, 37 de aplicação, 10 verticais (fechamento offline→fila→
+reload→reconexão→synced; conflitos que preservam o local; replay sem
+duplicação; DAG), 1 de upgrade do banco local em IndexedDB real
+(fake-indexeddb) e 15 de UI (fechamento, quadro, offline, conflito, permissão
+negada, axe). Achados REAIS corrigidos pelos testes: (1) a aplicação alimentava
+o domínio com `workDate` vazio quando a tarefa não existia, mascarando
+TASK_NOT_FOUND; (2) o `onOpenChange` do ConfirmDialog apagava a fase de
+"fechado" ao emitir o fechamento do diálogo após a confirmação.
+
+Pendências 7.2 (registradas, não bloqueantes):
+
+- Reconciliação do id local de `daily_tasks` com o id gerado no servidor —
+  hoje a materialização é local e determinística.
+- Evidência: `hasEvidence` é projeção local; a linha em `attachments` e o
+  upload do binário chegam com o backend real.
+- Fechamento automático por `session.absoluteMaxMs`/EXPIRED: a política é
+  resolvida e carregada, mas o disparo automático não é deste slice.
+- `resolvedShiftId` (ShiftOccurrence) não é preenchido pelo cliente — projeção
+  do servidor.
+- Transporte real (Edge Function) e identidade real seguem pendentes da 7.1.

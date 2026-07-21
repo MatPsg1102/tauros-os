@@ -15,6 +15,7 @@ import {
   Banner,
   Button,
   Card,
+  ConfirmDialog,
   ErrorState,
   Field,
   LoadingState,
@@ -25,8 +26,10 @@ import {
   Select,
   Stack,
   Text,
+  type NavigationLinkAdapter,
 } from '@tauros/ui-primitives';
 
+import type { ShiftClosingActions, ShiftClosingView } from '../controllers/use-shift-closing.js';
 import type { ShiftOpeningActions, ShiftOpeningView } from '../controllers/use-shift-opening.js';
 
 function syncBadge(view: ShiftOpeningView): ReactElement {
@@ -89,12 +92,114 @@ function IdentifyStep({
   );
 }
 
+/** Turno aberto: acesso ao quadro do dia + fechamento (7.2). */
+function ActiveShiftActions({
+  closing,
+  closingActions,
+  tasksLink,
+}: {
+  readonly closing: ShiftClosingView;
+  readonly closingActions: ShiftClosingActions;
+  readonly tasksLink: NavigationLinkAdapter;
+}): ReactElement {
+  return (
+    <Stack gap={200}>
+      <Button
+        fullWidth
+        variant="secondary"
+        onClick={() => {
+          tasksLink.navigate?.();
+        }}
+      >
+        Ver tarefas de hoje
+      </Button>
+
+      {closing.canCloseShift ? (
+        <Button
+          fullWidth
+          variant="secondary"
+          disabled={closing.phase === 'submitting'}
+          onClick={closingActions.requestClose}
+        >
+          Fechar turno
+        </Button>
+      ) : (
+        <Alert status="warning" title="Sem permissão para fechar turno">
+          Seu perfil não permite fechar o turno nesta loja. Procure o responsável pela unidade.
+        </Alert>
+      )}
+
+      <ConfirmDialog
+        open={closing.phase === 'confirming'}
+        onOpenChange={(open) => {
+          if (!open) closingActions.cancelClose();
+        }}
+        title="Fechar o turno agora?"
+        description="Depois de fechado, este turno não recebe novos registros de tarefa neste aparelho."
+        confirmLabel="Fechar turno"
+        cancelLabel="Continuar no turno"
+        onConfirm={() => closingActions.confirmClose()}
+      />
+    </Stack>
+  );
+}
+
+/** Estado do fechamento em linguagem operacional (local × servidor). */
+function ClosedShiftSection({
+  closing,
+  closingActions,
+}: {
+  readonly closing: ShiftClosingView;
+  readonly closingActions: ShiftClosingActions;
+}): ReactElement {
+  const status = closing.session?.closeSyncStatus;
+  return (
+    <Section
+      title="Turno fechado"
+      actions={
+        status === 'synced' ? (
+          <Badge status="success">Confirmado pelo servidor</Badge>
+        ) : status === 'conflict' ? (
+          <Badge status="critical">Precisa de revisão</Badge>
+        ) : (
+          <Badge status="info">Aguardando conexão</Badge>
+        )
+      }
+    >
+      <Card>
+        <Stack gap={100}>
+          <div role="status">
+            <Text>Turno encerrado. Nada foi perdido.</Text>
+          </div>
+          {status === 'queued' && (
+            <>
+              <Text tone="secondary">
+                Salvo neste aparelho. O fechamento será enviado assim que houver conexão.
+              </Text>
+              <Button variant="secondary" onClick={() => void closingActions.retrySync()}>
+                Tentar sincronizar agora
+              </Button>
+            </>
+          )}
+          {status === 'synced' && <Text tone="secondary">Confirmado pelo servidor.</Text>}
+        </Stack>
+      </Card>
+    </Section>
+  );
+}
+
 export function ShiftOpeningScreen({
   view,
   actions,
+  closing,
+  closingActions,
+  tasksLink,
 }: {
   readonly view: ShiftOpeningView;
   readonly actions: ShiftOpeningActions;
+  readonly closing: ShiftClosingView;
+  readonly closingActions: ShiftClosingActions;
+  readonly tasksLink: NavigationLinkAdapter;
 }): ReactElement {
   return (
     <Page id="conteudo">
@@ -171,9 +276,45 @@ export function ShiftOpeningScreen({
               {view.session.syncStatus === 'synced' && (
                 <Text tone="secondary">Confirmado pelo servidor.</Text>
               )}
+              <ActiveShiftActions
+                closing={closing}
+                closingActions={closingActions}
+                tasksLink={tasksLink}
+              />
             </Stack>
           </Card>
         </Section>
+      )}
+
+      {view.phase === 'opened' && closing.phase === 'submitting' && (
+        <LoadingState label="Fechando o turno" />
+      )}
+
+      {view.phase === 'opened' && (closing.phase === 'closed' || closing.phase === 'conflict') && (
+        <ClosedShiftSection closing={closing} closingActions={closingActions} />
+      )}
+
+      {closing.phase === 'conflict' && (
+        <Alert status="error" title="Turno já fechado em outro aparelho">
+          Este turno foi fechado em outro dispositivo. O registro deste aparelho foi preservado para
+          revisão do responsável — nada foi perdido nem duplicado.
+        </Alert>
+      )}
+
+      {closing.phase === 'config-error' && (
+        <ErrorState
+          title="Configuração indisponível"
+          description="Não foi possível carregar as configurações da loja para fechar o turno."
+          retryAction={
+            <Button onClick={() => void closingActions.confirmClose()}>Tentar novamente</Button>
+          }
+        />
+      )}
+
+      {closing.actionError !== null && (
+        <Alert status="warning" live="polite" title="Não foi possível fechar o turno">
+          {closing.actionError}
+        </Alert>
       )}
 
       {view.phase === 'denied' && (

@@ -6,5 +6,8 @@
 
 export const CAPABILITY_SESSION_OPEN = 'session.open' as const;
 
+/** Capacidade oficial de fechamento (7.2) — string única em todo o sistema. */
+export const CAPABILITY_SESSION_CLOSE = 'session.close' as const;
+
 /** Versão vigente do modelo de permissões (ADR-018 §versionamento). */
 export const PERMISSION_MODEL_VERSION = 1 as const;

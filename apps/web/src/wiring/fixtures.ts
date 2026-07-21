@@ -44,7 +44,10 @@ export const FIXTURE_STORE: FixtureStore = {
   timeZone: 'America/Sao_Paulo',
 };
 
-/** Dois operadores: um COM e um SEM a capability (cenário negado real). */
+/**
+ * Três operadores cobrindo os cenários reais de autorização (7.2):
+ * completo, sem abertura e COM abertura mas SEM fechamento.
+ */
 export const FIXTURE_OPERATORS: readonly FixtureOperator[] = [
   {
     employeeId: 'emp-0001',
@@ -52,7 +55,7 @@ export const FIXTURE_OPERATORS: readonly FixtureOperator[] = [
     membershipId: 'memb-0001',
     name: 'Marina Álvares',
     pin: '2468',
-    permissions: ['session.open', 'audit.read'],
+    permissions: ['session.open', 'session.close', 'audit.read'],
   },
   {
     employeeId: 'emp-0002',
@@ -62,7 +65,74 @@ export const FIXTURE_OPERATORS: readonly FixtureOperator[] = [
     pin: '1357',
     permissions: ['audit.read'],
   },
+  {
+    employeeId: 'emp-0003',
+    profileId: 'prof-0003',
+    membershipId: 'memb-0003',
+    name: 'Rita Belmonte',
+    pin: '9753',
+    permissions: ['session.open', 'audit.read'],
+  },
 ];
+
+/**
+ * Definições de tarefa da loja (task_templates vigentes). Fixture porque o
+ * cadastro real chega com o backend; a FORMA é a congelada, incluindo
+ * requires_photo e a faixa esperada que decide PASS/FAIL.
+ */
+export const FIXTURE_TASK_TEMPLATES: readonly FixtureTaskTemplate[] = [
+  {
+    templateId: 'tpl-camara-fria',
+    title: 'Registrar temperatura da câmara fria',
+    frequency: 'DAILY',
+    requiresPhoto: false,
+    expectedMin: -2,
+    expectedMax: 4,
+    targetPositionId: null,
+    dueOffsetMinutes: 90,
+  },
+  {
+    templateId: 'tpl-bancada',
+    title: 'Higienizar bancada de manipulação',
+    frequency: 'DAILY',
+    requiresPhoto: true,
+    expectedMin: null,
+    expectedMax: null,
+    targetPositionId: null,
+    dueOffsetMinutes: 240,
+  },
+  {
+    templateId: 'tpl-vitrine',
+    title: 'Conferir reposição da vitrine',
+    frequency: 'DAILY',
+    requiresPhoto: false,
+    expectedMin: null,
+    expectedMax: null,
+    targetPositionId: null,
+    dueOffsetMinutes: 360,
+  },
+  {
+    templateId: 'tpl-fechamento',
+    title: 'Checar limpeza final do salão',
+    frequency: 'DAILY',
+    requiresPhoto: true,
+    expectedMin: null,
+    expectedMax: null,
+    targetPositionId: null,
+    dueOffsetMinutes: 660,
+  },
+];
+
+export interface FixtureTaskTemplate {
+  readonly templateId: string;
+  readonly title: string;
+  readonly frequency: 'ONCE' | 'DAILY' | 'PER_SHIFT' | 'HOURLY' | 'CUSTOM';
+  readonly requiresPhoto: boolean;
+  readonly expectedMin: number | null;
+  readonly expectedMax: number | null;
+  readonly targetPositionId: string | null;
+  readonly dueOffsetMinutes: number;
+}
 
 export interface IdentifiedOperator {
   readonly operator: FixtureOperator;
@@ -82,4 +152,16 @@ export function identifyOperator(
   );
   if (operator === undefined || operator.pin !== pin) return null;
   return { operator };
+}
+
+/**
+ * Fonte de definições de tarefa (TaskTemplateSourcePort) sobre as fixtures —
+ * substituível pelo adapter real sem tocar aplicação nem UI.
+ */
+export class FixtureTaskTemplateSource {
+  /** A loja é ignorada nas fixtures: há uma única loja de demonstração. */
+  activeTemplates(): Promise<readonly FixtureTaskTemplate[]> {
+    if (!fixturesEnabled()) throw new FixturesDisabledError();
+    return Promise.resolve(FIXTURE_TASK_TEMPLATES);
+  }
 }

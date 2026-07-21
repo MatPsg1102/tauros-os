@@ -185,6 +185,12 @@ export class OpenOperatorSessionUseCase {
       idempotencyKey: session.idempotencyKey,
       syncStatus: 'queued',
       auditCorrelationId: session.id,
+      // campos de fechamento nascem vazios (7.2 os preenche)
+      clientClosedAt: null,
+      closedOffline: false,
+      endReason: null,
+      closeIdempotencyKey: null,
+      closeSyncStatus: null,
     };
 
     // 1) intenção durável PRIMEIRO (recuperável); 2) estado local; 3) auditoria

@@ -5,6 +5,10 @@ export default mergeConfig(
   preset,
   defineConfig({
     esbuild: { jsx: 'automatic' },
-    test: { environment: 'jsdom', include: ['tests/**/*.test.{ts,tsx}'] },
+    test: {
+      environment: 'jsdom',
+      include: ['tests/**/*.test.{ts,tsx}'],
+      setupFiles: ['./tests/setup-router.ts'],
+    },
   }),
 );

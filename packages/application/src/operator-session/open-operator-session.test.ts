@@ -66,9 +66,17 @@ function makeHarness(): Harness {
         if (harness.failPolicy) return Promise.reject(new Error('config source down'));
         return Promise.resolve(policy);
       },
+      sessionClosingPolicy: () =>
+        Promise.resolve({
+          sessionAbsoluteMaxMs: policy.sessionAbsoluteMaxMs,
+          reauthOnAbsolute: true,
+          configVersionRef: policy.configVersionRef,
+        }),
     },
     {
       findActive: () => Promise.resolve(harness.activeSession),
+      byId: (id) =>
+        Promise.resolve(harness.saved.find((record) => record.id === id) ?? harness.activeSession),
       save: (record) => {
         if (harness.failSave) return Promise.reject(new Error('disk full'));
         harness.saved.push(record);
@@ -82,6 +90,7 @@ function makeHarness(): Harness {
         harness.enqueued.push(input);
         return Promise.resolve();
       },
+      enqueueCloseSession: () => Promise.resolve(),
     },
     {
       record: (input) => {
