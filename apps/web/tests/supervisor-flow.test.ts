@@ -74,12 +74,14 @@ const createInput = {
   deviceId: 'device-A',
   storeTimeZone: TZ,
   title: 'Organizar câmara fria',
-  targetPositionId: 'pos-producao',
+  targetPositionId: 'pos-producao' as string | null,
   requiresPhoto: false,
   expectedMin: null,
   expectedMax: null,
+  effectiveFrom: '2026-08-13',
+  plannedStartMinutes: 15 * 60,
   dueOffsetMinutes: 17 * 60,
-  frequency: 'ONCE' as const,
+  recurrence: { kind: 'ONCE' } as const,
 };
 
 async function loadBoard(world: World, auth = supervisorAuth()) {
@@ -227,7 +229,10 @@ describe('autorização do encarregado (ADR-018 + RLS)', () => {
         expectedMax: null,
         active: true,
         clientCreatedAt: NOW.toISOString(),
+        effectiveFrom: '2026-08-13',
+        plannedStartMinutes: 540,
         dueOffsetMinutes: 600,
+        recurrence: { kind: 'ONCE' as const },
         idempotencyKey: 'task-template-create:forcada',
         syncStatus: 'queued' as const,
         auditCorrelationId: 'tpl-forcada',

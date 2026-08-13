@@ -3,6 +3,7 @@
 // os estados são exatamente daily_task_status e execution_result.
 
 import type { LocalSyncStatus } from '../sync/status.js';
+import type { TaskRecurrence } from '../task-template/recurrence.js';
 
 export const ENTITY_DAILY_TASK = 'daily_tasks' as const;
 export const ENTITY_TASK_EXECUTION = 'task_executions' as const;
@@ -21,7 +22,12 @@ export type TaskFrequency = 'ONCE' | 'DAILY' | 'PER_SHIFT' | 'HOURLY' | 'CUSTOM'
 
 export type TaskSyncStatus = LocalSyncStatus;
 
-/** Definição vigente copiada na materialização do dia (task_templates). */
+/**
+ * Definição vigente copiada na materialização do dia (task_templates). Os
+ * campos de PLANEJAMENTO são opcionais por compatibilidade: uma fonte sem eles
+ * (fixture legada, registro antigo) materializa como antes — todo dia, desde
+ * sempre, sem início planejado. A materialização aplica esses defaults.
+ */
 export interface TaskTemplateSnapshot {
   readonly templateId: string;
   readonly title: string;
@@ -31,8 +37,14 @@ export interface TaskTemplateSnapshot {
   readonly expectedMin: number | null;
   readonly expectedMax: number | null;
   readonly targetPositionId: string | null;
-  /** Minutos após a abertura do dia operacional em que a tarefa vence. */
+  /** Minutos após a abertura do dia operacional do FIM máximo (vencimento). */
   readonly dueOffsetMinutes: number;
+  /** Data civil YYYY-MM-DD do início da vigência (default: sempre). */
+  readonly effectiveFrom?: string;
+  /** Minutos do INÍCIO planejado após a abertura do dia (default: 0). */
+  readonly plannedStartMinutes?: number;
+  /** Regra de materialização (default: todo dia). */
+  readonly recurrence?: TaskRecurrence;
 }
 
 /** Materialização local do dia (daily_tasks) + snapshot da definição. */
@@ -42,8 +54,17 @@ export interface DailyTaskRecord {
   readonly templateId: string;
   /** work_date civil YYYY-MM-DD no fuso da LOJA. */
   readonly workDate: string;
+  /** Início planejado da ocorrência (ISO); null se a definição não tem início. */
+  readonly plannedStartAt: string | null;
   readonly dueAt: string;
   readonly status: DailyTaskStatus;
+  /**
+   * Atribuição SITUACIONAL desta ocorrência (encarregado define no dia).
+   * Independente de template.targetPositionId: atribuir hoje NÃO altera a
+   * definição — a próxima ocorrência nasce novamente sem responsável.
+   * Responsável efetivo = assignedPositionId ?? template.targetPositionId.
+   */
+  readonly assignedPositionId: string | null;
   readonly expectedMinSnapshot: number | null;
   readonly expectedMaxSnapshot: number | null;
   readonly configVersionRef: string | null;
@@ -51,6 +72,11 @@ export interface DailyTaskRecord {
   /** Execução que levou a tarefa ao estado atual (append-only). */
   readonly lastExecutionId: string | null;
   readonly syncStatus: TaskSyncStatus | null;
+}
+
+/** Payload enfileirado da atribuição situacional (sincronização do slice). */
+export interface AssignDailyTaskQueuePayload {
+  readonly dailyTask: DailyTaskRecord;
 }
 
 /**

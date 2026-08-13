@@ -107,20 +107,19 @@ describe('jornada vertical do encarregado', () => {
     fireEvent.change(within(drawer).getByLabelText('Título da tarefa'), {
       target: { value: 'Conferir estoque de embalagens' },
     });
-    const responsavel = within(drawer).getByLabelText('Responsável') as HTMLSelectElement;
+    const responsavel = within(drawer).getByLabelText('Posição responsável') as HTMLSelectElement;
     const apoio = [...responsavel.querySelectorAll('option')].find((option) =>
       option.textContent?.includes('Apoio'),
     );
     fireEvent.change(responsavel, { target: { value: apoio?.value ?? '' } });
-    fireEvent.change(within(drawer).getByLabelText('Horário limite'), {
-      target: { value: '15:30' },
-    });
+    fireEvent.change(within(drawer).getByLabelText('Início'), { target: { value: '14:00' } });
+    fireEvent.change(within(drawer).getByLabelText('Fim máximo'), { target: { value: '15:30' } });
     fireEvent.click(within(drawer).getByRole('button', { name: 'Criar tarefa' }));
 
     // 4) tarefa aparece imediatamente no quadro da equipe, com responsável e horário
     await screen.findByRole('heading', { name: 'Conferir estoque de embalagens' });
     expect(screen.getAllByText(/Apoio — Rita Belmonte/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/até 15:30/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/14:00–15:30/).length).toBeGreaterThan(0);
 
     // persistência real (repositório local) + domínio validado
     const templates = await world.container.templates.byStore('store-centro-0001');

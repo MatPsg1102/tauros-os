@@ -16,7 +16,10 @@ const command: CreateTemplateCommand = {
   expectedMin: null,
   expectedMax: null,
   clientCreatedAt: FIXED_NOW,
+  effectiveFrom: '2026-08-13',
+  plannedStartMinutes: 9 * 60,
   dueOffsetMinutes: 15 * 60,
+  recurrence: { kind: 'ONCE' },
   idempotencyKey: 'task-template-create:store-1:2026-08-13:emp-0004:organizar-camara-fria',
 };
 
@@ -46,13 +49,59 @@ describe('decideCreateTemplate', () => {
     expect(decision).toMatchObject({ kind: 'rejected', code: 'TITLE_REQUIRED' });
   });
 
-  it('rejeita criação sem posição responsável (atribuição oficial)', () => {
-    const decision = decideCreateTemplate({ ...command, targetPositionId: ' ' }, null);
+  it('permite responsável OPCIONAL em ONCE/WEEKDAYS ("definir no dia")', () => {
+    const once = decideCreateTemplate({ ...command, targetPositionId: null }, null);
+    expect(once.kind).toBe('create');
+    if (once.kind === 'create') expect(once.template.targetPositionId).toBeNull();
+
+    const weekdays = decideCreateTemplate(
+      { ...command, targetPositionId: '  ', recurrence: { kind: 'WEEKDAYS', weekdays: ['MON'] } },
+      null,
+    );
+    expect(weekdays.kind).toBe('create');
+    if (weekdays.kind === 'create') expect(weekdays.template.targetPositionId).toBeNull();
+  });
+
+  it('WHEN_SCHEDULED exige posição responsável (não dá para perguntar "escalado?" sem posição)', () => {
+    const decision = decideCreateTemplate(
+      { ...command, targetPositionId: null, recurrence: { kind: 'WHEN_SCHEDULED' } },
+      null,
+    );
     expect(decision).toMatchObject({ kind: 'rejected', code: 'ASSIGNMENT_REQUIRED' });
   });
 
-  it('rejeita horário limite fora do dia operacional', () => {
-    expect(decideCreateTemplate({ ...command, dueOffsetMinutes: -1 }, null)).toMatchObject({
+  it('WHEN_SCHEDULED com posição é aceito', () => {
+    const decision = decideCreateTemplate(
+      { ...command, targetPositionId: 'pos-apoio', recurrence: { kind: 'WHEN_SCHEDULED' } },
+      null,
+    );
+    expect(decision.kind).toBe('create');
+  });
+
+  it('WEEKDAYS sem nenhum dia é rejeitado', () => {
+    const decision = decideCreateTemplate(
+      { ...command, recurrence: { kind: 'WEEKDAYS', weekdays: [] } },
+      null,
+    );
+    expect(decision).toMatchObject({ kind: 'rejected', code: 'INVALID_RECURRENCE' });
+  });
+
+  it('rejeita data inicial inválida', () => {
+    const decision = decideCreateTemplate({ ...command, effectiveFrom: '13/08/2026' }, null);
+    expect(decision).toMatchObject({ kind: 'rejected', code: 'INVALID_DATE' });
+  });
+
+  it('rejeita fim máximo <= início planejado', () => {
+    expect(
+      decideCreateTemplate({ ...command, plannedStartMinutes: 600, dueOffsetMinutes: 600 }, null),
+    ).toMatchObject({ kind: 'rejected', code: 'INVALID_TIME_RANGE' });
+    expect(
+      decideCreateTemplate({ ...command, plannedStartMinutes: 600, dueOffsetMinutes: 540 }, null),
+    ).toMatchObject({ kind: 'rejected', code: 'INVALID_TIME_RANGE' });
+  });
+
+  it('rejeita horários fora do dia operacional', () => {
+    expect(decideCreateTemplate({ ...command, plannedStartMinutes: -1 }, null)).toMatchObject({
       kind: 'rejected',
       code: 'INVALID_DUE_TIME',
     });

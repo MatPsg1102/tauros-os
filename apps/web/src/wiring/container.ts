@@ -4,6 +4,7 @@
 // reconcileFromQueue reconstrói o estado no boot (atomicidade §35).
 
 import {
+  AssignDailyTaskUseCase,
   CloseOperatorSessionUseCase,
   CreateTaskTemplateUseCase,
   LoadDailyTasksUseCase,
@@ -12,15 +13,18 @@ import {
 } from '@tauros/application';
 import { ConfigResolver } from '@tauros/config-engine';
 import type {
+  AssignDailyTaskQueuePayload,
   CloseSessionQueuePayload,
   CreateTemplateQueuePayload,
   EffectiveAuthorization,
   OperatorSessionRecord,
+  ShiftSchedulePort,
   TaskExecutionQueuePayload,
   TaskTemplateSourcePort,
   TeamDirectoryPort,
 } from '@tauros/contracts';
 import {
+  ENTITY_DAILY_TASK,
   ENTITY_OPERATOR_SESSION,
   ENTITY_TASK_EXECUTION,
   ENTITY_TASK_TEMPLATE,
@@ -55,6 +59,8 @@ import {
   APP_STATE_SCHEMA,
   CompositeTaskTemplateSource,
   ConfigSessionPolicyAdapter,
+  DailyTaskAssignQueueAdapter,
+  DailyTaskAuditAdapter,
   LocalDailyTaskRepository,
   LocalOperatorSessionRepository,
   LocalTaskTemplateRepository,
@@ -64,7 +70,11 @@ import {
   TemplateAuditAdapter,
   TemplateQueueAdapter,
 } from './adapters.js';
-import { FixtureTaskTemplateSource, FixtureTeamDirectory } from './fixtures.js';
+import {
+  FixtureShiftSchedule,
+  FixtureTaskTemplateSource,
+  FixtureTeamDirectory,
+} from './fixtures.js';
 import { FakeSessionSyncTransport } from './transport-fake.js';
 
 export interface ContainerOptions {
@@ -77,6 +87,7 @@ export interface ContainerOptions {
   readonly events?: TechnicalEventPort;
   readonly templates?: TaskTemplateSourcePort;
   readonly team?: TeamDirectoryPort;
+  readonly schedule?: ShiftSchedulePort;
 }
 
 export interface AppContainer {
@@ -96,6 +107,7 @@ export interface AppContainer {
   readonly loadDailyTasks: LoadDailyTasksUseCase;
   readonly recordTaskOutcome: RecordTaskOutcomeUseCase;
   readonly createTaskTemplate: CreateTaskTemplateUseCase;
+  readonly assignDailyTask: AssignDailyTaskUseCase;
   /** Drena a fila e reflete o desfecho no syncStatus do registro local. */
   readonly drainAndReflect: () => Promise<void>;
   /** Recuperação de boot: fila com intenção sem registro local ⇒ reconstrói. */
@@ -199,7 +211,8 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     templates,
   );
   const taskQueueAdapter = new TaskExecutionQueueAdapter(queue, authorization, deviceId, clock);
-  const loadDailyTasks = new LoadDailyTasksUseCase({ now: clock }, templateSource, tasks);
+  const schedule: ShiftSchedulePort = options.schedule ?? new FixtureShiftSchedule();
+  const loadDailyTasks = new LoadDailyTasksUseCase({ now: clock }, templateSource, tasks, schedule);
   const recordTaskOutcome = new RecordTaskOutcomeUseCase(
     { now: clock },
     ids,
@@ -207,7 +220,7 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     taskQueueAdapter,
   );
 
-  // Área do Encarregado — criação de definição de tarefa
+  // Área do Encarregado — criação de definição de tarefa + atribuição situacional
   const team: TeamDirectoryPort = options.team ?? new FixtureTeamDirectory();
   const templateQueueAdapter = new TemplateQueueAdapter(queue, authorization, deviceId, clock);
   const templateAuditAdapter = new TemplateAuditAdapter(factory, buffer);
@@ -218,6 +231,16 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     templates,
     templateQueueAdapter,
     templateAuditAdapter,
+  );
+  const assignQueueAdapter = new DailyTaskAssignQueueAdapter(queue, authorization, deviceId, clock);
+  const assignAuditAdapter = new DailyTaskAuditAdapter(factory, buffer);
+  const assignDailyTask = new AssignDailyTaskUseCase(
+    { now: clock },
+    ids,
+    team,
+    tasks,
+    assignQueueAdapter,
+    assignAuditAdapter,
   );
 
   const queueItemForSession = async (sessionId: string): Promise<QueueItem | undefined> => {
@@ -272,6 +295,13 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
 
       if (item.entityType === ENTITY_TASK_TEMPLATE) {
         await templates.updateSyncStatus(item.entityId, status);
+        continue;
+      }
+
+      // atribuição situacional: reflete o desfecho na ocorrência
+      if (item.entityType === ENTITY_DAILY_TASK) {
+        const current = await tasks.byId(item.entityId);
+        if (current !== null) await tasks.save({ ...current, syncStatus: status });
       }
     }
   };
@@ -316,6 +346,21 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
         continue;
       }
 
+      // 3b) atribuição enfileirada sem persistir na ocorrência local
+      if (item.entityType === ENTITY_DAILY_TASK && item.operation === 'update') {
+        const payload = item.payload as AssignDailyTaskQueuePayload;
+        const assigned = payload.dailyTask;
+        const existing = await tasks.byId(assigned.id);
+        if (existing !== null && existing.assignedPositionId !== assigned.assignedPositionId) {
+          await tasks.save({
+            ...existing,
+            assignedPositionId: assigned.assignedPositionId,
+            syncStatus: assigned.syncStatus,
+          });
+        }
+        continue;
+      }
+
       // 4) execução enfileirada sem registro local (append-only reconstruído)
       if (item.entityType === ENTITY_TASK_EXECUTION) {
         const payload = item.payload as TaskExecutionQueuePayload;
@@ -357,6 +402,7 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     loadDailyTasks,
     recordTaskOutcome,
     createTaskTemplate,
+    assignDailyTask,
     drainAndReflect,
     reconcileFromQueue,
     queueItemForSession,

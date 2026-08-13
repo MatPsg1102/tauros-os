@@ -91,7 +91,8 @@ function fillCreateForm(
     });
   }
   if (position !== undefined) {
-    const select = within(dialog).getByLabelText('Responsável');
+    // "Definir agora" é o default; seleciona a posição responsável.
+    const select = within(dialog).getByLabelText('Posição responsável');
     const option = [...select.querySelectorAll('option')].find((candidate) =>
       candidate.textContent?.includes(position),
     );
@@ -247,13 +248,17 @@ describe('criação de tarefa', () => {
     expect(await within(dialog).findByText('Dê um título para a tarefa.')).toBeTruthy();
   });
 
-  it('exige responsável', async () => {
+  it('"definir no dia" cria tarefa SEM responsável e ela aparece como tal', async () => {
     render(app());
     await identifyElber();
     const dialog = await openCreateDrawer();
-    fillCreateForm(dialog, { title: 'Sem responsável' });
+    fillCreateForm(dialog, { title: 'Conferir estoque da ilha' });
+    // seleciona "Definir no dia" (responsável opcional)
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Definir no dia' }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Criar tarefa' }));
-    expect(await within(dialog).findByText('Escolha o responsável pela tarefa.')).toBeTruthy();
+
+    await screen.findByRole('heading', { name: 'Conferir estoque da ilha' });
+    expect(screen.getAllByText('Sem responsável').length).toBeGreaterThan(0);
   });
 
   it('dupla submissão não duplica a tarefa', async () => {

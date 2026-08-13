@@ -1,7 +1,11 @@
 // Domínio: criação de definição de tarefa pelo encarregado (Área do
-// Encarregado). Modelo congelado: task_templates com atribuição por POSIÇÃO
-// (target_position_id) — não existe atribuição por funcionário, descrição nem
-// prioridade. PURO: sem relógio real, sem aleatoriedade, sem infraestrutura.
+// Encarregado). Modelo congelado + PLANEJAMENTO: atribuição por POSIÇÃO
+// (target_position_id) agora OPCIONAL ("definir no dia"), data inicial de
+// vigência, início/fim planejados e recorrência (ONCE | WEEKDAYS |
+// WHEN_SCHEDULED). Sem atribuição por funcionário, descrição, prioridade nem
+// horários REAIS de execução. PURO: sem relógio real, aleatoriedade ou infra.
+
+import type { TaskRecurrence } from '@tauros/contracts';
 
 /** task_frequency do schema congelado (sem valores novos). */
 export type TemplateFrequency = 'ONCE' | 'DAILY' | 'PER_SHIFT' | 'HOURLY' | 'CUSTOM';
@@ -12,15 +16,20 @@ export interface CreateTemplateCommand {
   readonly storeId: string;
   readonly title: string;
   readonly frequency: TemplateFrequency;
-  /** Posição operacional responsável — unidade OFICIAL de atribuição. */
-  readonly targetPositionId: string;
+  /** Posição responsável — null = "definir no dia" (sem responsável). */
+  readonly targetPositionId: string | null;
   readonly requiresPhoto: boolean;
   readonly expectedMin: number | null;
   readonly expectedMax: number | null;
   /** Horário do cliente (clock port da aplicação). */
   readonly clientCreatedAt: Date;
-  /** Minutos após o início do dia operacional em que a tarefa vence. */
+  /** Data civil YYYY-MM-DD do início da vigência. */
+  readonly effectiveFrom: string;
+  /** Minutos após o início do dia operacional do INÍCIO planejado. */
+  readonly plannedStartMinutes: number;
+  /** Minutos após o início do dia operacional do FIM máximo. */
   readonly dueOffsetMinutes: number;
+  readonly recurrence: TaskRecurrence;
   readonly idempotencyKey: string;
 }
 
@@ -28,6 +37,9 @@ export type CreateTemplateRejectionCode =
   | 'TITLE_REQUIRED'
   | 'ASSIGNMENT_REQUIRED'
   | 'INVALID_DUE_TIME'
+  | 'INVALID_TIME_RANGE'
+  | 'INVALID_DATE'
+  | 'INVALID_RECURRENCE'
   | 'INVALID_RANGE'
   | 'INVALID_COMMAND';
 
@@ -36,13 +48,16 @@ export interface CreatedTemplate {
   readonly storeId: string;
   readonly title: string;
   readonly frequency: TemplateFrequency;
-  readonly targetPositionId: string;
+  readonly targetPositionId: string | null;
   readonly requiresPhoto: boolean;
   readonly expectedMin: number | null;
   readonly expectedMax: number | null;
   readonly active: true;
   readonly clientCreatedAt: Date;
+  readonly effectiveFrom: string;
+  readonly plannedStartMinutes: number;
   readonly dueOffsetMinutes: number;
+  readonly recurrence: TaskRecurrence;
   readonly idempotencyKey: string;
 }
 
@@ -60,11 +75,19 @@ export type CreateTemplateDecision =
 
 const MINUTES_IN_DAY = 24 * 60;
 const MAX_TITLE_LENGTH = 120;
+const CIVIL_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Minuto válido dentro do dia operacional [0, 1440). */
+function validMinuteOfDay(value: number): boolean {
+  return Number.isInteger(value) && value >= 0 && value < MINUTES_IN_DAY;
+}
 
 /**
  * Regras de domínio (invariáveis — não são parâmetro de configuração):
- * título obrigatório e legível; atribuição por posição obrigatória neste
- * fluxo; vencimento dentro do dia operacional; faixa esperada coerente.
+ * título obrigatório e legível; atribuição por posição OPCIONAL, exceto em
+ * WHEN_SCHEDULED (não há como perguntar "está escalado?" sem posição alvo);
+ * data inicial civil válida; início/fim planejados dentro do dia com fim >
+ * início; WEEKDAYS exige ao menos um dia; faixa esperada coerente.
  * Reapresentação com a mesma chave é reconhecida como a MESMA criação.
  */
 export function decideCreateTemplate(
@@ -102,23 +125,47 @@ export function decideCreateTemplate(
     };
   }
 
-  if (command.targetPositionId.trim() === '') {
+  // atribuição por posição: opcional, EXCETO quando a recorrência depende da
+  // escala da posição (WHEN_SCHEDULED) — aí a posição alvo é indispensável.
+  const targetPositionId =
+    command.targetPositionId !== null && command.targetPositionId.trim() !== ''
+      ? command.targetPositionId
+      : null;
+  if (command.recurrence.kind === 'WHEN_SCHEDULED' && targetPositionId === null) {
     return {
       kind: 'rejected',
       code: 'ASSIGNMENT_REQUIRED',
-      detail: 'a tarefa precisa de uma posição responsável',
+      detail: '"quando estiver escalado" exige uma posição responsável',
     };
   }
 
+  if (command.recurrence.kind === 'WEEKDAYS' && command.recurrence.weekdays.length === 0) {
+    return {
+      kind: 'rejected',
+      code: 'INVALID_RECURRENCE',
+      detail: 'escolha ao menos um dia da semana',
+    };
+  }
+
+  if (!CIVIL_DATE.test(command.effectiveFrom)) {
+    return { kind: 'rejected', code: 'INVALID_DATE', detail: 'data inicial inválida' };
+  }
+
   if (
-    !Number.isInteger(command.dueOffsetMinutes) ||
-    command.dueOffsetMinutes < 0 ||
-    command.dueOffsetMinutes >= MINUTES_IN_DAY
+    !validMinuteOfDay(command.plannedStartMinutes) ||
+    !validMinuteOfDay(command.dueOffsetMinutes)
   ) {
     return {
       kind: 'rejected',
       code: 'INVALID_DUE_TIME',
-      detail: 'o horário limite deve estar dentro do dia operacional',
+      detail: 'os horários devem estar dentro do dia operacional',
+    };
+  }
+  if (command.dueOffsetMinutes <= command.plannedStartMinutes) {
+    return {
+      kind: 'rejected',
+      code: 'INVALID_TIME_RANGE',
+      detail: 'o fim máximo deve ser maior que o início planejado',
     };
   }
 
@@ -141,13 +188,16 @@ export function decideCreateTemplate(
       storeId: command.storeId,
       title,
       frequency: command.frequency,
-      targetPositionId: command.targetPositionId,
+      targetPositionId,
       requiresPhoto: command.requiresPhoto,
       expectedMin: command.expectedMin,
       expectedMax: command.expectedMax,
       active: true,
       clientCreatedAt: command.clientCreatedAt,
+      effectiveFrom: command.effectiveFrom,
+      plannedStartMinutes: command.plannedStartMinutes,
       dueOffsetMinutes: command.dueOffsetMinutes,
+      recurrence: command.recurrence,
       idempotencyKey: command.idempotencyKey,
     },
   };

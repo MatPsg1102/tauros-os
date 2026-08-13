@@ -14,10 +14,12 @@ import {
   Card,
   Checkbox,
   ConfirmDialog,
+  DatePicker,
   Drawer,
   EmptyState,
   ErrorState,
   Field,
+  Flex,
   Heading,
   Input,
   LoadingState,
@@ -27,21 +29,35 @@ import {
   PanelBody,
   PanelHeader,
   PinInput,
+  Radio,
+  RadioGroup,
   Section,
   SegmentedControl,
   Select,
   Stack,
+  Switch,
   Text,
   TimePicker,
 } from '@tauros/ui-primitives';
 
 import type { NavigationLinkAdapter } from '@tauros/ui-primitives';
+import { ALL_WEEKDAYS, type TaskRecurrence, type Weekday } from '@tauros/contracts';
 
 import type {
   SupervisorDashboardActions,
   SupervisorDashboardView,
   SupervisorTaskView,
 } from '../controllers/use-supervisor-dashboard.js';
+
+const WEEKDAY_LABEL: Readonly<Record<Weekday, string>> = {
+  MON: 'Seg',
+  TUE: 'Ter',
+  WED: 'Qua',
+  THU: 'Qui',
+  FRI: 'Sex',
+  SAT: 'Sáb',
+  SUN: 'Dom',
+};
 
 function stateBadge(task: SupervisorTaskView): ReactElement {
   if (task.state === 'done') return <Badge status="success">Concluída</Badge>;
@@ -104,6 +120,9 @@ function IdentifyStep({
   );
 }
 
+type ResponsibleMode = 'now' | 'later';
+type RepeatMode = 'weekdays' | 'when_scheduled';
+
 function CreateTaskDrawer({
   view,
   actions,
@@ -112,11 +131,60 @@ function CreateTaskDrawer({
   readonly actions: SupervisorDashboardActions;
 }): ReactElement {
   const [title, setTitle] = useState('');
+  const [responsibleMode, setResponsibleMode] = useState<ResponsibleMode>('now');
   const [positionId, setPositionId] = useState('');
-  const [dueTime, setDueTime] = useState('17:00');
+  const [effectiveFrom, setEffectiveFrom] = useState(view.operationalDate ?? '');
+  const [startTime, setStartTime] = useState('08:00');
+  const [endTime, setEndTime] = useState('10:00');
   const [requiresPhoto, setRequiresPhoto] = useState(false);
+  const [repeat, setRepeat] = useState(false);
+  const [repeatMode, setRepeatMode] = useState<RepeatMode>('weekdays');
+  const [weekdays, setWeekdays] = useState<readonly Weekday[]>(ALL_WEEKDAYS);
   const open = view.creation.status !== 'idle';
   const submitting = view.creation.status === 'submitting';
+
+  // "Definir no dia" não conhece posição alvo — "Quando estiver escalado" fica
+  // indisponível (não há como perguntar "está escalado?" sem posição).
+  const scheduledAvailable = responsibleMode === 'now';
+  const effectiveRepeatMode: RepeatMode = scheduledAvailable ? repeatMode : 'weekdays';
+
+  function toggleWeekday(day: Weekday): void {
+    setWeekdays((current) =>
+      current.includes(day) ? current.filter((d) => d !== day) : [...current, day],
+    );
+  }
+
+  function reset(): void {
+    setTitle('');
+    setResponsibleMode('now');
+    setPositionId('');
+    setEffectiveFrom(view.operationalDate ?? '');
+    setStartTime('08:00');
+    setEndTime('10:00');
+    setRequiresPhoto(false);
+    setRepeat(false);
+    setRepeatMode('weekdays');
+    setWeekdays(ALL_WEEKDAYS);
+  }
+
+  function submit(): void {
+    const recurrence: TaskRecurrence = !repeat
+      ? { kind: 'ONCE' }
+      : effectiveRepeatMode === 'when_scheduled'
+        ? { kind: 'WHEN_SCHEDULED' }
+        : { kind: 'WEEKDAYS', weekdays };
+    void actions
+      .createTask({
+        title,
+        positionId: responsibleMode === 'now' ? positionId : '',
+        effectiveFrom,
+        startTime,
+        endTime,
+        requiresPhoto,
+        recurrence,
+      })
+      .then(reset);
+  }
 
   return (
     <Drawer
@@ -137,46 +205,116 @@ function CreateTaskDrawer({
             disabled={submitting}
           />
         </Field>
-        <Field label="Responsável">
-          <Select
-            value={positionId}
-            onChange={(event) => setPositionId(event.target.value)}
+
+        <RadioGroup
+          label="Responsável"
+          value={responsibleMode}
+          onValueChange={(value) => setResponsibleMode(value as ResponsibleMode)}
+          orientation="horizontal"
+        >
+          <Radio value="now" label="Definir agora" disabled={submitting} />
+          <Radio value="later" label="Definir no dia" disabled={submitting} />
+        </RadioGroup>
+
+        {responsibleMode === 'now' && (
+          <Field label="Posição responsável">
+            <Select
+              value={positionId}
+              onChange={(event) => setPositionId(event.target.value)}
+              disabled={submitting}
+            >
+              <option value="">Escolha o responsável</option>
+              {view.positions.map((position) => (
+                <option key={position.id} value={position.id}>
+                  {position.name}
+                  {position.memberNames.length > 0 ? ` — ${position.memberNames.join(', ')}` : ''}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
+
+        <Field label="Data inicial">
+          <DatePicker
+            value={effectiveFrom}
+            onValueChange={setEffectiveFrom}
             disabled={submitting}
-          >
-            <option value="">Escolha o responsável</option>
-            {view.positions.map((position) => (
-              <option key={position.id} value={position.id}>
-                {position.name}
-                {position.memberNames.length > 0 ? ` — ${position.memberNames.join(', ')}` : ''}
-              </option>
-            ))}
-          </Select>
+          />
         </Field>
-        <Field label="Horário limite">
-          <TimePicker value={dueTime} onValueChange={setDueTime} disabled={submitting} />
+        <Field label="Início">
+          <TimePicker value={startTime} onValueChange={setStartTime} disabled={submitting} />
         </Field>
+        <Field label="Fim máximo">
+          <TimePicker value={endTime} onValueChange={setEndTime} disabled={submitting} />
+        </Field>
+
         <Checkbox
           label="Exigir foto para concluir"
           checked={requiresPhoto}
           onChange={(event) => setRequiresPhoto(event.target.checked)}
           disabled={submitting}
         />
+
+        <Switch
+          label="Repetir"
+          checked={repeat}
+          onChange={(event) => setRepeat(event.target.checked)}
+          disabled={submitting}
+        />
+
+        {repeat && (
+          <>
+            <RadioGroup
+              label="Repetir"
+              value={effectiveRepeatMode}
+              onValueChange={(value) => setRepeatMode(value as RepeatMode)}
+            >
+              <Radio value="weekdays" label="Dias da semana" disabled={submitting} />
+              <Radio
+                value="when_scheduled"
+                label="Quando estiver escalado"
+                disabled={submitting || !scheduledAvailable}
+              />
+            </RadioGroup>
+
+            {effectiveRepeatMode === 'weekdays' && (
+              <Stack gap={100} aria-label="Dias da semana">
+                <Text role="label">Dias da semana</Text>
+                <Flex gap={100} wrap>
+                  {ALL_WEEKDAYS.map((day) => (
+                    <Checkbox
+                      key={day}
+                      label={WEEKDAY_LABEL[day]}
+                      checked={weekdays.includes(day)}
+                      onChange={() => toggleWeekday(day)}
+                      disabled={submitting}
+                    />
+                  ))}
+                </Flex>
+                <Button
+                  variant="secondary"
+                  onClick={() => setWeekdays(ALL_WEEKDAYS)}
+                  disabled={submitting}
+                >
+                  Selecionar todos
+                </Button>
+              </Stack>
+            )}
+
+            {effectiveRepeatMode === 'when_scheduled' && (
+              <Text tone="secondary">
+                A tarefa será criada nos dias em que o responsável estiver na escala.
+              </Text>
+            )}
+          </>
+        )}
+
         {view.creation.status === 'error' && (
           <Alert status="error" live="polite" title="Tarefa não criada">
             {view.creation.message}
           </Alert>
         )}
-        <Button
-          fullWidth
-          disabled={submitting}
-          onClick={() => {
-            void actions.createTask({ title, positionId, dueTime, requiresPhoto }).then(() => {
-              setTitle('');
-              setPositionId('');
-              setRequiresPhoto(false);
-            });
-          }}
-        >
+        <Button fullWidth disabled={submitting} onClick={submit}>
           {submitting ? 'Criando tarefa…' : 'Criar tarefa'}
         </Button>
       </Stack>
@@ -296,25 +434,76 @@ function ShiftSection({
   );
 }
 
-function TaskItem({ task }: { readonly task: SupervisorTaskView }): ReactElement {
+/** Atribuição situacional inline para ocorrências sem responsável. */
+function AssignControl({
+  task,
+  positions,
+  onAssign,
+}: {
+  readonly task: SupervisorTaskView;
+  readonly positions: SupervisorDashboardView['positions'];
+  readonly onAssign: SupervisorDashboardActions['assignTask'];
+}): ReactElement {
+  const [positionId, setPositionId] = useState('');
+  return (
+    <Stack gap={100}>
+      <Field label="Atribuir a">
+        <Select value={positionId} onChange={(event) => setPositionId(event.target.value)}>
+          <option value="">Escolha a posição</option>
+          {positions.map((position) => (
+            <option key={position.id} value={position.id}>
+              {position.name}
+              {position.memberNames.length > 0 ? ` — ${position.memberNames.join(', ')}` : ''}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Button
+        variant="secondary"
+        disabled={positionId === ''}
+        onClick={() => void onAssign(task.id, positionId)}
+      >
+        Atribuir
+      </Button>
+    </Stack>
+  );
+}
+
+function TaskItem({
+  task,
+  positions,
+  onAssign,
+}: {
+  readonly task: SupervisorTaskView;
+  readonly positions: SupervisorDashboardView['positions'];
+  readonly onAssign: SupervisorDashboardActions['assignTask'];
+}): ReactElement {
   const sync = syncLine(task);
+  const window =
+    task.startTime !== null ? `${task.startTime}–${task.dueTime}` : `até ${task.dueTime}`;
   return (
     <Card>
       <Stack gap={100}>
         <Heading level={3}>{task.title}</Heading>
-        <div>{stateBadge(task)}</div>
+        <Flex gap={100} wrap>
+          {stateBadge(task)}
+          {task.isUnassigned && <Badge status="warn">Sem responsável</Badge>}
+        </Flex>
         <Text role="data" tone="secondary">
           {task.assigneeNames.length > 0
             ? `${task.positionName} — ${task.assigneeNames.join(', ')}`
             : task.positionName}
-          {' · até '}
-          {task.dueTime}
+          {' · '}
+          {window}
         </Text>
         {task.requiresPhoto && <Text tone="secondary">Exige registro de foto.</Text>}
         {sync !== null && (
           <Text role="data" tone="secondary">
             {sync}
           </Text>
+        )}
+        {task.isUnassigned && (
+          <AssignControl task={task} positions={positions} onAssign={onAssign} />
         )}
       </Stack>
     </Card>
@@ -435,8 +624,9 @@ export function SupervisorDashboardScreen({
           >
             <Card>
               <Text role="data">
-                Pendentes: {view.counts.pending} · Atrasadas: {view.counts.overdue} · Concluídas:{' '}
-                {view.counts.done} · Adiadas: {view.counts.skipped}
+                Pendentes: {view.counts.pending} · Atrasadas: {view.counts.overdue} · Sem
+                responsável: {view.counts.unassigned} · Concluídas: {view.counts.done} · Adiadas:{' '}
+                {view.counts.skipped}
               </Text>
             </Card>
           </Section>
@@ -453,6 +643,7 @@ export function SupervisorDashboardScreen({
                     }
                     options={[
                       { value: 'all', label: 'Todas' },
+                      { value: 'unassigned', label: 'Sem responsável' },
                       { value: 'pending', label: 'Pendentes' },
                       { value: 'overdue', label: 'Atrasadas' },
                       { value: 'done', label: 'Concluídas' },
@@ -488,7 +679,12 @@ export function SupervisorDashboardScreen({
                 ) : (
                   <Stack gap={200}>
                     {view.tasks.map((task) => (
-                      <TaskItem key={task.id} task={task} />
+                      <TaskItem
+                        key={task.id}
+                        task={task}
+                        positions={view.positions}
+                        onAssign={actions.assignTask}
+                      />
                     ))}
                   </Stack>
                 )}

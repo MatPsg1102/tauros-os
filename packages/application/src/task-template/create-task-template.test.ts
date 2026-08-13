@@ -101,12 +101,14 @@ const input = {
   deviceId: 'device-A',
   storeTimeZone: TZ,
   title: 'Organizar câmara fria',
-  targetPositionId: 'pos-producao',
+  targetPositionId: 'pos-producao' as string | null,
   requiresPhoto: false,
   expectedMin: null,
   expectedMax: null,
+  effectiveFrom: '2026-07-21',
+  plannedStartMinutes: 9 * 60,
   dueOffsetMinutes: 15 * 60,
-  frequency: 'ONCE' as const,
+  recurrence: { kind: 'ONCE' } as const,
   createdOffline: false,
 };
 
@@ -223,12 +225,24 @@ describe('CreateTaskTemplateUseCase — equipe e domínio', () => {
     expect(result).toMatchObject({ kind: 'failed', code: 'TITLE_REQUIRED' });
   });
 
-  it('rejeita criação sem posição responsável', async () => {
+  it('cria SEM responsável ("definir no dia") em ONCE/WEEKDAYS', async () => {
     const harness = makeHarness();
     const result = await harness.useCase.execute({
       authorization: authorization(),
       ...input,
-      targetPositionId: '',
+      targetPositionId: null,
+    });
+    expect(result.kind).toBe('created');
+    if (result.kind === 'created') expect(result.template.targetPositionId).toBeNull();
+  });
+
+  it('WHEN_SCHEDULED sem posição é rejeitado (não dá para consultar escala)', async () => {
+    const harness = makeHarness();
+    const result = await harness.useCase.execute({
+      authorization: authorization(),
+      ...input,
+      targetPositionId: null,
+      recurrence: { kind: 'WHEN_SCHEDULED' },
     });
     expect(result).toMatchObject({ kind: 'failed', code: 'ASSIGNMENT_REQUIRED' });
   });

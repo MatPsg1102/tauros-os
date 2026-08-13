@@ -15,5 +15,7 @@
     "typescript": "^5.7.2",
     "vitest": "^3.2.6"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@tauros/contracts": "workspace:*"
+  }
 }

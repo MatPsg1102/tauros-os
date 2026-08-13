@@ -13,6 +13,7 @@ import type {
   EffectiveAuthorization,
   OperationalPositionView,
   OperatorSessionRecord,
+  TaskRecurrence,
   TaskSyncStatus,
   TeamMemberView,
 } from '@tauros/contracts';
@@ -51,18 +52,24 @@ export type SupervisorCreation =
 
 export type SupervisorTaskState = 'pending' | 'overdue' | 'done' | 'skipped';
 
-export type SupervisorFilter = 'all' | SupervisorTaskState;
+/** 'unassigned' = ocorrências sem responsável (fila do encarregado). */
+export type SupervisorFilter = 'all' | 'unassigned' | SupervisorTaskState;
 
 export interface SupervisorTaskView {
   readonly id: string;
   readonly title: string;
   readonly state: SupervisorTaskState;
+  /** Início planejado HH:MM no fuso da LOJA (null se a definição não tem). */
+  readonly startTime: string | null;
   /** Horário limite HH:MM no fuso da LOJA. */
   readonly dueTime: string;
+  /** Posição responsável EFETIVA (atribuição situacional ou padrão da definição). */
   readonly positionId: string | null;
   readonly positionName: string;
   /** Funcionários que ocupam a posição responsável hoje. */
   readonly assigneeNames: readonly string[];
+  /** Sem responsável efetivo — precisa de distribuição pelo encarregado. */
+  readonly isUnassigned: boolean;
   readonly requiresPhoto: boolean;
   readonly syncStatus: TaskSyncStatus | null;
   /** Definição criada neste aparelho (Área do Encarregado). */
@@ -74,6 +81,7 @@ export interface SupervisorCounts {
   readonly overdue: number;
   readonly done: number;
   readonly skipped: number;
+  readonly unassigned: number;
 }
 
 export interface PositionOption {
@@ -119,10 +127,16 @@ export interface SupervisorDashboardView {
 
 export interface CreateTaskFormInput {
   readonly title: string;
+  /** '' quando "definir no dia" (sem responsável); id da posição se "agora". */
   readonly positionId: string;
-  /** Horário limite HH:MM (fuso da loja). */
-  readonly dueTime: string;
+  /** Data inicial de vigência YYYY-MM-DD (fuso da loja). */
+  readonly effectiveFrom: string;
+  /** Início planejado HH:MM (fuso da loja). */
+  readonly startTime: string;
+  /** Fim máximo planejado HH:MM (fuso da loja). */
+  readonly endTime: string;
   readonly requiresPhoto: boolean;
+  readonly recurrence: TaskRecurrence;
 }
 
 export interface SupervisorDashboardActions {
@@ -130,6 +144,7 @@ export interface SupervisorDashboardActions {
   readonly openCreate: () => void;
   readonly closeCreate: () => void;
   readonly createTask: (input: CreateTaskFormInput) => Promise<void>;
+  readonly assignTask: (dailyTaskId: string, positionId: string) => Promise<void>;
   readonly setFilter: (filter: SupervisorFilter) => void;
   readonly setPositionFilter: (positionId: string | null) => void;
   readonly openShift: () => Promise<void>;
@@ -166,6 +181,12 @@ function dueTimeFor(dueAtIso: string, timeZone: string): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(dueAtIso));
+}
+
+/** "HH:MM" → minutos do dia. Entrada inválida vira 0 (o domínio rejeita). */
+function hhmmToMinutes(value: string): number {
+  const [hours = 0, minutes = 0] = value.split(':').map(Number);
+  return hours * 60 + minutes;
 }
 
 function toAuthorization(
@@ -293,20 +314,29 @@ export function useSupervisorDashboard(
 
     setTasks(
       result.tasks.map((record) => {
-        const positionId = record.template.targetPositionId;
+        // responsável EFETIVO: atribuição situacional da ocorrência tem
+        // precedência sobre a posição padrão da definição.
+        const positionId = record.assignedPositionId ?? record.template.targetPositionId;
         const localTemplate = localTemplateById.get(record.templateId);
         return {
           id: record.id,
           title: record.template.title,
           state: stateOf(record),
+          startTime:
+            record.plannedStartAt === null
+              ? null
+              : dueTimeFor(record.plannedStartAt, FIXTURE_STORE.timeZone),
           dueTime: dueTimeFor(record.dueAt, FIXTURE_STORE.timeZone),
           positionId,
           positionName:
-            positionId === null ? 'Equipe' : (positionById.get(positionId)?.name ?? 'Equipe'),
+            positionId === null
+              ? 'Sem responsável'
+              : (positionById.get(positionId)?.name ?? 'Equipe'),
           assigneeNames:
             positionId === null
               ? []
               : (membersByPosition.get(positionId) ?? []).map((member) => member.fullName),
+          isUnassigned: positionId === null,
           requiresPhoto: record.template.requiresPhoto,
           // definição recém-criada: o estado que importa é o da CRIAÇÃO
           syncStatus: localTemplate?.syncStatus ?? record.syncStatus,
@@ -401,18 +431,20 @@ export function useSupervisorDashboard(
       setCreation({ status: 'submitting' });
       try {
         const readiness = await container.connectivity.assess();
-        const [hours = 0, minutes = 0] = input.dueTime.split(':').map(Number);
         const result = await container.createTaskTemplate.execute({
           authorization,
           deviceId: container.deviceId,
           storeTimeZone: FIXTURE_STORE.timeZone,
           title: input.title,
-          targetPositionId: input.positionId,
+          // '' ⇒ "definir no dia": null representa a ausência real de responsável
+          targetPositionId: input.positionId === '' ? null : input.positionId,
           requiresPhoto: input.requiresPhoto,
           expectedMin: null,
           expectedMax: null,
-          dueOffsetMinutes: hours * 60 + minutes,
-          frequency: 'ONCE',
+          effectiveFrom: input.effectiveFrom,
+          plannedStartMinutes: hhmmToMinutes(input.startTime),
+          dueOffsetMinutes: hhmmToMinutes(input.endTime),
+          recurrence: input.recurrence,
           createdOffline: !readiness.readyToSync,
         });
         if (result.kind === 'failed') {
@@ -421,13 +453,30 @@ export function useSupervisorDashboard(
               setCreation({ status: 'error', message: 'Dê um título para a tarefa.' });
               return;
             case 'ASSIGNMENT_REQUIRED':
+              setCreation({
+                status: 'error',
+                message: '"Quando estiver escalado" precisa de uma posição responsável.',
+              });
+              return;
             case 'UNKNOWN_POSITION':
               setCreation({ status: 'error', message: 'Escolha o responsável pela tarefa.' });
+              return;
+            case 'INVALID_RECURRENCE':
+              setCreation({ status: 'error', message: 'Escolha ao menos um dia da semana.' });
+              return;
+            case 'INVALID_DATE':
+              setCreation({ status: 'error', message: 'Informe uma data inicial válida.' });
               return;
             case 'INVALID_DUE_TIME':
               setCreation({
                 status: 'error',
-                message: 'Informe um horário limite dentro do dia de hoje.',
+                message: 'Informe horários dentro do dia operacional.',
+              });
+              return;
+            case 'INVALID_TIME_RANGE':
+              setCreation({
+                status: 'error',
+                message: 'O fim máximo deve ser maior que o início planejado.',
               });
               return;
             case 'PERMISSION_DENIED':
@@ -453,6 +502,29 @@ export function useSupervisorDashboard(
       } finally {
         submittingRef.current = false;
       }
+    },
+    [authorization, container, load],
+  );
+
+  const assignTask = useCallback(
+    async (dailyTaskId: string, positionId: string) => {
+      if (authorization === null || positionId === '') return;
+      const readiness = await container.connectivity.assess();
+      const result = await container.assignDailyTask.execute({
+        authorization,
+        deviceId: container.deviceId,
+        dailyTaskId,
+        positionId,
+        assignedOffline: !readiness.readyToSync,
+      });
+      if (result.kind === 'failed') {
+        if (result.code === 'PERMISSION_DENIED') setPhase('denied');
+        if (result.code === 'SNAPSHOT_EXPIRED') setPhase('expired');
+        return;
+      }
+      // atribuição reflete imediatamente; sincroniza quando houver conexão
+      if (readiness.readyToSync) await container.drainAndReflect();
+      await load();
     },
     [authorization, container, load],
   );
@@ -524,7 +596,11 @@ export function useSupervisorDashboard(
   }, [container, identity, updateSession]);
 
   const visibleTasks = tasks.filter((task) => {
-    if (filter !== 'all' && task.state !== filter) return false;
+    if (filter === 'unassigned') {
+      if (!task.isUnassigned) return false;
+    } else if (filter !== 'all' && task.state !== filter) {
+      return false;
+    }
     if (positionFilter !== null && task.positionId !== positionFilter) return false;
     return true;
   });
@@ -547,6 +623,7 @@ export function useSupervisorDashboard(
       overdue: tasks.filter((task) => task.state === 'overdue').length,
       done: tasks.filter((task) => task.state === 'done').length,
       skipped: tasks.filter((task) => task.state === 'skipped').length,
+      unassigned: tasks.filter((task) => task.isUnassigned).length,
     },
     filter,
     positionFilter,
@@ -564,6 +641,7 @@ export function useSupervisorDashboard(
       openCreate,
       closeCreate,
       createTask,
+      assignTask,
       setFilter,
       setPositionFilter,
       openShift,
