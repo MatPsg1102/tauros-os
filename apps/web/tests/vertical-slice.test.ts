@@ -6,11 +6,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { EffectiveAuthorization } from '@tauros/contracts';
+import { CAPABILITY_CONFIG_WRITE, CAPABILITY_SESSION_OPEN } from '@tauros/contracts';
 import { MemoryLocalStore, OFFLINE_SCHEMA } from '@tauros/infrastructure';
 
 import { APP_STATE_SCHEMA } from '../src/wiring/adapters.js';
 import { buildContainer, type AppContainer } from '../src/wiring/container.js';
 import { FakeSessionSyncTransport } from '../src/wiring/transport-fake.js';
+import { FIXTURE_OPERATORS } from '../src/wiring/fixtures.js';
 
 const NOW = new Date('2026-07-21T12:00:00.000Z');
 const TZ = 'America/Sao_Paulo';
@@ -235,5 +237,32 @@ describe('snapshot e autorização offline (§10/§36)', () => {
       tx.getAll('audit_outbox'),
     );
     expect(JSON.stringify(outbox)).toContain('access.denied');
+  });
+
+  it('encarregado também é operador: snapshot da fixture carrega session.open e abre turno', async () => {
+    const supervisor = FIXTURE_OPERATORS.find((op) => op.employeeId === 'emp-0004');
+    expect(supervisor).toBeDefined();
+    // permissões efetivas completas: operacional + encarregado, sem substituição
+    expect(supervisor!.permissions).toContain(CAPABILITY_SESSION_OPEN);
+    expect(supervisor!.permissions).toContain(CAPABILITY_CONFIG_WRITE);
+    expect(supervisor!.permissions).toContain('audit.read');
+
+    const result = await openAsFixtureOperator(world, {
+      operatorProfileId: supervisor!.profileId,
+      operatorEmployeeId: supervisor!.employeeId,
+      permissions: supervisor!.permissions,
+    });
+    expect(result.kind).toBe('opened');
+  });
+
+  it('autorização deriva das permissões efetivas, nunca do nome/identidade', async () => {
+    const supervisor = FIXTURE_OPERATORS.find((op) => op.employeeId === 'emp-0004');
+    // MESMAS permissões com outra identidade ⇒ mesmo resultado (ALLOW)
+    const result = await openAsFixtureOperator(world, {
+      operatorProfileId: 'prof-9999',
+      operatorEmployeeId: 'emp-9999',
+      permissions: supervisor!.permissions,
+    });
+    expect(result.kind).toBe('opened');
   });
 });

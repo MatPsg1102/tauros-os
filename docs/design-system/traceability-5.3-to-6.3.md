@@ -366,7 +366,11 @@ negação; ciclo de sync pelo outbox via ponte da fila. PIN da fixture (Elber,
 dev-only) comparado só em memória e descartado — teste comprova que não entra
 em fila, auditoria, IndexedDB nem localStorage.
 
-Fixtures (dev, bloqueadas em produção): Elber (config.write + audit.read),
+Fixtures (dev, bloqueadas em produção): Elber (session.open + config.write +
+audit.read — encarregado TAMBÉM é operador e abre o próprio turno; correção
+pós-merge: a fixture original omitia session.open e o `/turno` negava
+corretamente por permissões efetivas, ADR-018 — nenhuma exceção por nome/cargo
+foi criada, a capability veio da fixture e o domínio permaneceu intacto),
 posições Atendimento/Produção/Apoio e atribuições vigentes da equipe; Elber
 não ocupa posição atribuível. Tarefa criada pelo encarregado aparece no quadro
 do OPERADOR no mesmo aparelho (fonte composta — comprovado por teste).
