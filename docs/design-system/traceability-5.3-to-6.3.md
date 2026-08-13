@@ -366,14 +366,28 @@ negação; ciclo de sync pelo outbox via ponte da fila. PIN da fixture (Elber,
 dev-only) comparado só em memória e descartado — teste comprova que não entra
 em fila, auditoria, IndexedDB nem localStorage.
 
-Fixtures (dev, bloqueadas em produção): Elber (session.open + config.write +
-audit.read — encarregado TAMBÉM é operador e abre o próprio turno; correção
-pós-merge: a fixture original omitia session.open e o `/turno` negava
-corretamente por permissões efetivas, ADR-018 — nenhuma exceção por nome/cargo
-foi criada, a capability veio da fixture e o domínio permaneceu intacto),
-posições Atendimento/Produção/Apoio e atribuições vigentes da equipe; Elber
-não ocupa posição atribuível. Tarefa criada pelo encarregado aparece no quadro
-do OPERADOR no mesmo aparelho (fonte composta — comprovado por teste).
+Fixtures (dev, bloqueadas em produção): Elber (session.open + session.close +
+config.write + audit.read — encarregado TAMBÉM é operador: abre e fecha o
+próprio turno; correções pós-merge: a fixture original omitia session.open e
+depois session.close, e as telas negavam corretamente por permissões efetivas,
+ADR-018 — nenhuma exceção por nome/cargo foi criada, as capabilities vieram da
+fixture e o domínio permaneceu intacto), posições Atendimento/Produção/Apoio e
+atribuições vigentes da equipe; Elber não ocupa posição atribuível. Tarefa
+criada pelo encarregado aparece no quadro do OPERADOR no mesmo aparelho (fonte
+composta — comprovado por teste).
+
+Correção funcional do perfil do encarregado (pós-merge): o painel
+`/encarregado` passou a expor o TURNO do próprio encarregado — status
+(nenhum/aberto/fechado, local × servidor), "Abrir turno" e "Fechar turno" com
+confirmação e progressive disclosure (nunca as duas ações juntas) — reusando
+os MESMOS `OpenOperatorSessionUseCase`/`CloseOperatorSessionUseCase` da rota
+`/turno` (nenhum use case novo, nenhuma regra duplicada). O view model agora
+entrega DECISÕES prontas (`permissions.canOpenShift/canCloseShift/
+canCreateTask/canViewTeamTasks`) derivadas das permissões efetivas — a UI não
+recalcula capability. Jornada vertical coberta por teste (PIN → abrir →
+criar/atribuir a outra posição com horário → quadro → fechar) atravessando
+UI→controller→application→domain→persistência→auditoria→fila, com o snapshot
+enfileirado provando o perfil completo.
 
 Testes: 11 domínio + 16 aplicação + 7 verticais + 13 UI + 1 upgrade v2→v3.
 

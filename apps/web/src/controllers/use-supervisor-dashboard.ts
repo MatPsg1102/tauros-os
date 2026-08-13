@@ -12,10 +12,16 @@ import type {
   DailyTaskRecord,
   EffectiveAuthorization,
   OperationalPositionView,
+  OperatorSessionRecord,
   TaskSyncStatus,
   TeamMemberView,
 } from '@tauros/contracts';
-import { CAPABILITY_CONFIG_WRITE, PERMISSION_MODEL_VERSION } from '@tauros/contracts';
+import {
+  CAPABILITY_CONFIG_WRITE,
+  CAPABILITY_SESSION_CLOSE,
+  CAPABILITY_SESSION_OPEN,
+  PERMISSION_MODEL_VERSION,
+} from '@tauros/contracts';
 
 import type { AppContainer } from '../wiring/container.js';
 import {
@@ -25,6 +31,7 @@ import {
   type FixtureOperator,
 } from '../wiring/fixtures.js';
 import { useOperatorSession } from './operator-session-context.js';
+import { useShiftClosing, type ShiftClosingView } from './use-shift-closing.js';
 
 export type SupervisorPhase =
   | 'bootstrapping'
@@ -75,12 +82,30 @@ export interface PositionOption {
   readonly memberNames: readonly string[];
 }
 
+/**
+ * Decisões de permissão PRONTAS para a UI (ADR-018): derivadas uma única vez
+ * das permissões efetivas do operador identificado — a tela nunca recalcula
+ * capability nem conhece strings de permissão.
+ */
+export interface SupervisorPermissions {
+  readonly canOpenShift: boolean;
+  readonly canCloseShift: boolean;
+  readonly canCreateTask: boolean;
+  readonly canViewTeamTasks: boolean;
+}
+
 export interface SupervisorDashboardView {
   readonly phase: SupervisorPhase;
   readonly creation: SupervisorCreation;
   readonly supervisorName: string | null;
   readonly greeting: string;
   readonly operationalDate: string | null;
+  readonly permissions: SupervisorPermissions;
+  /** Turno do PRÓPRIO encarregado (encarregado também é operador). */
+  readonly session: OperatorSessionRecord | null;
+  readonly shiftSubmitting: boolean;
+  readonly shiftError: string | null;
+  readonly closing: ShiftClosingView;
   readonly tasks: readonly SupervisorTaskView[];
   readonly counts: SupervisorCounts;
   readonly filter: SupervisorFilter;
@@ -107,6 +132,10 @@ export interface SupervisorDashboardActions {
   readonly createTask: (input: CreateTaskFormInput) => Promise<void>;
   readonly setFilter: (filter: SupervisorFilter) => void;
   readonly setPositionFilter: (positionId: string | null) => void;
+  readonly openShift: () => Promise<void>;
+  readonly requestCloseShift: () => void;
+  readonly cancelCloseShift: () => void;
+  readonly confirmCloseShift: () => Promise<void>;
   readonly retrySync: () => Promise<void>;
   readonly reload: () => Promise<void>;
 }
@@ -176,10 +205,33 @@ export function useSupervisorDashboard(
   const [identifyError, setIdentifyError] = useState<string | null>(null);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [connectivity, setConnectivity] = useState({ deviceOnline: true, readyToSync: false });
+  const [session, setSession] = useState<OperatorSessionRecord | null>(null);
+  const [shiftSubmitting, setShiftSubmitting] = useState(false);
+  const [shiftError, setShiftError] = useState<string | null>(null);
   const submittingRef = useRef(false);
+  const openingRef = useRef(false);
+  const sessionRef = useRef<OperatorSessionRecord | null>(null);
 
   const authorization = identity.authorization;
   const hasCapability = identity.operator?.permissions.includes(CAPABILITY_CONFIG_WRITE) ?? false;
+  const operatorEmployeeId = identity.operator?.employeeId ?? null;
+
+  // Decisões prontas (ADR-018): a UI recebe booleanos, nunca strings de
+  // capability. Encarregado também é operador: abre/fecha o PRÓPRIO turno.
+  const permissions: SupervisorPermissions = {
+    canOpenShift: identity.operator?.permissions.includes(CAPABILITY_SESSION_OPEN) ?? false,
+    canCloseShift: identity.operator?.permissions.includes(CAPABILITY_SESSION_CLOSE) ?? false,
+    canCreateTask: hasCapability,
+    canViewTeamTasks: hasCapability,
+  };
+
+  const updateSession = useCallback((record: OperatorSessionRecord | null) => {
+    sessionRef.current = record;
+    setSession(record);
+  }, []);
+
+  // Fechamento: MESMO application layer da rota /turno (nenhum use case novo).
+  const [closing, closingActions] = useShiftClosing(container, session, updateSession);
 
   const load = useCallback(async () => {
     if (authorization === null) {
@@ -192,6 +244,17 @@ export function useSupervisorDashboard(
     }
     const readiness = await container.connectivity.assess();
     setConnectivity({ deviceOnline: readiness.deviceOnline, readyToSync: readiness.readyToSync });
+
+    // Turno do próprio encarregado: ativa restaura; fechada segue refletindo
+    // o estado de sincronização (local × servidor) até sair da tela.
+    if (operatorEmployeeId !== null) {
+      const active = await container.sessions.findActive(FIXTURE_STORE.id, operatorEmployeeId);
+      if (active !== null) {
+        updateSession(active);
+      } else if (sessionRef.current !== null) {
+        updateSession(await container.sessions.byId(sessionRef.current.id));
+      }
+    }
 
     const now = container.clock();
     const [members, positionViews, localTemplates] = await Promise.all([
@@ -260,7 +323,7 @@ export function useSupervisorDashboard(
       localTemplates.filter((template) => template.syncStatus === 'queued').length,
     );
     setPhase('ready');
-  }, [authorization, container, hasCapability]);
+  }, [authorization, container, hasCapability, operatorEmployeeId, updateSession]);
 
   // Boot: reconciliação de recuperação + decide entre identificar e carregar
   useEffect(() => {
@@ -392,6 +455,60 @@ export function useSupervisorDashboard(
     [authorization, container, load],
   );
 
+  // Abertura do PRÓPRIO turno: mesmo use case da rota /turno (nenhuma regra
+  // duplicada) — a aplicação revalida a capability no snapshot (ADR-018).
+  const openShift = useCallback(async () => {
+    const auth = identity.authorization;
+    const operator = identity.operator;
+    if (auth === null || operator === null) return;
+    // guarda de submissão concorrente (duplo clique / StrictMode)
+    if (openingRef.current) return;
+    openingRef.current = true;
+    setShiftError(null);
+    setShiftSubmitting(true);
+    try {
+      const readiness = await container.connectivity.assess();
+      const result = await container.openSession.execute({
+        authorization: auth,
+        membershipId: operator.membershipId,
+        deviceId: container.deviceId,
+        storeTimeZone: FIXTURE_STORE.timeZone,
+        openedOffline: !readiness.readyToSync,
+      });
+      if (result.kind === 'opened' || result.kind === 'already-open') {
+        updateSession(result.record);
+        if (readiness.readyToSync) {
+          await container.drainAndReflect();
+          const current = await container.sessions.byId(result.record.id);
+          if (current !== null) updateSession(current);
+        }
+        return;
+      }
+      switch (result.code) {
+        case 'PERMISSION_DENIED':
+          setShiftError('Seu perfil não permite abrir o turno nesta loja.');
+          return;
+        case 'SESSION_ALREADY_ACTIVE': {
+          const active = await container.sessions.findActive(FIXTURE_STORE.id, operator.employeeId);
+          if (active !== null) updateSession(active);
+          return;
+        }
+        case 'SNAPSHOT_EXPIRED':
+          setPhase('expired');
+          return;
+        case 'CONFIG_UNAVAILABLE':
+          setShiftError('Configuração indisponível no momento. Tente novamente.');
+          return;
+        default:
+          setShiftError('Não foi possível abrir o turno agora. Tente novamente.');
+          return;
+      }
+    } finally {
+      openingRef.current = false;
+      setShiftSubmitting(false);
+    }
+  }, [container, identity.authorization, identity.operator, updateSession]);
+
   const retrySync = useCallback(async () => {
     await container.drainAndReflect();
     await load();
@@ -410,6 +527,11 @@ export function useSupervisorDashboard(
     greeting: greetingFor(container.clock(), FIXTURE_STORE.timeZone),
     operationalDate:
       phase === 'ready' ? operationalDateFor(container.clock(), FIXTURE_STORE.timeZone) : null,
+    permissions,
+    session,
+    shiftSubmitting,
+    shiftError,
+    closing,
     tasks: visibleTasks,
     counts: {
       pending: tasks.filter((task) => task.state === 'pending').length,
@@ -435,6 +557,10 @@ export function useSupervisorDashboard(
       createTask,
       setFilter,
       setPositionFilter,
+      openShift,
+      requestCloseShift: closingActions.requestClose,
+      cancelCloseShift: closingActions.cancelClose,
+      confirmCloseShift: closingActions.confirmClose,
       retrySync,
       reload: load,
     },

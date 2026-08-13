@@ -90,7 +90,12 @@ export const FIXTURE_OPERATORS: readonly FixtureOperator[] = [
     membershipId: 'memb-0004',
     name: 'Elber',
     pin: '1234',
-    permissions: [CAPABILITY_SESSION_OPEN, CAPABILITY_CONFIG_WRITE, 'audit.read'],
+    permissions: [
+      CAPABILITY_SESSION_OPEN,
+      CAPABILITY_SESSION_CLOSE,
+      CAPABILITY_CONFIG_WRITE,
+      'audit.read',
+    ],
   },
 ];
 
