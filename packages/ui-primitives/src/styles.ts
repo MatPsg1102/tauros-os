@@ -634,6 +634,9 @@ span.t-navgroup-header { cursor: default; }
   display: inline-flex; border: 1px solid ${v('color-border-strong')};
   border-radius: ${v('radius-control')}; padding: ${v('space-gap-25')};
   margin: 0; background: ${v('color-surface-sunken')}; gap: ${v('space-gap-25')};
+  /* mobile-first: opções quebram linha em telas estreitas — nunca estouram
+     a viewport nem escondem filtro atrás de scroll horizontal (glove-first) */
+  flex-wrap: wrap; max-width: 100%; box-sizing: border-box;
 }
 .t-segment {
   display: inline-flex; align-items: center; justify-content: center;

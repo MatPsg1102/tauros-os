@@ -9,6 +9,10 @@ import type {
   DailyTaskRecord,
   DailyTaskRepositoryPort,
   EffectiveAuthorization,
+  EmployeeAssignmentRecord,
+  EmployeeRecord,
+  OperationalPositionRecord,
+  OperationalPositionView,
   OperatorSessionRecord,
   SessionAuditPort,
   SessionEnqueuePort,
@@ -21,12 +25,21 @@ import type {
   TaskTemplateRepositoryPort,
   TaskTemplateSnapshot,
   TaskTemplateSourcePort,
+  TeamDirectoryPort,
+  TeamMemberView,
+  TeamRecord,
   TemplateAuditPort,
   TemplateEnqueuePort,
   TemplateSyncStatus,
+  WorkforceAuditPort,
+  WorkforceEnqueuePort,
+  WorkforceRepositoryPort,
+  WorkforceSyncStatus,
 } from '@tauros/contracts';
 import {
   ENTITY_DAILY_TASK,
+  ENTITY_EMPLOYEE,
+  ENTITY_OPERATIONAL_POSITION,
   ENTITY_OPERATOR_SESSION,
   ENTITY_TASK_EXECUTION,
   ENTITY_TASK_TEMPLATE,
@@ -46,7 +59,7 @@ import {
 
 export const APP_STATE_SCHEMA: LocalSchema = {
   databaseName: 'tauros-app-state',
-  version: 3,
+  version: 4,
   migrations: [
     {
       toVersion: 1,
@@ -70,6 +83,20 @@ export const APP_STATE_SCHEMA: LocalSchema = {
         { name: 'task_templates', indexes: { by_store: 'storeId', by_store_key: 'storeKey' } },
       ],
     },
+    {
+      // ADITIVA: Gestão de Equipe — espelhos locais do workforce congelado.
+      toVersion: 4,
+      description: 'Colaboradores, vínculos, equipes e posições (Gestão de Equipe)',
+      stores: [
+        { name: 'employees', indexes: { by_store: 'storeId', by_store_key: 'storeKey' } },
+        { name: 'employee_assignments', indexes: { by_store: 'storeId' } },
+        { name: 'teams', indexes: { by_store: 'storeId' } },
+        {
+          name: 'operational_positions',
+          indexes: { by_store: 'storeId', by_store_key: 'storeKey' },
+        },
+      ],
+    },
   ],
 };
 
@@ -77,6 +104,10 @@ const SESSIONS = 'operator_sessions';
 const DAILY_TASKS = 'daily_tasks';
 const TASK_EXECUTIONS = 'task_executions';
 const TASK_TEMPLATES = 'task_templates';
+const EMPLOYEES = 'employees';
+const EMPLOYEE_ASSIGNMENTS = 'employee_assignments';
+const TEAMS = 'teams';
+const OPERATIONAL_POSITIONS = 'operational_positions';
 
 export class LocalOperatorSessionRepository {
   constructor(private readonly store: LocalStorePort) {}
@@ -243,6 +274,190 @@ export class LocalTaskTemplateRepository implements TaskTemplateRepositoryPort {
   }
 }
 
+// ===== Gestão de Equipe — espelhos locais do workforce congelado =====
+// Chaves de índice DERIVADAS na borda de persistência (mapper), nunca no
+// contrato: employees usa storeId:idempotencyKey; positions usa a chave
+// NATURAL storeId:key (unique congelado).
+
+interface EmployeeRow extends EmployeeRecord {
+  readonly storeKey: string;
+}
+
+interface PositionRow extends OperationalPositionRecord {
+  readonly storeKey: string;
+}
+
+function toEmployeeRow(record: EmployeeRecord): EmployeeRow {
+  return { ...record, storeKey: `${record.storeId}:${record.idempotencyKey}` };
+}
+
+function toPositionRow(record: OperationalPositionRecord): PositionRow {
+  return { ...record, storeKey: `${record.storeId}:${record.key}` };
+}
+
+export class LocalWorkforceRepository implements WorkforceRepositoryPort {
+  constructor(private readonly store: LocalStorePort) {}
+
+  async employees(storeId: string): Promise<readonly EmployeeRecord[]> {
+    const rows = await this.store.transaction([EMPLOYEES], 'read', (tx) =>
+      tx.getByIndex(EMPLOYEES, 'by_store', storeId),
+    );
+    return rows as EmployeeRecord[];
+  }
+
+  async employeeByIdempotencyKey(
+    storeId: string,
+    idempotencyKey: string,
+  ): Promise<EmployeeRecord | null> {
+    const rows = await this.store.transaction([EMPLOYEES], 'read', (tx) =>
+      tx.getByIndex(EMPLOYEES, 'by_store_key', `${storeId}:${idempotencyKey}`),
+    );
+    return (rows as EmployeeRecord[])[0] ?? null;
+  }
+
+  async assignments(storeId: string): Promise<readonly EmployeeAssignmentRecord[]> {
+    const rows = await this.store.transaction([EMPLOYEE_ASSIGNMENTS], 'read', (tx) =>
+      tx.getByIndex(EMPLOYEE_ASSIGNMENTS, 'by_store', storeId),
+    );
+    return rows as EmployeeAssignmentRecord[];
+  }
+
+  /** Cadastro ATÔMICO: pessoa + vínculo na MESMA transação local. */
+  async saveRegistration(
+    employee: EmployeeRecord,
+    assignment: EmployeeAssignmentRecord,
+  ): Promise<void> {
+    await this.store.transaction([EMPLOYEES, EMPLOYEE_ASSIGNMENTS], 'write', async (tx) => {
+      await tx.put(EMPLOYEES, employee.id, toEmployeeRow(employee));
+      await tx.put(EMPLOYEE_ASSIGNMENTS, assignment.id, assignment);
+    });
+  }
+
+  /** Único campo mutável: o reflexo do desfecho da fila. */
+  async updateEmployeeSyncStatus(id: string, status: WorkforceSyncStatus): Promise<void> {
+    await this.store.transaction([EMPLOYEES], 'write', async (tx) => {
+      const current = (await tx.get(EMPLOYEES, id)) as EmployeeRow | undefined;
+      if (current === undefined) return;
+      await tx.put(EMPLOYEES, id, { ...current, syncStatus: status });
+    });
+  }
+
+  async teams(storeId: string): Promise<readonly TeamRecord[]> {
+    const rows = await this.store.transaction([TEAMS], 'read', (tx) =>
+      tx.getByIndex(TEAMS, 'by_store', storeId),
+    );
+    return rows as TeamRecord[];
+  }
+
+  async saveTeam(record: TeamRecord): Promise<void> {
+    await this.store.transaction([TEAMS], 'write', (tx) => tx.put(TEAMS, record.id, record));
+  }
+
+  async positions(storeId: string): Promise<readonly OperationalPositionRecord[]> {
+    const rows = await this.store.transaction([OPERATIONAL_POSITIONS], 'read', (tx) =>
+      tx.getByIndex(OPERATIONAL_POSITIONS, 'by_store', storeId),
+    );
+    return rows as OperationalPositionRecord[];
+  }
+
+  async positionByKey(storeId: string, key: string): Promise<OperationalPositionRecord | null> {
+    const rows = await this.store.transaction([OPERATIONAL_POSITIONS], 'read', (tx) =>
+      tx.getByIndex(OPERATIONAL_POSITIONS, 'by_store_key', `${storeId}:${key}`),
+    );
+    return (rows as OperationalPositionRecord[])[0] ?? null;
+  }
+
+  async savePosition(record: OperationalPositionRecord): Promise<void> {
+    await this.store.transaction([OPERATIONAL_POSITIONS], 'write', (tx) =>
+      tx.put(OPERATIONAL_POSITIONS, record.id, toPositionRow(record)),
+    );
+  }
+
+  /** Único campo mutável: o reflexo do desfecho da fila. */
+  async updatePositionSyncStatus(id: string, status: WorkforceSyncStatus): Promise<void> {
+    await this.store.transaction([OPERATIONAL_POSITIONS], 'write', async (tx) => {
+      const current = (await tx.get(OPERATIONAL_POSITIONS, id)) as PositionRow | undefined;
+      if (current === undefined) return;
+      await tx.put(OPERATIONAL_POSITIONS, id, { ...current, syncStatus: status });
+    });
+  }
+}
+
+/**
+ * Diretório de equipe (TeamDirectoryPort) sobre o CADASTRO REAL da Gestão de
+ * Equipe. members() expõe a posição VIGENTE na data operacional de hoje
+ * (validFrom ≤ hoje < validUntil) — vigência de vínculo, NUNCA presença de
+ * escala (equipe ≠ presença; presença chega com a Escala Operacional V1).
+ */
+export class LocalTeamDirectory implements TeamDirectoryPort {
+  constructor(
+    private readonly workforce: LocalWorkforceRepository,
+    /** Data operacional corrente YYYY-MM-DD no fuso da LOJA (wiring). */
+    private readonly today: () => string,
+  ) {}
+
+  async positions(storeId: string): Promise<readonly OperationalPositionView[]> {
+    const records = await this.workforce.positions(storeId);
+    return records.map((record) => ({ id: record.id, key: record.key, name: record.name }));
+  }
+
+  async members(storeId: string): Promise<readonly TeamMemberView[]> {
+    const today = this.today();
+    const [employees, assignments] = await Promise.all([
+      this.workforce.employees(storeId),
+      this.workforce.assignments(storeId),
+    ]);
+    return employees
+      .filter((employee) => employee.active)
+      .map((employee) => {
+        const current = assignments
+          .filter(
+            (assignment) =>
+              assignment.employeeId === employee.id &&
+              assignment.validFrom <= today &&
+              (assignment.validUntil === null || assignment.validUntil >= today),
+          )
+          .sort((a, b) => (a.validFrom < b.validFrom ? 1 : -1))[0];
+        return {
+          employeeId: employee.id,
+          fullName: employee.fullName,
+          positionId: current?.operationalPositionId ?? null,
+        };
+      });
+  }
+}
+
+/**
+ * Diretório composto: cadastro base (fixtures de desenvolvimento até o
+ * diretório real do backend) + Gestão de Equipe local — MESMO padrão do
+ * CompositeTaskTemplateSource. Colaboradores e posições cadastrados aqui
+ * aparecem imediatamente nos seletores de atribuição de tarefa.
+ */
+export class CompositeTeamDirectory implements TeamDirectoryPort {
+  constructor(
+    private readonly base: TeamDirectoryPort,
+    private readonly local: LocalTeamDirectory,
+  ) {}
+
+  async positions(storeId: string): Promise<readonly OperationalPositionView[]> {
+    const [base, local] = await Promise.all([
+      this.base.positions(storeId),
+      this.local.positions(storeId),
+    ]);
+    const seen = new Set(base.map((position) => position.id));
+    return [...base, ...local.filter((position) => !seen.has(position.id))];
+  }
+
+  async members(storeId: string): Promise<readonly TeamMemberView[]> {
+    const [base, local] = await Promise.all([
+      this.base.members(storeId),
+      this.local.members(storeId),
+    ]);
+    const seen = new Set(base.map((member) => member.employeeId));
+    return [...base, ...local.filter((member) => !seen.has(member.employeeId))];
+  }
+}
+
 /**
  * Fonte de definições para a materialização do dia: fixtures de
  * desenvolvimento (cadastro base) + definições criadas localmente pelo
@@ -354,6 +569,122 @@ export class TemplateQueueAdapter implements TemplateEnqueuePort {
         priority: 2,
       },
     });
+  }
+}
+
+// ===== Gestão de Equipe na fila oficial =====
+
+export class WorkforceQueueAdapter implements WorkforceEnqueuePort {
+  constructor(
+    private readonly queue: LocalQueueRepository,
+    private readonly authorization: () => EffectiveAuthorization,
+    private readonly deviceId: string,
+    private readonly clock: () => Date,
+  ) {}
+
+  /** Snapshot de autorização vinculado ao item (RA-QUEUE-01). */
+  private snapshotNow(auth: EffectiveAuthorization) {
+    const ttlMs = Math.max(1, auth.validUntil.getTime() - this.clock().getTime());
+    return captureSnapshot(
+      {
+        operatorProfileId: auth.operatorProfileId,
+        operatorEmployeeId: auth.operatorEmployeeId,
+        storeId: auth.storeId,
+        sessionId: auth.sessionId,
+        permissions: auth.permissions,
+        ...(auth.permissionModelVersion !== undefined
+          ? { permissionModelVersion: auth.permissionModelVersion }
+          : {}),
+        ...(auth.configVersionRef !== undefined ? { configVersionRef: auth.configVersionRef } : {}),
+        authOrigin: auth.origin === 'online' ? 'online' : 'offline-pin',
+      },
+      ttlMs,
+      this.clock,
+    );
+  }
+
+  async enqueueRegisterEmployee(
+    input: Parameters<WorkforceEnqueuePort['enqueueRegisterEmployee']>[0],
+  ): Promise<void> {
+    const auth = this.authorization();
+    // o cadastro só pode chegar ao servidor DEPOIS da posição recém-criada
+    // offline que ele referencia (ordem do DAG — FK de employee_assignments)
+    const all = await this.queue.all();
+    const dependsOn = all
+      .filter(
+        (item) =>
+          item.entityType === ENTITY_OPERATIONAL_POSITION &&
+          item.entityId === input.assignment.operationalPositionId,
+      )
+      .map((item) => item.id);
+    await this.queue.enqueue({
+      id: input.queueItemId,
+      operation: 'insert',
+      entityType: ENTITY_EMPLOYEE,
+      entityId: input.employee.id,
+      payload: { employee: input.employee, assignment: input.assignment },
+      ...(dependsOn.length > 0 ? { dependsOn } : {}),
+      idempotencyKey: input.employee.idempotencyKey,
+      authorization: this.snapshotNow(auth),
+      trace: {
+        storeId: input.employee.storeId,
+        deviceId: this.deviceId,
+        sessionId: auth.sessionId,
+        schemaVersion: 1,
+        priority: 2,
+      },
+    });
+  }
+
+  async enqueueCreatePosition(
+    input: Parameters<WorkforceEnqueuePort['enqueueCreatePosition']>[0],
+  ): Promise<void> {
+    const auth = this.authorization();
+    await this.queue.enqueue({
+      id: input.queueItemId,
+      operation: 'insert',
+      entityType: ENTITY_OPERATIONAL_POSITION,
+      entityId: input.position.id,
+      payload: { position: input.position },
+      idempotencyKey: input.position.idempotencyKey,
+      authorization: this.snapshotNow(auth),
+      trace: {
+        storeId: input.position.storeId,
+        deviceId: this.deviceId,
+        sessionId: auth.sessionId,
+        schemaVersion: 1,
+        priority: 2,
+      },
+    });
+  }
+}
+
+// ===== Auditoria da gestão de equipe (tipos OFICIAIS do catálogo) =====
+
+export class WorkforceAuditAdapter implements WorkforceAuditPort {
+  constructor(
+    private readonly factory: AuditEventFactory,
+    private readonly buffer: AuditBufferPort,
+  ) {}
+
+  async record(input: Parameters<WorkforceAuditPort['record']>[0]): Promise<void> {
+    const event = this.factory.fromDirect({
+      eventType: input.eventType,
+      occurredAt: input.occurredAt,
+      storeId: input.storeId,
+      actorId: input.actorProfileId,
+      actorType: 'human',
+      sessionId: null,
+      deviceId: input.deviceId,
+      correlationId: input.correlationId,
+      entityType: input.entityType,
+      entityId: input.entityId,
+      operation: 'create',
+      source: input.source,
+      result: input.result,
+      errorCode: input.errorCode ?? null,
+    });
+    await this.buffer.append(event);
   }
 }
 

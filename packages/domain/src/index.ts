@@ -36,6 +36,21 @@ export type {
   AssignDailyTaskDecision,
   AssignDailyTaskRejectionCode,
 } from './daily-task/assign-task.js';
+export { decideRegisterEmployee } from './workforce/register-employee.js';
+export type {
+  RegisteredAssignment,
+  RegisteredEmployee,
+  RegisterEmployeeCommand,
+  RegisterEmployeeDecision,
+  RegisterEmployeeRejectionCode,
+} from './workforce/register-employee.js';
+export { decideCreatePosition } from './workforce/create-position.js';
+export type {
+  CreatedPosition,
+  CreatePositionCommand,
+  CreatePositionDecision,
+  CreatePositionRejectionCode,
+} from './workforce/create-position.js';
 export { decideTaskOutcome, isOverdue } from './daily-task/task-outcome.js';
 export type {
   DailyTaskStatus,

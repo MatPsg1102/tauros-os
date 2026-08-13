@@ -3,6 +3,7 @@ export {
   CAPABILITY_CONFIG_WRITE,
   CAPABILITY_SESSION_CLOSE,
   CAPABILITY_SESSION_OPEN,
+  CAPABILITY_WORKFORCE_WRITE,
   PERMISSION_MODEL_VERSION,
 } from './operator-session/capabilities.js';
 export type {
@@ -71,3 +72,21 @@ export type {
   TemplateEnqueueInput,
   TemplateEnqueuePort,
 } from './task-template/ports.js';
+export { ENTITY_EMPLOYEE, ENTITY_OPERATIONAL_POSITION } from './workforce/record.js';
+export type {
+  CreatePositionQueuePayload,
+  EmployeeAssignmentRecord,
+  EmployeeRecord,
+  OperationalPositionRecord,
+  RegisterEmployeeQueuePayload,
+  TeamRecord,
+  WorkforceSyncStatus,
+} from './workforce/record.js';
+export type {
+  CreatePositionEnqueueInput,
+  RegisterEmployeeEnqueueInput,
+  WorkforceAuditInput,
+  WorkforceAuditPort,
+  WorkforceEnqueuePort,
+  WorkforceRepositoryPort,
+} from './workforce/ports.js';

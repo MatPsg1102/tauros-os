@@ -7,11 +7,18 @@
 
 import type {
   CloseSessionQueuePayload,
+  CreatePositionQueuePayload,
   CreateTemplateQueuePayload,
   OpenSessionQueuePayload,
+  RegisterEmployeeQueuePayload,
   TaskExecutionQueuePayload,
 } from '@tauros/contracts';
-import { ENTITY_TASK_EXECUTION, ENTITY_TASK_TEMPLATE } from '@tauros/contracts';
+import {
+  ENTITY_EMPLOYEE,
+  ENTITY_OPERATIONAL_POSITION,
+  ENTITY_TASK_EXECUTION,
+  ENTITY_TASK_TEMPLATE,
+} from '@tauros/contracts';
 import type { QueueItem, SubmitOutcome, SyncTransportPort } from '@tauros/infrastructure';
 
 interface ServerSession {
@@ -72,6 +79,12 @@ export class FakeSessionSyncTransport implements SyncTransportPort {
     }
     if (item.entityType === ENTITY_TASK_TEMPLATE) {
       return Promise.resolve(this.submitTemplate(item));
+    }
+    if (item.entityType === ENTITY_EMPLOYEE) {
+      return Promise.resolve(this.submitRegisterEmployee(item));
+    }
+    if (item.entityType === ENTITY_OPERATIONAL_POSITION) {
+      return Promise.resolve(this.submitCreatePosition(item));
     }
     if (item.operation === 'update') {
       return Promise.resolve(this.submitSessionClose(item));
@@ -134,6 +147,33 @@ export class FakeSessionSyncTransport implements SyncTransportPort {
     }
     if (payload.template.title.trim() === '') {
       return { kind: 'rejected', message: 'definição inválida' };
+    }
+    this.seenIdempotencyKeys.add(item.idempotencyKey);
+    return { kind: 'persisted' };
+  }
+
+  private submitRegisterEmployee(item: QueueItem): SubmitOutcome {
+    const payload = item.payload as RegisterEmployeeQueuePayload;
+    // workforce.write é revalidada pelo SERVIDOR: o snapshot de autorização
+    // do item precisa carregar a capacidade (ADR-018).
+    if (!item.authorization.permissions.includes('workforce.write')) {
+      return { kind: 'rejected', message: 'sem permissão para cadastrar colaborador' };
+    }
+    if (payload.employee.fullName.trim() === '') {
+      return { kind: 'rejected', message: 'cadastro inválido' };
+    }
+    this.seenIdempotencyKeys.add(item.idempotencyKey);
+    return { kind: 'persisted' };
+  }
+
+  private submitCreatePosition(item: QueueItem): SubmitOutcome {
+    const payload = item.payload as CreatePositionQueuePayload;
+    // posição é dado configurável (ADR-019): config.write na RLS congelada
+    if (!item.authorization.permissions.includes('config.write')) {
+      return { kind: 'rejected', message: 'sem permissão para criar posição' };
+    }
+    if (payload.position.name.trim() === '') {
+      return { kind: 'rejected', message: 'posição inválida' };
     }
     this.seenIdempotencyKeys.add(item.idempotencyKey);
     return { kind: 'persisted' };

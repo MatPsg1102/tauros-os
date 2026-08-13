@@ -48,3 +48,21 @@ export type {
   RecordTaskOutcomeInput,
   RecordTaskOutcomeResult,
 } from './daily-task/record-task-outcome.js';
+export {
+  employeeIdempotencyKeyFor,
+  RegisterEmployeeUseCase,
+} from './workforce/register-employee.js';
+export type {
+  RegisterEmployeeFailureCode,
+  RegisterEmployeeInput,
+  RegisterEmployeeResult,
+} from './workforce/register-employee.js';
+export {
+  CreateOperationalPositionUseCase,
+  positionKeyFor,
+} from './workforce/create-operational-position.js';
+export type {
+  CreateOperationalPositionFailureCode,
+  CreateOperationalPositionInput,
+  CreateOperationalPositionResult,
+} from './workforce/create-operational-position.js';
