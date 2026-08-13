@@ -145,6 +145,22 @@ export class FixtureTeamDirectory {
 }
 
 /**
+ * Escala de DEMONSTRAÇÃO (ShiftSchedulePort). É AQUI — e SÓ aqui — que a regra
+ * 12x36 vive: uma posição está escalada em dias ímpares do mês, ausente nos
+ * pares (stand-in determinístico do "dia sim, dia não"). O módulo de tarefas
+ * jamais conhece esta regra: ele só pergunta "está escalado nesta data?". O
+ * adapter real (ShiftOccurrence do backend) substitui esta classe sem tocar
+ * domínio, aplicação nem UI.
+ */
+export class FixtureShiftSchedule {
+  isPositionScheduled(_storeId: string, _positionId: string, workDate: string): Promise<boolean> {
+    if (!fixturesEnabled()) throw new FixturesDisabledError();
+    const dayOfMonth = Number(workDate.slice(8, 10));
+    return Promise.resolve(dayOfMonth % 2 === 1);
+  }
+}
+
+/**
  * Definições de tarefa da loja (task_templates vigentes). Fixture porque o
  * cadastro real chega com o backend; a FORMA é a congelada, incluindo
  * requires_photo, a faixa esperada que decide PASS/FAIL e a posição

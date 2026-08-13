@@ -31,6 +31,7 @@ export type {
 export type { LocalSyncStatus } from './sync/status.js';
 export { ENTITY_DAILY_TASK, ENTITY_TASK_EXECUTION } from './daily-task/record.js';
 export type {
+  AssignDailyTaskQueuePayload,
   DailyTaskRecord,
   DailyTaskStatus,
   ExecutionResult,
@@ -42,11 +43,18 @@ export type {
   TaskTemplateSnapshot,
 } from './daily-task/record.js';
 export type {
+  DailyTaskAssignEnqueueInput,
+  DailyTaskAssignEnqueuePort,
+  DailyTaskAuditInput,
+  DailyTaskAuditPort,
   DailyTaskRepositoryPort,
+  ShiftSchedulePort,
   TaskExecutionEnqueueInput,
   TaskExecutionEnqueuePort,
   TaskTemplateSourcePort,
 } from './daily-task/ports.js';
+export { ALL_WEEKDAYS } from './task-template/recurrence.js';
+export type { RecurrenceKind, TaskRecurrence, Weekday } from './task-template/recurrence.js';
 export { ENTITY_TASK_TEMPLATE } from './task-template/record.js';
 export type {
   CreateTemplateQueuePayload,

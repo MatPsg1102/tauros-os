@@ -26,6 +26,28 @@ enum TaskFrequency {
   @@map("task_frequency")
 }
 
+/// Regra de materialização (planejamento do encarregado). WHEN_SCHEDULED
+/// consulta a escala oficial (shift_occurrences) — a regra 12x36 não vive aqui.
+enum TaskRecurrenceKind {
+  ONCE
+  WEEKDAYS
+  WHEN_SCHEDULED
+
+  @@map("task_recurrence_kind")
+}
+
+enum Weekday {
+  MON
+  TUE
+  WED
+  THU
+  FRI
+  SAT
+  SUN
+
+  @@map("weekday")
+}
+
 enum DailyTaskStatus {
   PENDING
   DONE

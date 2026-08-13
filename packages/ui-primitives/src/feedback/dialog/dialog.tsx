@@ -7,7 +7,15 @@
 
 'use client';
 
-import { useCallback, useEffect, useId, useState, type MouseEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from 'react';
 
 import { cx } from '../../shared/class-names.js';
 import { Heading } from '../../primitives/heading/heading.js';
@@ -90,24 +98,38 @@ export function Dialog({
     [controlled, onOpenChange],
   );
 
-  // ciclo de vida do overlay: pilha, foco, scroll lock, Escape — com cleanup
+  // BUG-FIX FOCO: o ciclo de vida do overlay (pilha, captura/restauração de
+  // foco, scroll lock, foco inicial) deve rodar UMA VEZ por abertura — não a
+  // cada re-render do consumidor. Callbacks inline (onOpenChange, e portanto
+  // setOpen) mudam de identidade a cada tecla digitada num input do diálogo;
+  // se estivessem nas deps, o efeito faria teardown+setup a cada caractere,
+  // e focusInitial roubaria o foco do input para o primeiro focável (o X).
+  // Mantemos os valores voláteis em refs e as deps só no que define a
+  // IDENTIDADE da abertura: [isOpen, surface, baseId].
+  const setOpenRef = useRef(setOpen);
+  setOpenRef.current = setOpen;
+  const modalRef = useRef(modal);
+  modalRef.current = modal;
+  const initialFocusElRef = useRef<HTMLElement | null>(initialFocusRef?.current ?? null);
+  initialFocusElRef.current = initialFocusRef?.current ?? null;
+
   useEffect(() => {
     if (!isOpen || surface === null) return undefined;
     const doc = surface.ownerDocument;
 
     pushOverlay(baseId);
     const restoreFocus = captureFocusRestore(doc);
-    const releaseScroll = modal ? acquireScrollLock(doc) : undefined;
-    focusInitial(surface, initialFocusRef?.current);
+    const releaseScroll = modalRef.current ? acquireScrollLock(doc) : undefined;
+    focusInitial(surface, initialFocusElRef.current);
 
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!isTopOverlay(baseId)) return;
       if (event.key === 'Escape') {
         event.preventDefault();
-        setOpen(false);
+        setOpenRef.current(false);
         return;
       }
-      if (modal) containTabKey(surface, event);
+      if (modalRef.current) containTabKey(surface, event);
     };
     doc.addEventListener('keydown', onKeyDown, true);
 
@@ -117,7 +139,7 @@ export function Dialog({
       releaseScroll?.();
       restoreFocus();
     };
-  }, [isOpen, surface, modal, baseId, setOpen, initialFocusRef]);
+  }, [isOpen, surface, baseId]);
 
   if (!isOpen) return null;
 

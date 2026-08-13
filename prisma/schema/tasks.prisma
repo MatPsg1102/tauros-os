@@ -12,6 +12,15 @@ model TaskTemplate {
   active           Boolean       @default(true)
   createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
 
+  // Planejamento operacional (aditivo, forward-only). effectiveFrom = data
+  // inicial de vigência; planned_start/end_minutes = janela planejada em
+  // minutos do dia operacional; recorrência governa a materialização.
+  effectiveFrom       DateTime          @default(now()) @map("effective_from") @db.Date
+  plannedStartMinutes Int               @default(0) @map("planned_start_minutes")
+  plannedEndMinutes   Int               @default(0) @map("planned_end_minutes")
+  recurrenceKind      TaskRecurrenceKind @default(WEEKDAYS) @map("recurrence_kind")
+  recurrenceWeekdays  Weekday[]         @map("recurrence_weekdays")
+
   targetPosition OperationalPosition? @relation(fields: [targetPositionId], references: [id])
   checklistItems ChecklistItem[]
   dailyTasks     DailyTask[]
@@ -51,14 +60,19 @@ model DailyTask {
   storeId             String          @map("store_id") @db.Uuid
   templateId          String          @map("template_id") @db.Uuid
   workDate            DateTime        @map("work_date") @db.Date
+  plannedStartAt      DateTime?       @map("planned_start_at") @db.Timestamptz(6)
   dueAt               DateTime        @map("due_at") @db.Timestamptz(6)
   status              DailyTaskStatus @default(PENDING)
+  // Atribuição SITUACIONAL da ocorrência (encarregado define no dia). NÃO
+  // altera o template — a próxima ocorrência nasce pela regra da definição.
+  assignedPositionId  String?         @map("assigned_position_id") @db.Uuid
   expectedMinSnapshot Decimal?        @map("expected_min_snapshot") @db.Decimal(6, 2)
   expectedMaxSnapshot Decimal?        @map("expected_max_snapshot") @db.Decimal(6, 2)
   configVersionRef    String?         @map("config_version_ref") @db.Uuid
 
-  template   TaskTemplate    @relation(fields: [templateId], references: [id])
-  executions TaskExecution[]
+  template         TaskTemplate         @relation(fields: [templateId], references: [id])
+  assignedPosition OperationalPosition? @relation("DailyTaskAssignment", fields: [assignedPositionId], references: [id])
+  executions       TaskExecution[]
 
   @@index([storeId, workDate, status])
   @@map("daily_tasks")

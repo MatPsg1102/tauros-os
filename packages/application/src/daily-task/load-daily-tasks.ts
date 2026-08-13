@@ -1,15 +1,18 @@
-// Use case: carregar/materializar o quadro de tarefas do dia (7.2).
-// Materialização LOCAL e idempotente a partir dos templates vigentes —
+// Use case: carregar/materializar o quadro de tarefas do dia (7.2 + planejamento).
+// Materialização LOCAL e idempotente a partir dos templates vigentes, agora
+// governada pela RECORRÊNCIA da definição (ONCE | WEEKDAYS | WHEN_SCHEDULED) e
+// pela data inicial de vigência. WHEN_SCHEDULED consulta a ESCALA oficial —
 // releitura no mesmo dia NUNCA sobrescreve o desfecho já registrado.
 // OVERDUE é derivado de due_at pelo domínio, jamais digitado.
 
-import { isOverdue } from '@tauros/domain';
+import { EVERY_DAY, isOverdue, shouldMaterialize, weekdayOf } from '@tauros/domain';
 import {
   PERMISSION_MODEL_VERSION,
   type ClockPort,
   type DailyTaskRecord,
   type DailyTaskRepositoryPort,
   type EffectiveAuthorization,
+  type ShiftSchedulePort,
   type TaskTemplateSourcePort,
   type TaskTemplateSnapshot,
 } from '@tauros/contracts';
@@ -47,21 +50,30 @@ export function dailyTaskIdFor(storeId: string, workDate: string, templateId: st
   return `daily-task:${storeId}:${workDate}:${templateId}`;
 }
 
+function minutesToIso(dayStart: Date, minutes: number): string {
+  return new Date(dayStart.getTime() + minutes * 60 * 1000).toISOString();
+}
+
 function materialize(
   template: TaskTemplateSnapshot,
   input: LoadDailyTasksInput,
   storeId: string,
 ): DailyTaskRecord {
-  const dueAt = new Date(
-    input.operationalDayStart.getTime() + template.dueOffsetMinutes * 60 * 1000,
-  );
+  const plannedStartMinutes = template.plannedStartMinutes;
   return {
     id: dailyTaskIdFor(storeId, input.workDate, template.templateId),
     storeId,
     templateId: template.templateId,
     workDate: input.workDate,
-    dueAt: dueAt.toISOString(),
+    plannedStartAt:
+      plannedStartMinutes === undefined
+        ? null
+        : minutesToIso(input.operationalDayStart, plannedStartMinutes),
+    dueAt: minutesToIso(input.operationalDayStart, template.dueOffsetMinutes),
     status: 'PENDING',
+    // atribuição situacional começa vazia: o responsável efetivo é
+    // template.targetPositionId (null ⇒ "sem responsável" até o encarregado atribuir)
+    assignedPositionId: null,
     expectedMinSnapshot: template.expectedMin,
     expectedMaxSnapshot: template.expectedMax,
     configVersionRef: input.configVersionRef,
@@ -76,7 +88,32 @@ export class LoadDailyTasksUseCase {
     private readonly clock: ClockPort,
     private readonly templates: TaskTemplateSourcePort,
     private readonly repository: DailyTaskRepositoryPort,
+    private readonly schedule: ShiftSchedulePort,
   ) {}
+
+  /** A definição materializa nesta data? Aplica a recorrência (ou o default). */
+  private async applies(
+    template: TaskTemplateSnapshot,
+    input: LoadDailyTasksInput,
+    storeId: string,
+  ): Promise<boolean> {
+    const recurrence = template.recurrence ?? EVERY_DAY;
+    const effectiveFrom = template.effectiveFrom ?? input.workDate;
+    // WHEN_SCHEDULED depende da ESCALA da posição alvo; sem posição, não materializa
+    let isScheduled = false;
+    if (recurrence.kind === 'WHEN_SCHEDULED') {
+      if (template.targetPositionId === null) return false;
+      isScheduled = await this.schedule.isPositionScheduled(
+        storeId,
+        template.targetPositionId,
+        input.workDate,
+      );
+    }
+    return shouldMaterialize(
+      { recurrence, effectiveFrom },
+      { workDate: input.workDate, weekday: weekdayOf(input.workDate), isScheduled },
+    );
+  }
 
   async execute(input: LoadDailyTasksInput): Promise<LoadDailyTasksResult> {
     const now = this.clock.now();
@@ -111,8 +148,14 @@ export class LoadDailyTasksUseCase {
     const persisted = await this.repository.byWorkDate(auth.storeId, input.workDate);
     const byId = new Map(persisted.map((task) => [task.id, task]));
 
-    // materializa apenas o que ainda não existe (idempotente)
-    const created = templates
+    // materializa apenas templates aplicáveis à data (recorrência/escala) e
+    // ainda não materializados (idempotente). Uma ocorrência já existente
+    // NUNCA é apagada por mudança de recorrência/escala — só deixa de nascer.
+    const applicable: TaskTemplateSnapshot[] = [];
+    for (const template of templates) {
+      if (await this.applies(template, input, auth.storeId)) applicable.push(template);
+    }
+    const created = applicable
       .map((template) => materialize(template, input, auth.storeId))
       .filter((task) => !byId.has(task.id));
     if (created.length > 0) {

@@ -24,6 +24,18 @@ export type {
   CreateTemplateRejectionCode,
   TemplateFrequency,
 } from './task-template/create-template.js';
+export { EVERY_DAY, shouldMaterialize, weekdayOf } from './task-template/materialization.js';
+export type {
+  MaterializationContext,
+  MaterializationRule,
+} from './task-template/materialization.js';
+export { decideAssignDailyTask } from './daily-task/assign-task.js';
+export type {
+  AssignableDailyTask,
+  AssignDailyTaskCommand,
+  AssignDailyTaskDecision,
+  AssignDailyTaskRejectionCode,
+} from './daily-task/assign-task.js';
 export { decideTaskOutcome, isOverdue } from './daily-task/task-outcome.js';
 export type {
   DailyTaskStatus,

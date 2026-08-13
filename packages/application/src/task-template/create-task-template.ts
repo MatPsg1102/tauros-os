@@ -10,13 +10,15 @@
 //   3. audit (config.changed).
 // Falha entre 1 e 2 é recuperável: o boot reconstrói pelo payload da fila.
 
-import { decideCreateTemplate, type TemplateFrequency } from '@tauros/domain';
+import { decideCreateTemplate } from '@tauros/domain';
 import {
   CAPABILITY_CONFIG_WRITE,
   PERMISSION_MODEL_VERSION,
   type ClockPort,
   type EffectiveAuthorization,
   type IdGeneratorPort,
+  type TaskFrequency,
+  type TaskRecurrence,
   type TaskTemplateRecord,
   type TaskTemplateRepositoryPort,
   type TeamDirectoryPort,
@@ -32,13 +34,18 @@ export interface CreateTaskTemplateInput {
   /** Fuso IANA da LOJA (dado oficial da loja — nunca o fuso do dispositivo). */
   readonly storeTimeZone: string;
   readonly title: string;
-  readonly targetPositionId: string;
+  /** Posição responsável; null = "definir no dia" (sem responsável). */
+  readonly targetPositionId: string | null;
   readonly requiresPhoto: boolean;
   readonly expectedMin: number | null;
   readonly expectedMax: number | null;
-  /** Minutos após o início do dia operacional em que a tarefa vence. */
+  /** Data civil YYYY-MM-DD do início da vigência. */
+  readonly effectiveFrom: string;
+  /** Minutos após o início do dia operacional do INÍCIO planejado. */
+  readonly plannedStartMinutes: number;
+  /** Minutos após o início do dia operacional do FIM máximo (vencimento). */
   readonly dueOffsetMinutes: number;
-  readonly frequency: TemplateFrequency;
+  readonly recurrence: TaskRecurrence;
   readonly createdOffline: boolean;
 }
 
@@ -50,9 +57,17 @@ export type CreateTaskTemplateFailureCode =
   | 'TITLE_REQUIRED'
   | 'ASSIGNMENT_REQUIRED'
   | 'INVALID_DUE_TIME'
+  | 'INVALID_TIME_RANGE'
+  | 'INVALID_DATE'
+  | 'INVALID_RECURRENCE'
   | 'DOMAIN_REJECTED'
   | 'ENQUEUE_FAILED'
   | 'PERSISTENCE_FAILED';
+
+/** task_frequency congelada derivada da recorrência (fidelidade de schema). */
+function frequencyFor(recurrence: TaskRecurrence): TaskFrequency {
+  return recurrence.kind === 'ONCE' ? 'ONCE' : 'CUSTOM';
+}
 
 export type CreateTaskTemplateResult =
   | { readonly kind: 'created'; readonly template: TaskTemplateRecord }
@@ -85,9 +100,10 @@ export function templateIdempotencyKeyFor(
   operationalDate: string,
   creatorEmployeeId: string,
   title: string,
-  targetPositionId: string,
+  targetPositionId: string | null,
 ): string {
-  return `task-template-create:${storeId}:${operationalDate}:${creatorEmployeeId}:${targetPositionId}:${titleSlug(title)}`;
+  const position = targetPositionId ?? 'unassigned';
+  return `task-template-create:${storeId}:${operationalDate}:${creatorEmployeeId}:${position}:${titleSlug(title)}`;
 }
 
 export class CreateTaskTemplateUseCase {
@@ -135,10 +151,14 @@ export class CreateTaskTemplateUseCase {
       return { kind: 'failed', code: 'PERMISSION_DENIED', detail: 'capability ausente' };
     }
 
-    // atribuição usa ID OFICIAL: a posição precisa existir na loja
-    if (input.targetPositionId.trim() !== '') {
+    // atribuição usa ID OFICIAL: se houver posição, ela precisa existir na loja
+    const targetPositionId =
+      input.targetPositionId !== null && input.targetPositionId.trim() !== ''
+        ? input.targetPositionId
+        : null;
+    if (targetPositionId !== null) {
       const positions = await this.team.positions(auth.storeId);
-      if (!positions.some((position) => position.id === input.targetPositionId)) {
+      if (!positions.some((position) => position.id === targetPositionId)) {
         return {
           kind: 'failed',
           code: 'UNKNOWN_POSITION',
@@ -153,7 +173,7 @@ export class CreateTaskTemplateUseCase {
       operationalDate,
       auth.operatorEmployeeId,
       input.title,
-      input.targetPositionId,
+      targetPositionId,
     );
 
     // replay ANTES de decidir: a garantia de não duplicar não depende do resto
@@ -167,13 +187,16 @@ export class CreateTaskTemplateUseCase {
         templateId: this.ids.uuid(),
         storeId: auth.storeId,
         title: input.title,
-        frequency: input.frequency,
-        targetPositionId: input.targetPositionId,
+        frequency: frequencyFor(input.recurrence),
+        targetPositionId,
         requiresPhoto: input.requiresPhoto,
         expectedMin: input.expectedMin,
         expectedMax: input.expectedMax,
         clientCreatedAt: now,
+        effectiveFrom: input.effectiveFrom,
+        plannedStartMinutes: input.plannedStartMinutes,
         dueOffsetMinutes: input.dueOffsetMinutes,
+        recurrence: input.recurrence,
         idempotencyKey,
       },
       null,
@@ -190,6 +213,12 @@ export class CreateTaskTemplateUseCase {
           return { kind: 'failed', code: 'ASSIGNMENT_REQUIRED', detail: decision.detail };
         case 'INVALID_DUE_TIME':
           return { kind: 'failed', code: 'INVALID_DUE_TIME', detail: decision.detail };
+        case 'INVALID_TIME_RANGE':
+          return { kind: 'failed', code: 'INVALID_TIME_RANGE', detail: decision.detail };
+        case 'INVALID_DATE':
+          return { kind: 'failed', code: 'INVALID_DATE', detail: decision.detail };
+        case 'INVALID_RECURRENCE':
+          return { kind: 'failed', code: 'INVALID_RECURRENCE', detail: decision.detail };
         default:
           return { kind: 'failed', code: 'DOMAIN_REJECTED', detail: decision.detail };
       }
@@ -207,7 +236,10 @@ export class CreateTaskTemplateUseCase {
       expectedMax: created.expectedMax,
       active: created.active,
       clientCreatedAt: created.clientCreatedAt.toISOString(),
+      effectiveFrom: created.effectiveFrom,
+      plannedStartMinutes: created.plannedStartMinutes,
       dueOffsetMinutes: created.dueOffsetMinutes,
+      recurrence: created.recurrence,
       idempotencyKey: created.idempotencyKey,
       syncStatus: 'queued',
       auditCorrelationId: created.id,

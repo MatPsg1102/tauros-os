@@ -23,6 +23,12 @@ export type {
   LoadDailyTasksInput,
   LoadDailyTasksResult,
 } from './daily-task/load-daily-tasks.js';
+export { AssignDailyTaskUseCase } from './daily-task/assign-daily-task.js';
+export type {
+  AssignDailyTaskFailureCode,
+  AssignDailyTaskInput,
+  AssignDailyTaskResult,
+} from './daily-task/assign-daily-task.js';
 export {
   RecordTaskOutcomeUseCase,
   taskOutcomeIdempotencyKeyFor,

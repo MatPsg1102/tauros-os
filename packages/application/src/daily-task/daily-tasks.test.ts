@@ -106,16 +106,27 @@ function repositoryPort(repo: Repo) {
   };
 }
 
-function makeLoader(repo: Repo, failTemplates = false): LoadDailyTasksUseCase {
+/** Escala de teste: por padrão ninguém escalado (templates base não usam). */
+function scheduleStub(scheduled = false) {
+  return { isPositionScheduled: () => Promise.resolve(scheduled) };
+}
+
+function makeLoader(
+  repo: Repo,
+  failTemplates = false,
+  templatesOverride?: readonly TaskTemplateSnapshot[],
+  scheduled = false,
+): LoadDailyTasksUseCase {
   return new LoadDailyTasksUseCase(
     { now: () => NOW },
     {
       activeTemplates: () =>
         failTemplates
           ? Promise.reject(new Error('definições indisponíveis'))
-          : Promise.resolve(templates),
+          : Promise.resolve(templatesOverride ?? templates),
     },
     repositoryPort(repo),
+    scheduleStub(scheduled),
   );
 }
 
@@ -177,6 +188,7 @@ describe('LoadDailyTasksUseCase', () => {
       { now: () => new Date('2026-07-21T10:45:00.000Z') },
       { activeTemplates: () => Promise.resolve(templates) },
       repositoryPort(repo),
+      scheduleStub(),
     );
     const result = await loader.execute({ authorization: authorization(), ...loadInput });
     if (result.kind !== 'loaded') throw new Error('esperava loaded');
@@ -215,6 +227,95 @@ describe('LoadDailyTasksUseCase', () => {
     repo.failSaveAll = true;
     const result = await makeLoader(repo).execute({ authorization: authorization(), ...loadInput });
     expect(result).toMatchObject({ kind: 'failed', code: 'PERSISTENCE_FAILED' });
+  });
+
+  // ===== Recorrência + escala + data de vigência =====
+  const planned = (over: Partial<TaskTemplateSnapshot>): TaskTemplateSnapshot => ({
+    templateId: 'tpl-x',
+    title: 'Tarefa planejada',
+    frequency: 'CUSTOM',
+    requiresPhoto: false,
+    expectedMin: null,
+    expectedMax: null,
+    targetPositionId: 'pos-apoio',
+    dueOffsetMinutes: 120,
+    plannedStartMinutes: 60,
+    effectiveFrom: WORK_DATE,
+    recurrence: { kind: 'WEEKDAYS', weekdays: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] },
+    ...over,
+  });
+
+  async function tasksFor(
+    templatesOverride: readonly TaskTemplateSnapshot[],
+    scheduled = false,
+    workDate = WORK_DATE,
+  ): Promise<readonly string[]> {
+    const repo = makeRepo();
+    const result = await makeLoader(repo, false, templatesOverride, scheduled).execute({
+      authorization: authorization(),
+      workDate,
+      operationalDayStart: DAY_START,
+      configVersionRef: 'cfg-v1',
+    });
+    if (result.kind !== 'loaded') throw new Error('esperava loaded');
+    return result.tasks.map((task) => task.templateId);
+  }
+
+  it('ONCE materializa só na data inicial', async () => {
+    const t = planned({ recurrence: { kind: 'ONCE' }, effectiveFrom: '2026-07-21' });
+    expect(await tasksFor([t], false, '2026-07-21')).toEqual(['tpl-x']);
+    expect(await tasksFor([t], false, '2026-07-22')).toEqual([]);
+  });
+
+  it('não materializa antes da data inicial', async () => {
+    const t = planned({ effectiveFrom: '2026-07-22' });
+    expect(await tasksFor([t], false, '2026-07-21')).toEqual([]);
+  });
+
+  it('WEEKDAYS materializa só nos dias escolhidos (2026-07-21 é terça)', async () => {
+    const tue = planned({ recurrence: { kind: 'WEEKDAYS', weekdays: ['TUE'] } });
+    const mon = planned({ recurrence: { kind: 'WEEKDAYS', weekdays: ['MON'] } });
+    expect(await tasksFor([tue])).toEqual(['tpl-x']);
+    expect(await tasksFor([mon])).toEqual([]);
+  });
+
+  it('WHEN_SCHEDULED materializa conforme a escala e ignora sem posição', async () => {
+    const scheduled = planned({ recurrence: { kind: 'WHEN_SCHEDULED' } });
+    expect(await tasksFor([scheduled], true)).toEqual(['tpl-x']);
+    expect(await tasksFor([scheduled], false)).toEqual([]);
+    // WHEN_SCHEDULED sem posição alvo nunca materializa (não há o que consultar)
+    const noPosition = planned({ recurrence: { kind: 'WHEN_SCHEDULED' }, targetPositionId: null });
+    expect(await tasksFor([noPosition], true)).toEqual([]);
+  });
+
+  it('materializa com início planejado e responsável situacional vazio', async () => {
+    const repo = makeRepo();
+    const result = await makeLoader(repo, false, [planned({})]).execute({
+      authorization: authorization(),
+      ...loadInput,
+    });
+    if (result.kind !== 'loaded') throw new Error('esperava loaded');
+    const task = result.tasks[0];
+    expect(task?.assignedPositionId).toBeNull();
+    expect(task?.plannedStartAt).toBe(new Date(DAY_START.getTime() + 60 * 60_000).toISOString());
+  });
+
+  it('mudança de escala/recorrência NÃO apaga ocorrência já materializada', async () => {
+    const repo = makeRepo();
+    const scheduled = planned({ recurrence: { kind: 'WHEN_SCHEDULED' } });
+    // dia presente ⇒ materializa
+    await makeLoader(repo, false, [scheduled], true).execute({
+      authorization: authorization(),
+      ...loadInput,
+    });
+    expect(repo.tasks.size).toBe(1);
+    // escala muda para ausente numa releitura ⇒ a ocorrência permanece
+    const again = await makeLoader(repo, false, [scheduled], false).execute({
+      authorization: authorization(),
+      ...loadInput,
+    });
+    if (again.kind !== 'loaded') throw new Error('esperava loaded');
+    expect(again.tasks).toHaveLength(1);
   });
 });
 

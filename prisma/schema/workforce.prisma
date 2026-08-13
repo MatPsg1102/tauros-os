@@ -22,6 +22,7 @@ model OperationalPosition {
   assignments          EmployeeAssignment[]
   staffingRequirements TeamStaffingRequirement[]
   taskTemplates        TaskTemplate[]
+  assignedDailyTasks   DailyTask[]               @relation("DailyTaskAssignment")
 
   @@unique([storeId, key])
   @@index([storeId])

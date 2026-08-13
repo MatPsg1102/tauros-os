@@ -4,6 +4,8 @@
 // (regra mecânica web-ui-no-infrastructure).
 
 import type {
+  DailyTaskAssignEnqueuePort,
+  DailyTaskAuditPort,
   DailyTaskRecord,
   DailyTaskRepositoryPort,
   EffectiveAuthorization,
@@ -24,6 +26,7 @@ import type {
   TemplateSyncStatus,
 } from '@tauros/contracts';
 import {
+  ENTITY_DAILY_TASK,
   ENTITY_OPERATOR_SESSION,
   ENTITY_TASK_EXECUTION,
   ENTITY_TASK_TEMPLATE,
@@ -267,6 +270,9 @@ export class CompositeTaskTemplateSource implements TaskTemplateSourcePort {
         expectedMax: record.expectedMax,
         targetPositionId: record.targetPositionId,
         dueOffsetMinutes: record.dueOffsetMinutes,
+        effectiveFrom: record.effectiveFrom,
+        plannedStartMinutes: record.plannedStartMinutes,
+        recurrence: record.recurrence,
       }));
     return [...base, ...createdSnapshots];
   }
@@ -348,6 +354,87 @@ export class TemplateQueueAdapter implements TemplateEnqueuePort {
         priority: 2,
       },
     });
+  }
+}
+
+// ===== Atribuição situacional da ocorrência (update na fila oficial) =====
+
+export class DailyTaskAssignQueueAdapter implements DailyTaskAssignEnqueuePort {
+  constructor(
+    private readonly queue: LocalQueueRepository,
+    private readonly authorization: () => EffectiveAuthorization,
+    private readonly deviceId: string,
+    private readonly clock: () => Date,
+  ) {}
+
+  async enqueueAssignDailyTask(
+    input: Parameters<DailyTaskAssignEnqueuePort['enqueueAssignDailyTask']>[0],
+  ): Promise<void> {
+    const auth = this.authorization();
+    const task = input.dailyTask;
+    const ttlMs = Math.max(1, auth.validUntil.getTime() - this.clock().getTime());
+    const snapshot = captureSnapshot(
+      {
+        operatorProfileId: auth.operatorProfileId,
+        operatorEmployeeId: auth.operatorEmployeeId,
+        storeId: auth.storeId,
+        sessionId: auth.sessionId,
+        permissions: auth.permissions,
+        ...(auth.permissionModelVersion !== undefined
+          ? { permissionModelVersion: auth.permissionModelVersion }
+          : {}),
+        ...(auth.configVersionRef !== undefined ? { configVersionRef: auth.configVersionRef } : {}),
+        authOrigin: auth.origin === 'online' ? 'online' : 'offline-pin',
+      },
+      ttlMs,
+      this.clock,
+    );
+    await this.queue.enqueue({
+      id: input.queueItemId,
+      operation: 'update',
+      entityType: ENTITY_DAILY_TASK,
+      entityId: task.id,
+      payload: { dailyTask: task },
+      // idempotência: a MESMA ocorrência + MESMA posição convergem numa atribuição
+      idempotencyKey: `daily-task-assign:${task.id}:${task.assignedPositionId ?? ''}`,
+      authorization: snapshot,
+      trace: {
+        storeId: task.storeId,
+        deviceId: this.deviceId,
+        sessionId: auth.sessionId,
+        schemaVersion: 1,
+        priority: 2,
+      },
+    });
+  }
+}
+
+// ===== Auditoria da negação de atribuição (access.denied — tipo oficial) =====
+
+export class DailyTaskAuditAdapter implements DailyTaskAuditPort {
+  constructor(
+    private readonly factory: AuditEventFactory,
+    private readonly buffer: AuditBufferPort,
+  ) {}
+
+  async record(input: Parameters<DailyTaskAuditPort['record']>[0]): Promise<void> {
+    const event = this.factory.fromDirect({
+      eventType: input.eventType,
+      occurredAt: input.occurredAt,
+      storeId: input.storeId,
+      actorId: input.actorProfileId,
+      actorType: 'human',
+      sessionId: null,
+      deviceId: input.deviceId,
+      correlationId: input.correlationId,
+      entityType: ENTITY_DAILY_TASK,
+      entityId: input.dailyTaskId,
+      operation: 'update',
+      source: input.source,
+      result: input.result,
+      errorCode: input.errorCode ?? null,
+    });
+    await this.buffer.append(event);
   }
 }
 
