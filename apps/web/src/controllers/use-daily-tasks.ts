@@ -6,9 +6,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { storeDayStartFor } from '@tauros/application';
 import type { DailyTaskRecord, OperatorSessionRecord, TaskSyncStatus } from '@tauros/contracts';
 
 import type { AppContainer } from '../wiring/container.js';
+import { FIXTURE_STORE } from '../wiring/fixtures.js';
 import { useOperatorSession } from './operator-session-context.js';
 
 export type DailyTasksPhase =
@@ -121,8 +123,9 @@ export function useDailyTasks(
     const result = await container.loadDailyTasks.execute({
       authorization,
       workDate: activeSession.operationalDate,
-      // o vencimento de cada tarefa é contado a partir da abertura do turno
-      operationalDayStart: new Date(activeSession.clientOpenedAt),
+      // vencimento conta do início do dia operacional da LOJA (base única
+      // com o quadro do encarregado — dueOffsetMinutes = horário do dia)
+      operationalDayStart: storeDayStartFor(container.clock(), FIXTURE_STORE.timeZone),
       configVersionRef: activeSession.configVersionRef,
     });
     if (result.kind === 'failed') {

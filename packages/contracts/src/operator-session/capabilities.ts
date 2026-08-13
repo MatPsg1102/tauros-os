@@ -9,5 +9,12 @@ export const CAPABILITY_SESSION_OPEN = 'session.open' as const;
 /** Capacidade oficial de fechamento (7.2) — string única em todo o sistema. */
 export const CAPABILITY_SESSION_CLOSE = 'session.close' as const;
 
+/**
+ * Capacidade oficial de escrita de configuração (catálogo congelado; RLS de
+ * task_templates). Governa a Área do Encarregado: TaskTemplate é dado
+ * configurável (ADR-019) — nenhuma string concorrente foi criada.
+ */
+export const CAPABILITY_CONFIG_WRITE = 'config.write' as const;
+
 /** Versão vigente do modelo de permissões (ADR-018 §versionamento). */
 export const PERMISSION_MODEL_VERSION = 1 as const;

@@ -5,6 +5,7 @@
 
 import {
   CloseOperatorSessionUseCase,
+  CreateTaskTemplateUseCase,
   LoadDailyTasksUseCase,
   OpenOperatorSessionUseCase,
   RecordTaskOutcomeUseCase,
@@ -12,12 +13,18 @@ import {
 import { ConfigResolver } from '@tauros/config-engine';
 import type {
   CloseSessionQueuePayload,
+  CreateTemplateQueuePayload,
   EffectiveAuthorization,
   OperatorSessionRecord,
   TaskExecutionQueuePayload,
   TaskTemplateSourcePort,
+  TeamDirectoryPort,
 } from '@tauros/contracts';
-import { ENTITY_OPERATOR_SESSION, ENTITY_TASK_EXECUTION } from '@tauros/contracts';
+import {
+  ENTITY_OPERATOR_SESSION,
+  ENTITY_TASK_EXECUTION,
+  ENTITY_TASK_TEMPLATE,
+} from '@tauros/contracts';
 import {
   AuditEventFactory,
   AuditingEventBridge,
@@ -46,14 +53,18 @@ import type { SessionSyncStatus } from '@tauros/contracts';
 
 import {
   APP_STATE_SCHEMA,
+  CompositeTaskTemplateSource,
   ConfigSessionPolicyAdapter,
   LocalDailyTaskRepository,
   LocalOperatorSessionRepository,
+  LocalTaskTemplateRepository,
   SessionAuditAdapter,
   SessionQueueAdapter,
   TaskExecutionQueueAdapter,
+  TemplateAuditAdapter,
+  TemplateQueueAdapter,
 } from './adapters.js';
-import { FixtureTaskTemplateSource } from './fixtures.js';
+import { FixtureTaskTemplateSource, FixtureTeamDirectory } from './fixtures.js';
 import { FakeSessionSyncTransport } from './transport-fake.js';
 
 export interface ContainerOptions {
@@ -65,6 +76,7 @@ export interface ContainerOptions {
   readonly deviceOnline?: () => boolean;
   readonly events?: TechnicalEventPort;
   readonly templates?: TaskTemplateSourcePort;
+  readonly team?: TeamDirectoryPort;
 }
 
 export interface AppContainer {
@@ -76,11 +88,14 @@ export interface AppContainer {
   readonly transport: SyncTransportPort;
   readonly connectivity: ConnectivityPort;
   readonly tasks: LocalDailyTaskRepository;
+  readonly templates: LocalTaskTemplateRepository;
+  readonly team: TeamDirectoryPort;
   readonly setAuthorization: (auth: EffectiveAuthorization | null) => void;
   readonly openSession: OpenOperatorSessionUseCase;
   readonly closeSession: CloseOperatorSessionUseCase;
   readonly loadDailyTasks: LoadDailyTasksUseCase;
   readonly recordTaskOutcome: RecordTaskOutcomeUseCase;
+  readonly createTaskTemplate: CreateTaskTemplateUseCase;
   /** Drena a fila e reflete o desfecho no syncStatus do registro local. */
   readonly drainAndReflect: () => Promise<void>;
   /** Recuperação de boot: fila com intenção sem registro local ⇒ reconstrói. */
@@ -174,19 +189,35 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     auditAdapter,
   );
 
-  // Quadro de tarefas do dia (7.2) — mesma infraestrutura congelada
+  // Quadro de tarefas do dia (7.2) — mesma infraestrutura congelada.
+  // Fonte de definições = cadastro base (fixtures/backend) + definições
+  // criadas localmente pelo encarregado (Área do Encarregado).
   const tasks = new LocalDailyTaskRepository(appStore);
-  const taskQueueAdapter = new TaskExecutionQueueAdapter(queue, authorization, deviceId, clock);
-  const loadDailyTasks = new LoadDailyTasksUseCase(
-    { now: clock },
+  const templates = new LocalTaskTemplateRepository(appStore);
+  const templateSource = new CompositeTaskTemplateSource(
     options.templates ?? new FixtureTaskTemplateSource(),
-    tasks,
+    templates,
   );
+  const taskQueueAdapter = new TaskExecutionQueueAdapter(queue, authorization, deviceId, clock);
+  const loadDailyTasks = new LoadDailyTasksUseCase({ now: clock }, templateSource, tasks);
   const recordTaskOutcome = new RecordTaskOutcomeUseCase(
     { now: clock },
     ids,
     tasks,
     taskQueueAdapter,
+  );
+
+  // Área do Encarregado — criação de definição de tarefa
+  const team: TeamDirectoryPort = options.team ?? new FixtureTeamDirectory();
+  const templateQueueAdapter = new TemplateQueueAdapter(queue, authorization, deviceId, clock);
+  const templateAuditAdapter = new TemplateAuditAdapter(factory, buffer);
+  const createTaskTemplate = new CreateTaskTemplateUseCase(
+    { now: clock },
+    ids,
+    team,
+    templates,
+    templateQueueAdapter,
+    templateAuditAdapter,
   );
 
   const queueItemForSession = async (sessionId: string): Promise<QueueItem | undefined> => {
@@ -236,6 +267,11 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
         const task = await tasks.byId(payload.execution.dailyTaskId);
         // conflito NUNCA apaga o desfecho local — só marca para revisão
         if (task !== null) await tasks.save({ ...task, syncStatus: status });
+        continue;
+      }
+
+      if (item.entityType === ENTITY_TASK_TEMPLATE) {
+        await templates.updateSyncStatus(item.entityId, status);
       }
     }
   };
@@ -271,7 +307,16 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
         continue;
       }
 
-      // 3) execução enfileirada sem registro local (append-only reconstruído)
+      // 3) definição enfileirada sem registro local (falha entre enqueue e save)
+      if (item.entityType === ENTITY_TASK_TEMPLATE) {
+        const payload = item.payload as CreateTemplateQueuePayload;
+        const template = payload.template;
+        const known = await templates.byIdempotencyKey(template.storeId, template.idempotencyKey);
+        if (known === null) await templates.save(template);
+        continue;
+      }
+
+      // 4) execução enfileirada sem registro local (append-only reconstruído)
       if (item.entityType === ENTITY_TASK_EXECUTION) {
         const payload = item.payload as TaskExecutionQueuePayload;
         const execution = payload.execution;
@@ -302,6 +347,8 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     transport,
     connectivity,
     tasks,
+    templates,
+    team,
     setAuthorization: (auth) => {
       currentAuth = auth;
     },
@@ -309,6 +356,7 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     closeSession,
     loadDailyTasks,
     recordTaskOutcome,
+    createTaskTemplate,
     drainAndReflect,
     reconcileFromQueue,
     queueItemForSession,
