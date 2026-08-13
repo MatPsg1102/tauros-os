@@ -16,5 +16,14 @@ export const CAPABILITY_SESSION_CLOSE = 'session.close' as const;
  */
 export const CAPABILITY_CONFIG_WRITE = 'config.write' as const;
 
+/**
+ * Capacidade oficial de gestão de equipe: cadastro de colaboradores e seus
+ * vínculos (employees + employee_assignments). É dado de RH OPERACIONAL —
+ * não é configuração (ADR-019 cobre cargos/posições), por isso NÃO reutiliza
+ * config.write. Mesmo mecanismo ADR-018 (string nas permissões efetivas);
+ * nenhuma capability deriva da posição ocupada.
+ */
+export const CAPABILITY_WORKFORCE_WRITE = 'workforce.write' as const;
+
 /** Versão vigente do modelo de permissões (ADR-018 §versionamento). */
 export const PERMISSION_MODEL_VERSION = 1 as const;

@@ -7,6 +7,7 @@ import {
   CAPABILITY_CONFIG_WRITE,
   CAPABILITY_SESSION_CLOSE,
   CAPABILITY_SESSION_OPEN,
+  CAPABILITY_WORKFORCE_WRITE,
 } from '@tauros/contracts';
 
 export class FixturesDisabledError extends Error {
@@ -94,6 +95,7 @@ export const FIXTURE_OPERATORS: readonly FixtureOperator[] = [
       CAPABILITY_SESSION_OPEN,
       CAPABILITY_SESSION_CLOSE,
       CAPABILITY_CONFIG_WRITE,
+      CAPABILITY_WORKFORCE_WRITE,
       'audit.read',
     ],
   },

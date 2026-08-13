@@ -79,6 +79,60 @@ describe('banco local do app — migração aditiva v2 → v3', () => {
   });
 });
 
+describe('banco local do app — migração aditiva v3 → v4', () => {
+  it('preserva definições e cria os stores da Gestão de Equipe', async () => {
+    const V3: LocalSchema = {
+      databaseName: 'tauros-app-state-upgrade-v4',
+      version: 3,
+      migrations: APP_STATE_SCHEMA.migrations.slice(0, 3),
+    };
+    const V4: LocalSchema = { ...APP_STATE_SCHEMA, databaseName: 'tauros-app-state-upgrade-v4' };
+
+    const v3 = new IndexedDbLocalStore(V3);
+    await v3.transaction(['task_templates'], 'write', (tx) =>
+      tx.put('task_templates', 'tpl-legado', {
+        id: 'tpl-legado',
+        storeId: 'store-centro-0001',
+        storeKey: 'store-centro-0001:chave-legada',
+      }),
+    );
+    await v3.close();
+
+    const v4 = new IndexedDbLocalStore(V4);
+    const template = await v4.transaction(['task_templates'], 'read', (tx) =>
+      tx.get('task_templates', 'tpl-legado'),
+    );
+    expect(template).toMatchObject({ id: 'tpl-legado' });
+
+    // stores novos nascem vazios e utilizáveis (índice de idempotência ativo)
+    const employees = await v4.transaction(['employees'], 'read', (tx) => tx.getAll('employees'));
+    expect(employees).toHaveLength(0);
+    await v4.transaction(['employees', 'employee_assignments'], 'write', async (tx) => {
+      await tx.put('employees', 'emp-1', {
+        id: 'emp-1',
+        storeId: 'store-centro-0001',
+        storeKey: 'store-centro-0001:chave-emp',
+      });
+      await tx.put('employee_assignments', 'asg-1', {
+        id: 'asg-1',
+        storeId: 'store-centro-0001',
+        employeeId: 'emp-1',
+      });
+    });
+    const byKey = await v4.transaction(['employees'], 'read', (tx) =>
+      tx.getByIndex('employees', 'by_store_key', 'store-centro-0001:chave-emp'),
+    );
+    expect(byKey).toHaveLength(1);
+    const teams = await v4.transaction(['teams'], 'read', (tx) => tx.getAll('teams'));
+    const positions = await v4.transaction(['operational_positions'], 'read', (tx) =>
+      tx.getAll('operational_positions'),
+    );
+    expect(teams).toHaveLength(0);
+    expect(positions).toHaveLength(0);
+    await v4.close();
+  });
+});
+
 describe('banco local do app — migração aditiva v1 → v2', () => {
   it('preserva as sessões da 7.1 e cria os stores da 7.2', async () => {
     // aparelho que já rodava a 7.1

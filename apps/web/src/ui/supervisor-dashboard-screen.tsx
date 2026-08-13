@@ -48,6 +48,11 @@ import type {
   SupervisorDashboardView,
   SupervisorTaskView,
 } from '../controllers/use-supervisor-dashboard.js';
+import type {
+  TeamManagementActions,
+  TeamManagementView,
+} from '../controllers/use-team-management.js';
+import { TeamManagementSection } from './team-management-section.js';
 
 const WEEKDAY_LABEL: Readonly<Record<Weekday, string>> = {
   MON: 'Seg',
@@ -513,10 +518,14 @@ function TaskItem({
 export function SupervisorDashboardScreen({
   view,
   actions,
+  teamView,
+  teamActions,
   turnoLink,
 }: {
   readonly view: SupervisorDashboardView;
   readonly actions: SupervisorDashboardActions;
+  readonly teamView: TeamManagementView;
+  readonly teamActions: TeamManagementActions;
   readonly turnoLink: NavigationLinkAdapter;
 }): ReactElement {
   return (
@@ -691,6 +700,8 @@ export function SupervisorDashboardScreen({
               </PanelBody>
             </Panel>
           </Section>
+
+          {teamView.enabled && <TeamManagementSection view={teamView} actions={teamActions} />}
 
           <ShiftSection view={view} actions={actions} />
 

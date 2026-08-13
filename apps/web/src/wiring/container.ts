@@ -6,18 +6,23 @@
 import {
   AssignDailyTaskUseCase,
   CloseOperatorSessionUseCase,
+  CreateOperationalPositionUseCase,
   CreateTaskTemplateUseCase,
   LoadDailyTasksUseCase,
   OpenOperatorSessionUseCase,
+  operationalDateFor,
   RecordTaskOutcomeUseCase,
+  RegisterEmployeeUseCase,
 } from '@tauros/application';
 import { ConfigResolver } from '@tauros/config-engine';
 import type {
   AssignDailyTaskQueuePayload,
   CloseSessionQueuePayload,
+  CreatePositionQueuePayload,
   CreateTemplateQueuePayload,
   EffectiveAuthorization,
   OperatorSessionRecord,
+  RegisterEmployeeQueuePayload,
   ShiftSchedulePort,
   TaskExecutionQueuePayload,
   TaskTemplateSourcePort,
@@ -25,6 +30,8 @@ import type {
 } from '@tauros/contracts';
 import {
   ENTITY_DAILY_TASK,
+  ENTITY_EMPLOYEE,
+  ENTITY_OPERATIONAL_POSITION,
   ENTITY_OPERATOR_SESSION,
   ENTITY_TASK_EXECUTION,
   ENTITY_TASK_TEMPLATE,
@@ -58,23 +65,30 @@ import type { SessionSyncStatus } from '@tauros/contracts';
 import {
   APP_STATE_SCHEMA,
   CompositeTaskTemplateSource,
+  CompositeTeamDirectory,
   ConfigSessionPolicyAdapter,
   DailyTaskAssignQueueAdapter,
   DailyTaskAuditAdapter,
   LocalDailyTaskRepository,
   LocalOperatorSessionRepository,
   LocalTaskTemplateRepository,
+  LocalTeamDirectory,
+  LocalWorkforceRepository,
   SessionAuditAdapter,
   SessionQueueAdapter,
   TaskExecutionQueueAdapter,
   TemplateAuditAdapter,
   TemplateQueueAdapter,
+  WorkforceAuditAdapter,
+  WorkforceQueueAdapter,
 } from './adapters.js';
 import {
+  FIXTURE_STORE,
   FixtureShiftSchedule,
   FixtureTaskTemplateSource,
   FixtureTeamDirectory,
 } from './fixtures.js';
+import { ensureWorkforceBaseline } from './workforce-baseline.js';
 import { FakeSessionSyncTransport } from './transport-fake.js';
 
 export interface ContainerOptions {
@@ -101,6 +115,7 @@ export interface AppContainer {
   readonly tasks: LocalDailyTaskRepository;
   readonly templates: LocalTaskTemplateRepository;
   readonly team: TeamDirectoryPort;
+  readonly workforce: LocalWorkforceRepository;
   readonly setAuthorization: (auth: EffectiveAuthorization | null) => void;
   readonly openSession: OpenOperatorSessionUseCase;
   readonly closeSession: CloseOperatorSessionUseCase;
@@ -108,6 +123,8 @@ export interface AppContainer {
   readonly recordTaskOutcome: RecordTaskOutcomeUseCase;
   readonly createTaskTemplate: CreateTaskTemplateUseCase;
   readonly assignDailyTask: AssignDailyTaskUseCase;
+  readonly registerEmployee: RegisterEmployeeUseCase;
+  readonly createPosition: CreateOperationalPositionUseCase;
   /** Drena a fila e reflete o desfecho no syncStatus do registro local. */
   readonly drainAndReflect: () => Promise<void>;
   /** Recuperação de boot: fila com intenção sem registro local ⇒ reconstrói. */
@@ -220,8 +237,35 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     taskQueueAdapter,
   );
 
+  // Gestão de Equipe — cadastro real local (colaboradores/posições/equipes);
+  // o diretório de equipe passa a COMPOR base (fixtures até o backend real)
+  // com o cadastro criado nesta loja.
+  const workforce = new LocalWorkforceRepository(appStore);
+  const localDirectory = new LocalTeamDirectory(workforce, () =>
+    operationalDateFor(clock(), FIXTURE_STORE.timeZone),
+  );
+  const workforceQueueAdapter = new WorkforceQueueAdapter(queue, authorization, deviceId, clock);
+  const workforceAuditAdapter = new WorkforceAuditAdapter(factory, buffer);
+  const registerEmployee = new RegisterEmployeeUseCase(
+    { now: clock },
+    ids,
+    workforce,
+    workforceQueueAdapter,
+    workforceAuditAdapter,
+  );
+  const createPosition = new CreateOperationalPositionUseCase(
+    { now: clock },
+    ids,
+    workforce,
+    workforceQueueAdapter,
+    workforceAuditAdapter,
+  );
+
   // Área do Encarregado — criação de definição de tarefa + atribuição situacional
-  const team: TeamDirectoryPort = options.team ?? new FixtureTeamDirectory();
+  const team: TeamDirectoryPort = new CompositeTeamDirectory(
+    options.team ?? new FixtureTeamDirectory(),
+    localDirectory,
+  );
   const templateQueueAdapter = new TemplateQueueAdapter(queue, authorization, deviceId, clock);
   const templateAuditAdapter = new TemplateAuditAdapter(factory, buffer);
   const createTaskTemplate = new CreateTaskTemplateUseCase(
@@ -298,6 +342,16 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
         continue;
       }
 
+      // Gestão de Equipe: reflete o desfecho no registro local
+      if (item.entityType === ENTITY_EMPLOYEE) {
+        await workforce.updateEmployeeSyncStatus(item.entityId, status);
+        continue;
+      }
+      if (item.entityType === ENTITY_OPERATIONAL_POSITION) {
+        await workforce.updatePositionSyncStatus(item.entityId, status);
+        continue;
+      }
+
       // atribuição situacional: reflete o desfecho na ocorrência
       if (item.entityType === ENTITY_DAILY_TASK) {
         const current = await tasks.byId(item.entityId);
@@ -307,6 +361,8 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
   };
 
   const reconcileFromQueue = async (): Promise<void> => {
+    // catálogo inicial da loja (Equipes A/B + posições) ANTES de qualquer leitura
+    await ensureWorkforceBaseline(workforce, FIXTURE_STORE.id);
     const items = await queue.all();
     for (const item of items) {
       // 1) abertura enfileirada sem registro local (falha entre enqueue e save)
@@ -343,6 +399,27 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
         const template = payload.template;
         const known = await templates.byIdempotencyKey(template.storeId, template.idempotencyKey);
         if (known === null) await templates.save(template);
+        continue;
+      }
+
+      // 3c) cadastro de colaborador enfileirado sem registro local
+      if (item.entityType === ENTITY_EMPLOYEE) {
+        const payload = item.payload as RegisterEmployeeQueuePayload;
+        const known = await workforce.employeeByIdempotencyKey(
+          payload.employee.storeId,
+          payload.employee.idempotencyKey,
+        );
+        if (known === null) {
+          await workforce.saveRegistration(payload.employee, payload.assignment);
+        }
+        continue;
+      }
+
+      // 3d) posição enfileirada sem registro local
+      if (item.entityType === ENTITY_OPERATIONAL_POSITION) {
+        const payload = item.payload as CreatePositionQueuePayload;
+        const known = await workforce.positionByKey(payload.position.storeId, payload.position.key);
+        if (known === null) await workforce.savePosition(payload.position);
         continue;
       }
 
@@ -394,6 +471,7 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     tasks,
     templates,
     team,
+    workforce,
     setAuthorization: (auth) => {
       currentAuth = auth;
     },
@@ -403,6 +481,8 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     recordTaskOutcome,
     createTaskTemplate,
     assignDailyTask,
+    registerEmployee,
+    createPosition,
     drainAndReflect,
     reconcileFromQueue,
     queueItemForSession,

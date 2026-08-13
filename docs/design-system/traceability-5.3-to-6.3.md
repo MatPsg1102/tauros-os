@@ -412,3 +412,77 @@ Pendências (registradas, não bloqueantes):
 - Diretório real de equipe (employees/assignments do backend) substituindo a
   fixture; multi-encarregado real via PermissionResolver.
 - Edição/cancelamento de definição criada (fora do escopo: acompanhar+criar).
+
+## Gestão de Equipe V1 — colaboradores, funções/posições e Equipes A/B
+
+Vertical slice sobre o schema congelado SEM nenhuma migration: `employees`,
+`employee_assignments`, `teams` e `operational_positions` já existiam desde a
+init — o trabalho foi ligá-los ao app. Reconciliação formal de linguagem:
+"Açougueiro 1/2/3, Auxiliar de açougue, Operador de caixa, Faxineira" SÃO
+posições operacionais (`operational_positions`, o mesmo conceito de
+`target_position_id` das tarefas) — nenhum conceito paralelo (JobRole) foi
+criado. Equipe A/B são LINHAS de `teams` (ids fixos `team-a`/`team-b`), nunca
+enum nem sufixo no nome da posição; o vínculo temporal
+(`employee_assignments.validFrom`, equipe + posição em campos separados) é o
+que a Escala Operacional V1 consumirá — equipe ≠ presença, nenhuma presença
+foi inventada.
+
+Permissões (ADR-018): cadastrar colaborador é RH operacional, NÃO
+configuração — nova capability oficial `workforce.write` (mesmo mecanismo,
+nenhuma mudança estrutural no modelo; PERMISSION_MODEL_VERSION inalterada).
+Criar posição É configuração (comentário ADR-019 do próprio schema congelado)
+— reutiliza `config.write`, mesma capability de task_templates. Auditoria com
+tipos OFICIAIS do catálogo: `admin.action` (colaborador), `config.changed`
+(posição), `access.denied` (negações). A UI recebe decisões prontas
+(`canRegisterEmployee`, `canCreatePosition`); fixture do encarregado ganhou
+`workforce.write` na fronteira existente.
+
+Implementação: contracts (records espelhando o schema + WorkforceRepository/
+Enqueue/Audit ports) → domínio puro (`decideRegisterEmployee`,
+`decideCreatePosition`) → use cases (`RegisterEmployeeUseCase`,
+`CreateOperationalPositionUseCase`) com idempotência determinística
+(pessoa+dia+criador; posição = chave natural `storeId:key` do unique
+congelado — nome repetido CONVERGE) e ordem fila→local→auditoria com
+recuperação de boot pela fila. IndexedDB `tauros-app-state` v4 (aditiva, 4
+stores novos; upgrade v3→v4 coberto por teste). Cadastro atômico
+pessoa+vínculo na mesma transação local. `registration` (unique congelado)
+recebe placeholder = id até o vertical administrativo. Baseline idempotente
+no boot (Equipes A/B + 6 posições reais) vive em `workforce-baseline.ts` —
+catálogo inicial da loja, NÃO fixture de identidade; migra para os seeds
+oficiais quando o backend real chegar.
+
+Integração com tarefas SEM ampliar escopo: `CompositeTeamDirectory` (mesmo
+padrão do CompositeTaskTemplateSource) compõe fixtures de demonstração + o
+cadastro real — colaborador e posição novos aparecem imediatamente nos
+seletores de "+ Nova tarefa"/atribuição. `LocalTeamDirectory.members()` expõe
+posição VIGENTE por data (vigência de vínculo, não escala). UI: seção
+"Equipe" na MESMA rota `/encarregado` (abas Colaboradores | Posições |
+Equipes, drawers no padrão existente, mobile-first). Correção de DS na raiz:
+`.t-segmented` não quebrava linha e estourava a viewport em 390px (defeito
+pré-existente do filtro de 5 opções) — `flex-wrap` no stylesheet oficial,
+sem mudança de API. Drawers novos NÃO apagam o formulário em erro de
+validação (reset só na abertura); o padrão antigo do CreateTaskDrawer foi
+mantido intocado.
+
+Validação: 8 domínio + 13 aplicação + 11 verticais de UI (capability
+negativa, double-submit, reload, offline→sincronização convergente, PIN fora
+de fila/auditoria/storage, axe) + upgrade v3→v4; jornada completa em Chrome
+real via CDP (cadastro, composição, nova posição refletida na nova tarefa,
+reload com IndexedDB real, 390px sem overflow — delta 0px).
+
+Pendências (registradas, não bloqueantes):
+
+- Escala Operacional V1 (próxima vertical): padrão 12x36 A/B, ocorrências/
+  exceções, presença oficial do dia via ShiftOccurrence, tarefas "quando
+  estiver escalado" consultando presença — substitui a FixtureShiftSchedule
+  e o rótulo "Equipe de hoje" por dados reais.
+- Colaborador cadastrado ainda NÃO é identidade autenticável (sem profile/
+  membership/PIN) — chega com identidade real + backend; fixtures de
+  identidade continuam centralizadas em fixtures.ts.
+- Matrícula real (`registration`), edição/desativação de colaborador e de
+  posição (schema não tem `active` em operational_positions — desativação
+  pedirá decisão formal), remoção das fixtures de demonstração do diretório
+  composto quando o diretório real assumir.
+- Baseline de equipes/posições migra para seeds oficiais do banco junto do
+  backend real (Equipe A/B precisam existir no servidor antes do primeiro
+  sync de employee_assignments).
