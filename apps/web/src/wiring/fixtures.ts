@@ -45,8 +45,10 @@ export const FIXTURE_STORE: FixtureStore = {
 };
 
 /**
- * Três operadores cobrindo os cenários reais de autorização (7.2):
- * completo, sem abertura e COM abertura mas SEM fechamento.
+ * Operadores cobrindo os cenários reais de autorização: completo, sem
+ * abertura, com abertura mas sem fechamento, e o ENCARREGADO (config.write —
+ * capability oficial que governa task_templates na RLS congelada). O PIN é
+ * fixture de desenvolvimento: comparado apenas em memória e descartado.
  */
 export const FIXTURE_OPERATORS: readonly FixtureOperator[] = [
   {
@@ -73,12 +75,67 @@ export const FIXTURE_OPERATORS: readonly FixtureOperator[] = [
     pin: '9753',
     permissions: ['session.open', 'audit.read'],
   },
+  {
+    employeeId: 'emp-0004',
+    profileId: 'prof-0004',
+    membershipId: 'memb-0004',
+    name: 'Elber',
+    pin: '1234',
+    permissions: ['config.write', 'audit.read'],
+  },
 ];
+
+// ===== Equipe (workforce congelado: posições + atribuições vigentes) =====
+
+export interface FixturePosition {
+  readonly id: string;
+  readonly key: string;
+  readonly name: string;
+}
+
+export interface FixtureTeamMember {
+  readonly employeeId: string;
+  readonly fullName: string;
+  readonly positionId: string | null;
+}
+
+/** Posições operacionais da loja (operational_positions). */
+export const FIXTURE_POSITIONS: readonly FixturePosition[] = [
+  { id: 'pos-atendimento', key: 'atendimento', name: 'Atendimento' },
+  { id: 'pos-producao', key: 'producao', name: 'Produção' },
+  { id: 'pos-apoio', key: 'apoio', name: 'Apoio' },
+];
+
+/**
+ * Atribuições vigentes (employee_assignments). Elber (encarregado) não ocupa
+ * posição atribuível — o modelo atribui tarefa a POSIÇÃO, e ele não aparece
+ * como responsável automático.
+ */
+export const FIXTURE_TEAM: readonly FixtureTeamMember[] = [
+  { employeeId: 'emp-0001', fullName: 'Marina Álvares', positionId: 'pos-atendimento' },
+  { employeeId: 'emp-0002', fullName: 'Carlos Nunes', positionId: 'pos-producao' },
+  { employeeId: 'emp-0003', fullName: 'Rita Belmonte', positionId: 'pos-apoio' },
+];
+
+/** Diretório de equipe (TeamDirectoryPort) sobre as fixtures. */
+export class FixtureTeamDirectory {
+  positions(): Promise<readonly FixturePosition[]> {
+    if (!fixturesEnabled()) throw new FixturesDisabledError();
+    return Promise.resolve(FIXTURE_POSITIONS);
+  }
+
+  members(): Promise<readonly FixtureTeamMember[]> {
+    if (!fixturesEnabled()) throw new FixturesDisabledError();
+    return Promise.resolve(FIXTURE_TEAM);
+  }
+}
 
 /**
  * Definições de tarefa da loja (task_templates vigentes). Fixture porque o
  * cadastro real chega com o backend; a FORMA é a congelada, incluindo
- * requires_photo e a faixa esperada que decide PASS/FAIL.
+ * requires_photo, a faixa esperada que decide PASS/FAIL e a posição
+ * responsável. dueOffsetMinutes conta do INÍCIO DO DIA operacional da loja
+ * (meia-noite civil) — ex.: 600 = 10:00.
  */
 export const FIXTURE_TASK_TEMPLATES: readonly FixtureTaskTemplate[] = [
   {
@@ -88,8 +145,8 @@ export const FIXTURE_TASK_TEMPLATES: readonly FixtureTaskTemplate[] = [
     requiresPhoto: false,
     expectedMin: -2,
     expectedMax: 4,
-    targetPositionId: null,
-    dueOffsetMinutes: 90,
+    targetPositionId: 'pos-producao',
+    dueOffsetMinutes: 600, // 10:00
   },
   {
     templateId: 'tpl-bancada',
@@ -98,8 +155,8 @@ export const FIXTURE_TASK_TEMPLATES: readonly FixtureTaskTemplate[] = [
     requiresPhoto: true,
     expectedMin: null,
     expectedMax: null,
-    targetPositionId: null,
-    dueOffsetMinutes: 240,
+    targetPositionId: 'pos-producao',
+    dueOffsetMinutes: 840, // 14:00
   },
   {
     templateId: 'tpl-vitrine',
@@ -108,8 +165,8 @@ export const FIXTURE_TASK_TEMPLATES: readonly FixtureTaskTemplate[] = [
     requiresPhoto: false,
     expectedMin: null,
     expectedMax: null,
-    targetPositionId: null,
-    dueOffsetMinutes: 360,
+    targetPositionId: 'pos-atendimento',
+    dueOffsetMinutes: 960, // 16:00
   },
   {
     templateId: 'tpl-fechamento',
@@ -118,8 +175,8 @@ export const FIXTURE_TASK_TEMPLATES: readonly FixtureTaskTemplate[] = [
     requiresPhoto: true,
     expectedMin: null,
     expectedMax: null,
-    targetPositionId: null,
-    dueOffsetMinutes: 660,
+    targetPositionId: 'pos-apoio',
+    dueOffsetMinutes: 1140, // 19:00
   },
 ];
 

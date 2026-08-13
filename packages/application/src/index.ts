@@ -27,6 +27,16 @@ export {
   RecordTaskOutcomeUseCase,
   taskOutcomeIdempotencyKeyFor,
 } from './daily-task/record-task-outcome.js';
+export { storeDayStartFor } from './shared/operational-day.js';
+export {
+  CreateTaskTemplateUseCase,
+  templateIdempotencyKeyFor,
+} from './task-template/create-task-template.js';
+export type {
+  CreateTaskTemplateFailureCode,
+  CreateTaskTemplateInput,
+  CreateTaskTemplateResult,
+} from './task-template/create-task-template.js';
 export type {
   RecordTaskOutcomeFailureCode,
   RecordTaskOutcomeInput,

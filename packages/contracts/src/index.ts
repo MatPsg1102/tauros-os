@@ -1,5 +1,6 @@
 // @tauros/contracts — contratos compartilhados entre camadas (7.1+).
 export {
+  CAPABILITY_CONFIG_WRITE,
   CAPABILITY_SESSION_CLOSE,
   CAPABILITY_SESSION_OPEN,
   PERMISSION_MODEL_VERSION,
@@ -46,3 +47,19 @@ export type {
   TaskExecutionEnqueuePort,
   TaskTemplateSourcePort,
 } from './daily-task/ports.js';
+export { ENTITY_TASK_TEMPLATE } from './task-template/record.js';
+export type {
+  CreateTemplateQueuePayload,
+  TaskTemplateRecord,
+  TemplateSyncStatus,
+} from './task-template/record.js';
+export type {
+  OperationalPositionView,
+  TaskTemplateRepositoryPort,
+  TeamDirectoryPort,
+  TeamMemberView,
+  TemplateAuditInput,
+  TemplateAuditPort,
+  TemplateEnqueueInput,
+  TemplateEnqueuePort,
+} from './task-template/ports.js';

@@ -20,7 +20,7 @@ const V1_SCHEMA: LocalSchema = {
 const V2_SCHEMA: LocalSchema = {
   databaseName: 'tauros-app-state-upgrade',
   version: 2,
-  migrations: APP_STATE_SCHEMA.migrations,
+  migrations: APP_STATE_SCHEMA.migrations.slice(0, 2),
 };
 
 const LEGACY_SESSION = {
@@ -30,6 +30,54 @@ const LEGACY_SESSION = {
   status: 'ACTIVE',
   operationalDate: '2026-07-21',
 };
+
+describe('banco local do app — migração aditiva v2 → v3', () => {
+  it('preserva sessões e tarefas ao chegar o store do encarregado', async () => {
+    const V2: LocalSchema = {
+      databaseName: 'tauros-app-state-upgrade-v3',
+      version: 2,
+      migrations: APP_STATE_SCHEMA.migrations.slice(0, 2),
+    };
+    const V3: LocalSchema = { ...APP_STATE_SCHEMA, databaseName: 'tauros-app-state-upgrade-v3' };
+
+    const v2 = new IndexedDbLocalStore(V2);
+    await v2.transaction(['operator_sessions'], 'write', (tx) =>
+      tx.put('operator_sessions', LEGACY_SESSION.id, LEGACY_SESSION),
+    );
+    await v2.transaction(['daily_tasks'], 'write', (tx) =>
+      tx.put('daily_tasks', 'tarefa-antiga', {
+        id: 'tarefa-antiga',
+        status: 'DONE',
+        storeDateKey: 'store-centro-0001:2026-07-21',
+      }),
+    );
+    await v2.close();
+
+    const v3 = new IndexedDbLocalStore(V3);
+    const session = await v3.transaction(['operator_sessions'], 'read', (tx) =>
+      tx.get('operator_sessions', LEGACY_SESSION.id),
+    );
+    const task = await v3.transaction(['daily_tasks'], 'read', (tx) =>
+      tx.get('daily_tasks', 'tarefa-antiga'),
+    );
+    expect(session).toMatchObject({ id: LEGACY_SESSION.id });
+    expect(task).toMatchObject({ status: 'DONE' });
+
+    // o store novo nasce vazio e utilizável (índices de idempotência ativos)
+    await v3.transaction(['task_templates'], 'write', (tx) =>
+      tx.put('task_templates', 'tpl-1', {
+        id: 'tpl-1',
+        storeId: 'store-centro-0001',
+        storeKey: 'store-centro-0001:chave-1',
+      }),
+    );
+    const byKey = await v3.transaction(['task_templates'], 'read', (tx) =>
+      tx.getByIndex('task_templates', 'by_store_key', 'store-centro-0001:chave-1'),
+    );
+    expect(byKey).toHaveLength(1);
+    await v3.close();
+  });
+});
 
 describe('banco local do app — migração aditiva v1 → v2', () => {
   it('preserva as sessões da 7.1 e cria os stores da 7.2', async () => {

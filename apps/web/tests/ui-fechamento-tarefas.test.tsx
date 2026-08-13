@@ -29,8 +29,8 @@ const TEMPLATES: readonly TaskTemplateSnapshot[] = [
     requiresPhoto: true,
     expectedMin: null,
     expectedMax: null,
-    targetPositionId: null,
-    dueOffsetMinutes: 240,
+    targetPositionId: 'pos-producao',
+    dueOffsetMinutes: 840, // 14:00 na loja
   },
   {
     templateId: 'tpl-vitrine',
@@ -39,8 +39,8 @@ const TEMPLATES: readonly TaskTemplateSnapshot[] = [
     requiresPhoto: false,
     expectedMin: null,
     expectedMax: null,
-    targetPositionId: null,
-    dueOffsetMinutes: 360,
+    targetPositionId: 'pos-atendimento',
+    dueOffsetMinutes: 960, // 16:00 na loja
   },
 ];
 

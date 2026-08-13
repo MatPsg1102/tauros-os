@@ -7,10 +7,11 @@
 
 import type {
   CloseSessionQueuePayload,
+  CreateTemplateQueuePayload,
   OpenSessionQueuePayload,
   TaskExecutionQueuePayload,
 } from '@tauros/contracts';
-import { ENTITY_TASK_EXECUTION } from '@tauros/contracts';
+import { ENTITY_TASK_EXECUTION, ENTITY_TASK_TEMPLATE } from '@tauros/contracts';
 import type { QueueItem, SubmitOutcome, SyncTransportPort } from '@tauros/infrastructure';
 
 interface ServerSession {
@@ -69,6 +70,9 @@ export class FakeSessionSyncTransport implements SyncTransportPort {
     if (item.entityType === ENTITY_TASK_EXECUTION) {
       return Promise.resolve(this.submitExecution(item));
     }
+    if (item.entityType === ENTITY_TASK_TEMPLATE) {
+      return Promise.resolve(this.submitTemplate(item));
+    }
     if (item.operation === 'update') {
       return Promise.resolve(this.submitSessionClose(item));
     }
@@ -117,6 +121,20 @@ export class FakeSessionSyncTransport implements SyncTransportPort {
       };
     }
     this.serverSessions.set(scope, { ...existing, closed: true });
+    this.seenIdempotencyKeys.add(item.idempotencyKey);
+    return { kind: 'persisted' };
+  }
+
+  private submitTemplate(item: QueueItem): SubmitOutcome {
+    const payload = item.payload as CreateTemplateQueuePayload;
+    // config.write é revalidada pelo SERVIDOR (RLS congelada): o snapshot de
+    // autorização do item precisa carregar a capacidade.
+    if (!item.authorization.permissions.includes('config.write')) {
+      return { kind: 'rejected', message: 'sem permissão para criar definição de tarefa' };
+    }
+    if (payload.template.title.trim() === '') {
+      return { kind: 'rejected', message: 'definição inválida' };
+    }
     this.seenIdempotencyKeys.add(item.idempotencyKey);
     return { kind: 'persisted' };
   }

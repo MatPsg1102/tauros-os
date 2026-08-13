@@ -16,6 +16,14 @@ export type {
   CloseSessionRejectionCode,
   SessionEndReason,
 } from './operator-session/close-session.js';
+export { decideCreateTemplate } from './task-template/create-template.js';
+export type {
+  CreatedTemplate,
+  CreateTemplateCommand,
+  CreateTemplateDecision,
+  CreateTemplateRejectionCode,
+  TemplateFrequency,
+} from './task-template/create-template.js';
 export { decideTaskOutcome, isOverdue } from './daily-task/task-outcome.js';
 export type {
   DailyTaskStatus,

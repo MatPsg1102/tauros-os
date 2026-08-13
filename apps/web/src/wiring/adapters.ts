@@ -15,8 +15,19 @@ import type {
   TaskExecutionEnqueuePort,
   TaskExecutionRecord,
   TaskSyncStatus,
+  TaskTemplateRecord,
+  TaskTemplateRepositoryPort,
+  TaskTemplateSnapshot,
+  TaskTemplateSourcePort,
+  TemplateAuditPort,
+  TemplateEnqueuePort,
+  TemplateSyncStatus,
 } from '@tauros/contracts';
-import { ENTITY_OPERATOR_SESSION, ENTITY_TASK_EXECUTION } from '@tauros/contracts';
+import {
+  ENTITY_OPERATOR_SESSION,
+  ENTITY_TASK_EXECUTION,
+  ENTITY_TASK_TEMPLATE,
+} from '@tauros/contracts';
 import type { ConfigResolver } from '@tauros/config-engine';
 import {
   captureSnapshot,
@@ -32,7 +43,7 @@ import {
 
 export const APP_STATE_SCHEMA: LocalSchema = {
   databaseName: 'tauros-app-state',
-  version: 2,
+  version: 3,
   migrations: [
     {
       toVersion: 1,
@@ -48,12 +59,21 @@ export const APP_STATE_SCHEMA: LocalSchema = {
         { name: 'task_executions', indexes: { by_store_key: 'storeKey' } },
       ],
     },
+    {
+      // ADITIVA: definições criadas pelo encarregado (Área do Encarregado).
+      toVersion: 3,
+      description: 'Definições de tarefa locais do encarregado',
+      stores: [
+        { name: 'task_templates', indexes: { by_store: 'storeId', by_store_key: 'storeKey' } },
+      ],
+    },
   ],
 };
 
 const SESSIONS = 'operator_sessions';
 const DAILY_TASKS = 'daily_tasks';
 const TASK_EXECUTIONS = 'task_executions';
+const TASK_TEMPLATES = 'task_templates';
 
 export class LocalOperatorSessionRepository {
   constructor(private readonly store: LocalStorePort) {}
@@ -171,6 +191,163 @@ export class LocalDailyTaskRepository implements DailyTaskRepositoryPort {
       tx.getAll(TASK_EXECUTIONS),
     );
     return rows as TaskExecutionRecord[];
+  }
+}
+
+// ===== Definições de tarefa do encarregado (task_templates locais) =====
+
+interface TemplateRow extends TaskTemplateRecord {
+  readonly storeKey: string;
+}
+
+function toTemplateRow(record: TaskTemplateRecord): TemplateRow {
+  return { ...record, storeKey: `${record.storeId}:${record.idempotencyKey}` };
+}
+
+export class LocalTaskTemplateRepository implements TaskTemplateRepositoryPort {
+  constructor(private readonly store: LocalStorePort) {}
+
+  async byStore(storeId: string): Promise<readonly TaskTemplateRecord[]> {
+    const rows = await this.store.transaction([TASK_TEMPLATES], 'read', (tx) =>
+      tx.getByIndex(TASK_TEMPLATES, 'by_store', storeId),
+    );
+    return rows as TaskTemplateRecord[];
+  }
+
+  async byIdempotencyKey(
+    storeId: string,
+    idempotencyKey: string,
+  ): Promise<TaskTemplateRecord | null> {
+    const rows = await this.store.transaction([TASK_TEMPLATES], 'read', (tx) =>
+      tx.getByIndex(TASK_TEMPLATES, 'by_store_key', `${storeId}:${idempotencyKey}`),
+    );
+    return (rows as TaskTemplateRecord[])[0] ?? null;
+  }
+
+  async save(record: TaskTemplateRecord): Promise<void> {
+    await this.store.transaction([TASK_TEMPLATES], 'write', (tx) =>
+      tx.put(TASK_TEMPLATES, record.id, toTemplateRow(record)),
+    );
+  }
+
+  /** Único campo mutável: o reflexo do desfecho da fila. */
+  async updateSyncStatus(id: string, status: TemplateSyncStatus): Promise<void> {
+    await this.store.transaction([TASK_TEMPLATES], 'write', async (tx) => {
+      const current = (await tx.get(TASK_TEMPLATES, id)) as TemplateRow | undefined;
+      if (current === undefined) return;
+      await tx.put(TASK_TEMPLATES, id, { ...current, syncStatus: status });
+    });
+  }
+}
+
+/**
+ * Fonte de definições para a materialização do dia: fixtures de
+ * desenvolvimento (cadastro base) + definições criadas localmente pelo
+ * encarregado. Trocável pelo adapter real sem tocar aplicação/UI.
+ */
+export class CompositeTaskTemplateSource implements TaskTemplateSourcePort {
+  constructor(
+    private readonly base: TaskTemplateSourcePort,
+    private readonly local: LocalTaskTemplateRepository,
+  ) {}
+
+  async activeTemplates(storeId: string): Promise<readonly TaskTemplateSnapshot[]> {
+    const [base, created] = await Promise.all([
+      this.base.activeTemplates(storeId),
+      this.local.byStore(storeId),
+    ]);
+    const createdSnapshots: readonly TaskTemplateSnapshot[] = created
+      .filter((record) => record.active)
+      .map((record) => ({
+        templateId: record.id,
+        title: record.title,
+        frequency: record.frequency,
+        requiresPhoto: record.requiresPhoto,
+        expectedMin: record.expectedMin,
+        expectedMax: record.expectedMax,
+        targetPositionId: record.targetPositionId,
+        dueOffsetMinutes: record.dueOffsetMinutes,
+      }));
+    return [...base, ...createdSnapshots];
+  }
+}
+
+// ===== Auditoria da criação de definição (config.changed — tipo oficial) =====
+
+export class TemplateAuditAdapter implements TemplateAuditPort {
+  constructor(
+    private readonly factory: AuditEventFactory,
+    private readonly buffer: AuditBufferPort,
+  ) {}
+
+  async record(input: Parameters<TemplateAuditPort['record']>[0]): Promise<void> {
+    const event = this.factory.fromDirect({
+      eventType: input.eventType,
+      occurredAt: input.occurredAt,
+      storeId: input.storeId,
+      actorId: input.actorProfileId,
+      actorType: 'human',
+      sessionId: null,
+      deviceId: input.deviceId,
+      correlationId: input.correlationId,
+      entityType: ENTITY_TASK_TEMPLATE,
+      entityId: input.templateId,
+      operation: 'create',
+      source: input.source,
+      result: input.result,
+      errorCode: input.errorCode ?? null,
+    });
+    await this.buffer.append(event);
+  }
+}
+
+// ===== Criação de definição na fila oficial =====
+
+export class TemplateQueueAdapter implements TemplateEnqueuePort {
+  constructor(
+    private readonly queue: LocalQueueRepository,
+    private readonly authorization: () => EffectiveAuthorization,
+    private readonly deviceId: string,
+    private readonly clock: () => Date,
+  ) {}
+
+  async enqueueCreateTemplate(
+    input: Parameters<TemplateEnqueuePort['enqueueCreateTemplate']>[0],
+  ): Promise<void> {
+    const auth = this.authorization();
+    const ttlMs = Math.max(1, auth.validUntil.getTime() - this.clock().getTime());
+    const snapshot = captureSnapshot(
+      {
+        operatorProfileId: auth.operatorProfileId,
+        operatorEmployeeId: auth.operatorEmployeeId,
+        storeId: auth.storeId,
+        sessionId: auth.sessionId,
+        permissions: auth.permissions,
+        ...(auth.permissionModelVersion !== undefined
+          ? { permissionModelVersion: auth.permissionModelVersion }
+          : {}),
+        ...(auth.configVersionRef !== undefined ? { configVersionRef: auth.configVersionRef } : {}),
+        authOrigin: auth.origin === 'online' ? 'online' : 'offline-pin',
+      },
+      ttlMs,
+      this.clock,
+    );
+    await this.queue.enqueue({
+      id: input.queueItemId,
+      operation: 'insert',
+      entityType: ENTITY_TASK_TEMPLATE,
+      entityId: input.template.id,
+      payload: { template: input.template },
+      idempotencyKey: input.template.idempotencyKey,
+      authorization: snapshot,
+      trace: {
+        storeId: input.template.storeId,
+        deviceId: this.deviceId,
+        sessionId: auth.sessionId,
+        schemaVersion: 1,
+        priority: 2,
+      },
+    });
   }
 }
 

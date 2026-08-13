@@ -328,3 +328,55 @@ Pendências 7.2 (registradas, não bloqueantes):
 - `resolvedShiftId` (ShiftOccurrence) não é preenchido pelo cliente — projeção
   do servidor.
 - Transporte real (Edge Function) e identidade real seguem pendentes da 7.1.
+
+## Área do Encarregado — Supervisor Dashboard (gestão e acompanhamento de tarefas)
+
+Reconciliação: o schema congelado NÃO atribui tarefa a funcionário — a
+unidade oficial é a POSIÇÃO (`task_templates.target_position_id` →
+`operational_positions`; funcionários ocupam posições via
+`employee_assignments`). Decisão do responsável: **atribuição por posição**,
+com a UI mostrando os funcionários que a ocupam hoje. `description` e
+`priority` não existem na cadeia congelada — campos derrubados do formulário.
+
+Capabilities: **nenhuma string nova**. A RLS congelada já governa a escrita de
+`task_templates` com `config.write` (TaskTemplate é dado configurável,
+ADR-019) — decisão do responsável. `CAPABILITY_CONFIG_WRITE` exportada de
+@tauros/contracts como fonte única; o transporte fake revalida o snapshot como
+o servidor faria (defesa em profundidade comprovada por teste).
+
+| Camada       | Entrega                                                                                                             |
+| ------------ | ------------------------------------------------------------------------------------------------------------------- |
+| contracts    | `task-template/` (record + ports), `TeamDirectoryPort` (posições + atribuições vigentes), `CAPABILITY_CONFIG_WRITE` |
+| domain       | `decideCreateTemplate` puro (título, atribuição por posição, horário no dia, faixa coerente; replay idempotente)    |
+| application  | `CreateTaskTemplateUseCase` (ADR-018 revalida; enqueue→save→audit) + `storeDayStartFor` (base única de vencimento)  |
+| wiring (web) | app-state v2→v3 ADITIVO (`task_templates`); `CompositeTaskTemplateSource` (fixtures + criadas localmente)           |
+| UI (web)     | `/encarregado`: PIN → painel (resumo, filtros por situação e funcionário, lista) → Drawer "+ Nova tarefa"           |
+| view model   | `useSupervisorDashboard` (fases discriminadas: painel + criação)                                                    |
+
+Base de vencimento unificada: `dueOffsetMinutes` passa a contar da MEIA-NOITE
+civil da loja (`storeDayStartFor`) nos DOIS quadros (operador e encarregado) —
+antes contava da abertura do turno; fixtures ajustadas para horários do dia.
+
+Idempotência determinística:
+`task-template-create:{store}:{data}:{criador}:{posição}:{slug-do-título}` —
+duplo clique, retry e resposta perdida convergem para UMA criação.
+
+Auditoria: `config.changed` (tipo oficial) na criação; `access.denied` na
+negação; ciclo de sync pelo outbox via ponte da fila. PIN da fixture (Elber,
+dev-only) comparado só em memória e descartado — teste comprova que não entra
+em fila, auditoria, IndexedDB nem localStorage.
+
+Fixtures (dev, bloqueadas em produção): Elber (config.write + audit.read),
+posições Atendimento/Produção/Apoio e atribuições vigentes da equipe; Elber
+não ocupa posição atribuível. Tarefa criada pelo encarregado aparece no quadro
+do OPERADOR no mesmo aparelho (fonte composta — comprovado por teste).
+
+Testes: 11 domínio + 16 aplicação + 7 verticais + 13 UI + 1 upgrade v2→v3.
+
+Pendências (registradas, não bloqueantes):
+
+- Detalhe da tarefa em overlay próprio (visualização hoje é inline no card;
+  "criada por" vive só na auditoria — o schema não tem created_by).
+- Diretório real de equipe (employees/assignments do backend) substituindo a
+  fixture; multi-encarregado real via PermissionResolver.
+- Edição/cancelamento de definição criada (fora do escopo: acompanhar+criar).
