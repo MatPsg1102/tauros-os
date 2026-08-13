@@ -2,7 +2,7 @@
 // memória (fakes apenas na fronteira do transporte). Texto acessível e
 // comportamento, nunca classes.
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { axe } from 'jest-axe';
 import { type ReactElement } from 'react';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -14,6 +14,7 @@ import { AppProviders } from '../src/app/providers.js';
 import { APP_STATE_SCHEMA } from '../src/wiring/adapters.js';
 import { buildContainer, type AppContainer } from '../src/wiring/container.js';
 import { FakeSessionSyncTransport } from '../src/wiring/transport-fake.js';
+import { navigations, resetNavigations } from './setup-router.js';
 
 const NOW = new Date('2026-07-21T12:00:00.000Z');
 
@@ -71,6 +72,7 @@ async function identifyAs(name: string, pin: readonly string[]): Promise<void> {
 
 beforeEach(() => {
   world = makeWorld();
+  resetNavigations();
 });
 
 describe('jornada de abertura de turno', () => {
@@ -123,6 +125,43 @@ describe('jornada de abertura de turno', () => {
     await identifyAs('Carlos Nunes', ['1', '3', '5', '7']);
     await screen.findByText('Sem permissão para abrir turno');
     expect(screen.queryByRole('button', { name: 'Abrir turno' })).toBeNull();
+  });
+
+  it('ENCARREGADO: entrada "Área do Encarregado" aparece pela DECISÃO do view model e navega', async () => {
+    render(page());
+    await identifyAs('Elber', ['1', '2', '3', '4']);
+    // visível já na identificação, antes mesmo de abrir o turno
+    const entry = await screen.findByRole('button', { name: 'Ir para a Área do Encarregado' });
+    expect(screen.getByText('Gestão da equipe')).toBeTruthy();
+    fireEvent.click(entry);
+    expect(navigations()).toContain('/encarregado');
+
+    // continua disponível com o turno aberto
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir turno' }));
+    await screen.findByRole('heading', { name: 'Turno aberto' });
+    expect(screen.getByRole('button', { name: 'Ir para a Área do Encarregado' })).toBeTruthy();
+
+    // e permanece após o fechamento — a entrada independe do estado do turno
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar turno' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar turno' }));
+    await screen.findByRole('heading', { name: 'Turno fechado' });
+    expect(screen.getByRole('button', { name: 'Ir para a Área do Encarregado' })).toBeTruthy();
+  });
+
+  it('OPERADOR COMUM: sem config.write não vê a entrada da Área do Encarregado', async () => {
+    render(page());
+    await identifyAs('Marina Álvares', ['2', '4', '6', '8']);
+    await screen.findByRole('button', { name: 'Abrir turno' });
+    expect(screen.queryByRole('button', { name: 'Ir para a Área do Encarregado' })).toBeNull();
+    expect(screen.queryByText('Gestão da equipe')).toBeNull();
+  });
+
+  it('SEM ABERTURA: negado para abrir também não ganha a entrada de gestão', async () => {
+    render(page());
+    await identifyAs('Carlos Nunes', ['1', '3', '5', '7']);
+    await screen.findByText('Sem permissão para abrir turno');
+    expect(screen.queryByRole('button', { name: 'Ir para a Área do Encarregado' })).toBeNull();
   });
 
   it('ENCARREGADO: Elber (session.open efetiva) abre o próprio turno na tela genérica', async () => {

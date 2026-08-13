@@ -194,12 +194,14 @@ export function ShiftOpeningScreen({
   closing,
   closingActions,
   tasksLink,
+  supervisorLink,
 }: {
   readonly view: ShiftOpeningView;
   readonly actions: ShiftOpeningActions;
   readonly closing: ShiftClosingView;
   readonly closingActions: ShiftClosingActions;
   readonly tasksLink: NavigationLinkAdapter;
+  readonly supervisorLink: NavigationLinkAdapter;
 }): ReactElement {
   return (
     <Page id="conteudo">
@@ -225,6 +227,30 @@ export function ShiftOpeningScreen({
           Sem conexão com o servidor. Você pode abrir o turno normalmente: tudo fica salvo neste
           aparelho e será enviado quando a conexão voltar.
         </Banner>
+      )}
+
+      {/* Entrada da Área do Encarregado — só com a DECISÃO pronta do view
+          model (capability efetiva), nunca por nome/cargo. Visível a partir
+          da identificação, independente do estado do turno. */}
+      {view.canManageTeam && view.operator !== null && (
+        <Section title="Gestão da equipe">
+          <Card>
+            <Stack gap={100}>
+              <Text tone="secondary">
+                Acompanhe as tarefas da equipe, crie e atribua novas tarefas e coordene o dia.
+              </Text>
+              <Button
+                fullWidth
+                variant="secondary"
+                onClick={() => {
+                  supervisorLink.navigate?.();
+                }}
+              >
+                Ir para a Área do Encarregado
+              </Button>
+            </Stack>
+          </Card>
+        </Section>
       )}
 
       {view.phase === 'bootstrapping' && <LoadingState label="Preparando o turno" />}
