@@ -35,6 +35,8 @@ import {
   TimePicker,
 } from '@tauros/ui-primitives';
 
+import type { NavigationLinkAdapter } from '@tauros/ui-primitives';
+
 import type {
   SupervisorDashboardActions,
   SupervisorDashboardView,
@@ -322,9 +324,11 @@ function TaskItem({ task }: { readonly task: SupervisorTaskView }): ReactElement
 export function SupervisorDashboardScreen({
   view,
   actions,
+  turnoLink,
 }: {
   readonly view: SupervisorDashboardView;
   readonly actions: SupervisorDashboardActions;
+  readonly turnoLink: NavigationLinkAdapter;
 }): ReactElement {
   return (
     <Page id="conteudo">
@@ -348,9 +352,19 @@ export function SupervisorDashboardScreen({
           )
         }
         actions={
-          view.phase === 'ready' && view.permissions.canCreateTask ? (
-            <Button onClick={actions.openCreate}>+ Nova tarefa</Button>
-          ) : undefined
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                turnoLink.navigate?.();
+              }}
+            >
+              Voltar ao turno
+            </Button>
+            {view.phase === 'ready' && view.permissions.canCreateTask && (
+              <Button onClick={actions.openCreate}>+ Nova tarefa</Button>
+            )}
+          </>
         }
       />
 
@@ -383,9 +397,12 @@ export function SupervisorDashboardScreen({
       )}
 
       {view.phase === 'expired' && (
-        <Alert status="warning" title="Identificação expirada">
-          Sua identificação expirou. Identifique-se novamente para continuar.
-        </Alert>
+        <Stack gap={200}>
+          <Alert status="warning" title="Identificação expirada">
+            Sua identificação expirou. Identifique-se novamente para continuar.
+          </Alert>
+          <Button onClick={actions.reidentify}>Identificar novamente</Button>
+        </Stack>
       )}
 
       {view.phase === 'unavailable' && (

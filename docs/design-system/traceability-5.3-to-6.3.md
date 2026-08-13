@@ -376,6 +376,20 @@ atribuições vigentes da equipe; Elber não ocupa posição atribuível. Tarefa
 criada pelo encarregado aparece no quadro do OPERADOR no mesmo aparelho (fonte
 composta — comprovado por teste).
 
+Conexão do painel ao fluxo de entrada (pós-merge): a Área do Encarregado
+existia e funcionava, mas NENHUMA navegação levava até ela (`/` → `/turno`,
+tela idêntica para todos os perfis — o encarregado só chegava digitando a
+URL). Correção mínima: o view model de `/turno` passou a entregar a decisão
+pronta `canManageTeam` (capability oficial da área, ADR-018) e a tela expõe a
+entrada "Ir para a Área do Encarregado" via adapter de navegação — o
+componente de navegação não contém regra de permissão e nada depende de
+nome/cargo. Operador comum não ganhou a entrada (comprovado por teste).
+Complementos do review adversarial: painel ganhou "Voltar ao turno" (mesma
+convenção do quadro), o boot de `/turno` restaura a identificação do CONTEXTO
+(ida e volta /turno ↔ /encarregado sem repetir PIN — regra que o quadro já
+seguia) e o estado expirado do painel ganhou a ação "Identificar novamente"
+(antes era beco sem saída em PWA instalado).
+
 Correção funcional do perfil do encarregado (pós-merge): o painel
 `/encarregado` passou a expor o TURNO do próprio encarregado — status
 (nenhum/aberto/fechado, local × servidor), "Abrir turno" e "Fechar turno" com

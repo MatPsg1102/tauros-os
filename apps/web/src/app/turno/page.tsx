@@ -37,6 +37,7 @@ export default function TurnoPage(): ReactElement {
         closing={closing}
         closingActions={closingActions}
         tasksLink={appLink(router, '/turno/tarefas')}
+        supervisorLink={appLink(router, '/encarregado')}
       />
     </AppShell>
   );

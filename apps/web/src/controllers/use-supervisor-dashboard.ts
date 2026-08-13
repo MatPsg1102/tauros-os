@@ -138,6 +138,8 @@ export interface SupervisorDashboardActions {
   readonly confirmCloseShift: () => Promise<void>;
   readonly retrySync: () => Promise<void>;
   readonly reload: () => Promise<void>;
+  /** Saída do estado expirado: limpa a identificação e volta ao PIN. */
+  readonly reidentify: () => void;
 }
 
 /** Encarregados de desenvolvimento = fixtures com a capability oficial. */
@@ -514,6 +516,13 @@ export function useSupervisorDashboard(
     await load();
   }, [container, load]);
 
+  const reidentify = useCallback(() => {
+    container.setAuthorization(null);
+    identity.clear();
+    updateSession(null);
+    setPhase('identify');
+  }, [container, identity, updateSession]);
+
   const visibleTasks = tasks.filter((task) => {
     if (filter !== 'all' && task.state !== filter) return false;
     if (positionFilter !== null && task.positionId !== positionFilter) return false;
@@ -563,6 +572,7 @@ export function useSupervisorDashboard(
       confirmCloseShift: closingActions.confirmClose,
       retrySync,
       reload: load,
+      reidentify,
     },
   ];
 }

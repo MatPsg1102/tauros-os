@@ -17,6 +17,7 @@ import { AppProviders } from '../src/app/providers.js';
 import { APP_STATE_SCHEMA } from '../src/wiring/adapters.js';
 import { buildContainer, type AppContainer } from '../src/wiring/container.js';
 import { FakeSessionSyncTransport } from '../src/wiring/transport-fake.js';
+import { navigations, resetNavigations } from './setup-router.js';
 
 const NOW = new Date('2026-08-13T14:00:00.000Z'); // 11:00 na loja — "Bom dia"
 
@@ -100,6 +101,38 @@ function fillCreateForm(
 
 beforeEach(() => {
   world = makeWorld();
+  resetNavigations();
+});
+
+describe('navegação integrada /turno ↔ /encarregado (identidade compartilhada)', () => {
+  it('ENCARREGADO vindo do /turno entra no painel SEM novo PIN e volta sem reidentificar', async () => {
+    // identifica-se na tela genérica de turno
+    const { rerender } = render(app('turno'));
+    await screen.findByRole('heading', { name: 'Abertura de turno' });
+    const select = await screen.findByRole('combobox');
+    const option = (screen.getByText('Elber') as HTMLOptionElement).value;
+    fireEvent.change(select, { target: { value: option } });
+    const cells = screen.getAllByLabelText(/Dígito \d de 4/);
+    ['1', '2', '3', '4'].forEach((digit, index) => {
+      fireEvent.keyDown(cells[index] as HTMLElement, { key: digit });
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar identificação' }));
+    await screen.findByRole('button', { name: 'Ir para a Área do Encarregado' });
+
+    // chega ao painel PRONTO, sem pedir PIN de novo (contexto compartilhado)
+    rerender(app('encarregado'));
+    await screen.findByRole('heading', { name: /Bom dia, Elber/ });
+    expect(screen.queryByText('Digite seu PIN')).toBeNull();
+    expect(screen.getByRole('button', { name: '+ Nova tarefa' })).toBeTruthy();
+    expect(screen.getByText('Turno')).toBeTruthy();
+
+    // "Voltar ao turno" navega e /turno restaura a identificação sem novo PIN
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar ao turno' }));
+    expect(navigations()).toContain('/turno');
+    rerender(app('turno'));
+    await screen.findByRole('button', { name: 'Abrir turno' });
+    expect(screen.queryByRole('combobox')).toBeNull();
+  });
 });
 
 describe('acesso do encarregado', () => {

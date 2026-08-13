@@ -7,7 +7,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { EffectiveAuthorization, OperatorSessionRecord } from '@tauros/contracts';
-import { CAPABILITY_SESSION_OPEN, PERMISSION_MODEL_VERSION } from '@tauros/contracts';
+import {
+  CAPABILITY_CONFIG_WRITE,
+  CAPABILITY_SESSION_OPEN,
+  PERMISSION_MODEL_VERSION,
+} from '@tauros/contracts';
 
 import type { AppContainer } from '../wiring/container.js';
 import {
@@ -43,6 +47,12 @@ export interface ShiftOpeningView {
   readonly connectivity: ConnectivityView;
   readonly session: OperatorSessionRecord | null;
   readonly canOpenShift: boolean;
+  /**
+   * Decisão PRONTA (ADR-018): o operador identificado coordena a equipe
+   * (capability oficial que governa a Área do Encarregado). A UI usa a
+   * decisão para expor a navegação — nunca interpreta strings de permissão.
+   */
+  readonly canManageTeam: boolean;
   readonly identifyError: string | null;
   readonly actionError: string | null;
 }
@@ -102,18 +112,47 @@ export function useShiftOpening(container: AppContainer): [ShiftOpeningView, Shi
     [container],
   );
 
-  // Boot: reconciliação de recuperação + restauração de sessão ativa (reload)
+  // Identidade compartilhada sempre atual sem religar o efeito de boot: o
+  // contexto muda quando identify()/clear() rodam, mas o boot só interessa
+  // uma vez por montagem da rota.
+  const identityRef = useRef(identity);
+  identityRef.current = identity;
+
+  // Boot: reconciliação de recuperação + restauração da identificação vinda
+  // do CONTEXTO (7.2 — navegar entre rotas não exige novo PIN; /turno segue
+  // a mesma regra do quadro e da Área do Encarregado) + sessão ativa (reload)
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       await container.reconcileFromQueue();
       await refreshConnectivity();
-      if (!cancelled) setPhase('identify');
+      if (cancelled) return;
+      const shared = identityRef.current;
+      if (shared.operator !== null && shared.authorization !== null) {
+        const sharedEmployeeId = shared.operator.employeeId;
+        const fixture = FIXTURE_OPERATORS.find(
+          (candidate) => candidate.employeeId === sharedEmployeeId,
+        );
+        if (fixture !== undefined) {
+          authRef.current = shared.authorization;
+          container.setAuthorization(shared.authorization);
+          setOperator(fixture);
+          const active = await refreshSession(fixture.employeeId);
+          if (cancelled) return;
+          if (active !== null) {
+            setPhase(active.syncStatus === 'conflict' ? 'conflict' : 'opened');
+            return;
+          }
+          setPhase(fixture.permissions.includes(CAPABILITY_SESSION_OPEN) ? 'ready' : 'denied');
+          return;
+        }
+      }
+      setPhase('identify');
     })();
     return () => {
       cancelled = true;
     };
-  }, [container, refreshConnectivity]);
+  }, [container, refreshConnectivity, refreshSession]);
 
   const identify = useCallback(
     async (employeeId: string, pin: string) => {
@@ -245,6 +284,7 @@ export function useShiftOpening(container: AppContainer): [ShiftOpeningView, Shi
     connectivity,
     session,
     canOpenShift: operator?.permissions.includes(CAPABILITY_SESSION_OPEN) ?? false,
+    canManageTeam: operator?.permissions.includes(CAPABILITY_CONFIG_WRITE) ?? false,
     identifyError,
     actionError,
   };
