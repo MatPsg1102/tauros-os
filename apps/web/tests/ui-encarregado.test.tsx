@@ -259,6 +259,83 @@ describe('criação de tarefa', () => {
   });
 });
 
+describe('turno do encarregado (encarregado também é operador)', () => {
+  it('ciclo completo: Abrir turno → Aberto → Fechar turno → Fechado (nunca as duas ações juntas)', async () => {
+    render(app());
+    await identifyElber();
+
+    // sem sessão ativa: só a ação de abrir (progressive disclosure)
+    await screen.findByText('Nenhum turno aberto agora.');
+    expect(screen.getByRole('button', { name: 'Abrir turno' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Fechar turno' })).toBeNull();
+    expect(screen.queryByText(/Sem permissão para abrir turno/)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir turno' }));
+    await screen.findByText(/Turno aberto em \d{4}-\d{2}-\d{2}/);
+    await waitFor(() => expect(screen.getByText('Confirmado pelo servidor')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: 'Abrir turno' })).toBeNull();
+    expect(screen.queryByText(/Sem permissão para fechar turno/)).toBeNull();
+
+    // fechamento exige confirmação explícita
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar turno' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar turno' }));
+
+    await screen.findByText('Turno fechado. Nada foi perdido.');
+    await waitFor(() => expect(screen.getByText('Confirmado pelo servidor.')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: 'Abrir turno' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Fechar turno' })).toBeNull();
+  });
+
+  it('dupla submissão de abertura não duplica o turno', async () => {
+    render(app());
+    await identifyElber();
+    const open = await screen.findByRole('button', { name: 'Abrir turno' });
+    fireEvent.click(open);
+    fireEvent.click(open);
+    await screen.findByText(/Turno aberto em \d{4}-\d{2}-\d{2}/);
+    await waitFor(() => expect(world.transport.submissions).toBe(1));
+    expect(await world.container.queue.all()).toHaveLength(1);
+  });
+
+  it('OFFLINE: abre e fecha localmente; reconectar confirma pelo servidor', async () => {
+    world.online = false;
+    world.transport.available = false;
+    render(app());
+    await identifyElber();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Abrir turno' }));
+    await screen.findByText(/Turno aberto em \d{4}-\d{2}-\d{2}/);
+    expect(screen.getByText('Aguardando sincronização')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar turno' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar turno' }));
+    await screen.findByText('Turno fechado. Nada foi perdido.');
+    expect(screen.getByText(/Fechado neste aparelho/)).toBeTruthy();
+
+    world.online = true;
+    world.transport.available = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar sincronizar agora' }));
+    await waitFor(() => expect(screen.getByText('Confirmado pelo servidor.')).toBeTruthy());
+  });
+
+  it('reload restaura a sessão ativa após nova identificação', async () => {
+    const first = render(app());
+    await identifyElber();
+    fireEvent.click(await screen.findByRole('button', { name: 'Abrir turno' }));
+    await screen.findByText(/Turno aberto em \d{4}-\d{2}-\d{2}/);
+    first.unmount();
+
+    // "reload": nova árvore sobre os MESMOS stores — identidade se refaz
+    render(app());
+    await identifyElber();
+    await screen.findByText(/Turno aberto em \d{4}-\d{2}-\d{2}/);
+    expect(screen.queryByRole('button', { name: 'Abrir turno' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Fechar turno' })).toBeTruthy();
+  });
+});
+
 describe('segurança do PIN de desenvolvimento', () => {
   it('o PIN não entra em fila, auditoria, storage nem localStorage', async () => {
     render(app());

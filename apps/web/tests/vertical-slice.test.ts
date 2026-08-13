@@ -6,7 +6,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { EffectiveAuthorization } from '@tauros/contracts';
-import { CAPABILITY_CONFIG_WRITE, CAPABILITY_SESSION_OPEN } from '@tauros/contracts';
+import {
+  CAPABILITY_CONFIG_WRITE,
+  CAPABILITY_SESSION_CLOSE,
+  CAPABILITY_SESSION_OPEN,
+} from '@tauros/contracts';
 import { MemoryLocalStore, OFFLINE_SCHEMA } from '@tauros/infrastructure';
 
 import { APP_STATE_SCHEMA } from '../src/wiring/adapters.js';
@@ -239,11 +243,12 @@ describe('snapshot e autorização offline (§10/§36)', () => {
     expect(JSON.stringify(outbox)).toContain('access.denied');
   });
 
-  it('encarregado também é operador: snapshot da fixture carrega session.open e abre turno', async () => {
+  it('encarregado também é operador: snapshot da fixture carrega o perfil completo e abre turno', async () => {
     const supervisor = FIXTURE_OPERATORS.find((op) => op.employeeId === 'emp-0004');
     expect(supervisor).toBeDefined();
     // permissões efetivas completas: operacional + encarregado, sem substituição
     expect(supervisor!.permissions).toContain(CAPABILITY_SESSION_OPEN);
+    expect(supervisor!.permissions).toContain(CAPABILITY_SESSION_CLOSE);
     expect(supervisor!.permissions).toContain(CAPABILITY_CONFIG_WRITE);
     expect(supervisor!.permissions).toContain('audit.read');
 
@@ -253,6 +258,19 @@ describe('snapshot e autorização offline (§10/§36)', () => {
       permissions: supervisor!.permissions,
     });
     expect(result.kind).toBe('opened');
+  });
+
+  it('usuário comum NÃO ganha capabilities de encarregado automaticamente', () => {
+    const byId = (id: string): readonly string[] =>
+      FIXTURE_OPERATORS.find((op) => op.employeeId === id)?.permissions ?? [];
+    // Marina: operadora completa de turno, sem escrita de configuração
+    expect(byId('emp-0001')).not.toContain(CAPABILITY_CONFIG_WRITE);
+    // Carlos: sem abertura — prova negativa viva do quadro de permissões
+    expect(byId('emp-0002')).not.toContain(CAPABILITY_SESSION_OPEN);
+    expect(byId('emp-0002')).not.toContain(CAPABILITY_CONFIG_WRITE);
+    // Rita: abre mas não fecha nem configura
+    expect(byId('emp-0003')).not.toContain(CAPABILITY_SESSION_CLOSE);
+    expect(byId('emp-0003')).not.toContain(CAPABILITY_CONFIG_WRITE);
   });
 
   it('autorização deriva das permissões efetivas, nunca do nome/identidade', async () => {

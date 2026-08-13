@@ -13,6 +13,7 @@ import {
   Button,
   Card,
   Checkbox,
+  ConfirmDialog,
   Drawer,
   EmptyState,
   ErrorState,
@@ -181,6 +182,118 @@ function CreateTaskDrawer({
   );
 }
 
+/**
+ * Turno do próprio encarregado (encarregado também é operador). Progressive
+ * disclosure: nunca mostra Abrir e Fechar ao mesmo tempo — a ação exibida
+ * deriva do estado da sessão e das DECISÕES prontas do view model.
+ */
+function ShiftSection({
+  view,
+  actions,
+}: {
+  readonly view: SupervisorDashboardView;
+  readonly actions: SupervisorDashboardActions;
+}): ReactElement {
+  const session = view.session;
+  const isOpen = session?.status === 'ACTIVE';
+  const isClosed = session !== null && session.status !== 'ACTIVE';
+  return (
+    <Section title="Turno">
+      <Card>
+        <Stack gap={200}>
+          {session === null && (
+            <>
+              <div role="status">
+                <Text>Nenhum turno aberto agora.</Text>
+              </div>
+              {view.permissions.canOpenShift ? (
+                <Button
+                  fullWidth
+                  disabled={view.shiftSubmitting}
+                  onClick={() => void actions.openShift()}
+                >
+                  {view.shiftSubmitting ? 'Abrindo turno…' : 'Abrir turno'}
+                </Button>
+              ) : (
+                <Alert status="warning" title="Sem permissão para abrir turno">
+                  Seu perfil não permite abrir o turno nesta loja. Procure o responsável pela
+                  unidade.
+                </Alert>
+              )}
+            </>
+          )}
+
+          {isOpen && (
+            <>
+              <div role="status">
+                <Text>Turno aberto em {session.operationalDate}.</Text>
+              </div>
+              {session.syncStatus === 'synced' ? (
+                <Badge status="success">Confirmado pelo servidor</Badge>
+              ) : (
+                <Badge status="info">Aguardando sincronização</Badge>
+              )}
+              {view.permissions.canCloseShift ? (
+                <Button
+                  fullWidth
+                  variant="secondary"
+                  disabled={view.closing.phase === 'submitting'}
+                  onClick={actions.requestCloseShift}
+                >
+                  Fechar turno
+                </Button>
+              ) : (
+                <Alert status="warning" title="Sem permissão para fechar turno">
+                  Seu perfil não permite fechar o turno nesta loja. Procure o responsável pela
+                  unidade.
+                </Alert>
+              )}
+            </>
+          )}
+
+          {isClosed && (
+            <>
+              <div role="status">
+                <Text>Turno fechado. Nada foi perdido.</Text>
+              </div>
+              {session.closeSyncStatus === 'synced' ? (
+                <Text tone="secondary">Confirmado pelo servidor.</Text>
+              ) : (
+                <>
+                  <Text tone="secondary">
+                    Fechado neste aparelho. O fechamento será enviado assim que houver conexão.
+                  </Text>
+                  <Button variant="secondary" onClick={() => void actions.retrySync()}>
+                    Tentar sincronizar agora
+                  </Button>
+                </>
+              )}
+            </>
+          )}
+
+          {view.shiftError !== null && (
+            <Alert status="error" live="polite" title="Turno não alterado">
+              {view.shiftError}
+            </Alert>
+          )}
+        </Stack>
+      </Card>
+
+      <ConfirmDialog
+        open={view.closing.phase === 'confirming'}
+        onOpenChange={(open) => {
+          if (!open) actions.cancelCloseShift();
+        }}
+        title="Fechar o turno agora?"
+        description="Depois de fechado, este turno não recebe novos registros de tarefa neste aparelho."
+        confirmLabel="Fechar turno"
+        cancelLabel="Continuar no turno"
+        onConfirm={() => actions.confirmCloseShift()}
+      />
+    </Section>
+  );
+}
+
 function TaskItem({ task }: { readonly task: SupervisorTaskView }): ReactElement {
   const sync = syncLine(task);
   return (
@@ -235,7 +348,7 @@ export function SupervisorDashboardScreen({
           )
         }
         actions={
-          view.phase === 'ready' ? (
+          view.phase === 'ready' && view.permissions.canCreateTask ? (
             <Button onClick={actions.openCreate}>+ Nova tarefa</Button>
           ) : undefined
         }
@@ -365,6 +478,8 @@ export function SupervisorDashboardScreen({
               </PanelBody>
             </Panel>
           </Section>
+
+          <ShiftSection view={view} actions={actions} />
 
           <CreateTaskDrawer view={view} actions={actions} />
         </>
