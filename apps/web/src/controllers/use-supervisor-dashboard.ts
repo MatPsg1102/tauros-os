@@ -174,13 +174,21 @@ function greetingFor(now: Date, timeZone: string): string {
   return 'Boa noite';
 }
 
-function dueTimeFor(dueAtIso: string, timeZone: string): string {
+/**
+ * HH:MM no fuso da loja, TOLERANTE a valor ausente/ inválido — ocorrências
+ * materializadas ANTES do planejamento (IndexedDB legado) não têm
+ * plannedStartAt; devolvemos null em vez de estourar `new Date(inválido)`.
+ */
+function timeOfDay(iso: string | null | undefined, timeZone: string): string | null {
+  if (iso === null || iso === undefined || iso === '') return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
   return new Intl.DateTimeFormat('pt-BR', {
     timeZone,
     hourCycle: 'h23',
     hour: '2-digit',
     minute: '2-digit',
-  }).format(new Date(dueAtIso));
+  }).format(date);
 }
 
 /** "HH:MM" → minutos do dia. Entrada inválida vira 0 (o domínio rejeita). */
@@ -322,11 +330,8 @@ export function useSupervisorDashboard(
           id: record.id,
           title: record.template.title,
           state: stateOf(record),
-          startTime:
-            record.plannedStartAt === null
-              ? null
-              : dueTimeFor(record.plannedStartAt, FIXTURE_STORE.timeZone),
-          dueTime: dueTimeFor(record.dueAt, FIXTURE_STORE.timeZone),
+          startTime: timeOfDay(record.plannedStartAt, FIXTURE_STORE.timeZone),
+          dueTime: timeOfDay(record.dueAt, FIXTURE_STORE.timeZone) ?? '—',
           positionId,
           positionName:
             positionId === null

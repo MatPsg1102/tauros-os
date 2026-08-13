@@ -227,6 +227,47 @@ describe('painel do encarregado', () => {
   });
 });
 
+describe('compatibilidade com ocorrências legadas (IndexedDB anterior ao planejamento)', () => {
+  it('carrega o painel sem quebrar quando uma daily_task não tem plannedStartAt', async () => {
+    // registro materializado ANTES desta feature: sem plannedStartAt nem
+    // assignedPositionId (campos aditivos). O load NÃO pode estourar.
+    await world.appStore.transaction(['daily_tasks'], 'write', (tx) =>
+      tx.put('daily_tasks', 'daily-task:store-centro-0001:2026-08-13:tpl-legacy', {
+        id: 'daily-task:store-centro-0001:2026-08-13:tpl-legacy',
+        storeId: 'store-centro-0001',
+        storeDateKey: 'store-centro-0001:2026-08-13',
+        templateId: 'tpl-legacy',
+        workDate: '2026-08-13',
+        dueAt: '2026-08-13T22:00:00.000Z',
+        status: 'PENDING',
+        expectedMinSnapshot: null,
+        expectedMaxSnapshot: null,
+        configVersionRef: null,
+        template: {
+          templateId: 'tpl-legacy',
+          title: 'Tarefa legada',
+          frequency: 'DAILY',
+          requiresPhoto: false,
+          expectedMin: null,
+          expectedMax: null,
+          targetPositionId: 'pos-atendimento',
+          dueOffsetMinutes: 600,
+        },
+        lastExecutionId: null,
+        syncStatus: null,
+      }),
+    );
+
+    render(app());
+    await identifyElber();
+    // painel carregou (heading Bom dia já confirmado) e a tarefa legada aparece
+    expect(await screen.findByRole('heading', { name: 'Tarefa legada' })).toBeTruthy();
+    // sem início planejado → mostra só "até HH:MM", sem crash
+    const legacyCard = screen.getByRole('heading', { name: 'Tarefa legada' }).closest('div');
+    expect(legacyCard?.textContent).toMatch(/até \d{2}:\d{2}/);
+  });
+});
+
 describe('criação de tarefa', () => {
   it('cria tarefa válida e ela aparece imediatamente no quadro', async () => {
     render(app());
