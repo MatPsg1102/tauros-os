@@ -125,6 +125,17 @@ describe('jornada de abertura de turno', () => {
     expect(screen.queryByRole('button', { name: 'Abrir turno' })).toBeNull();
   });
 
+  it('ENCARREGADO: Elber (session.open efetiva) abre o próprio turno na tela genérica', async () => {
+    render(page());
+    await identifyAs('Elber', ['1', '2', '3', '4']);
+    fireEvent.click(await screen.findByRole('button', { name: 'Abrir turno' }));
+    await screen.findByRole('heading', { name: 'Turno aberto' });
+    expect(screen.queryByText('Sem permissão para abrir turno')).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('Turno aberto para Elber');
+    await waitFor(() => expect(world.transport.submissions).toBe(1));
+    expect(await world.container.queue.all()).toHaveLength(1);
+  });
+
   it('PIN incorreto: mensagem neutra (não revela existência) e PIN limpo', async () => {
     render(page());
     await identifyAs('Marina Álvares', ['9', '9', '9', '9']);

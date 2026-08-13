@@ -3,6 +3,12 @@
 // nenhum segredo real, nenhuma falsa garantia. Bloqueadas em produção
 // (guard explícito — impossíveis de ativar por acidente).
 
+import {
+  CAPABILITY_CONFIG_WRITE,
+  CAPABILITY_SESSION_CLOSE,
+  CAPABILITY_SESSION_OPEN,
+} from '@tauros/contracts';
+
 export class FixturesDisabledError extends Error {
   constructor() {
     super(
@@ -46,9 +52,12 @@ export const FIXTURE_STORE: FixtureStore = {
 
 /**
  * Operadores cobrindo os cenários reais de autorização: completo, sem
- * abertura, com abertura mas sem fechamento, e o ENCARREGADO (config.write —
- * capability oficial que governa task_templates na RLS congelada). O PIN é
- * fixture de desenvolvimento: comparado apenas em memória e descartado.
+ * abertura, com abertura mas sem fechamento, e o ENCARREGADO — que também é
+ * operador: abre o próprio turno (session.open) além das capacidades de
+ * encarregado (config.write — capability oficial que governa task_templates
+ * na RLS congelada). A autorização vem SEMPRE das permissões efetivas
+ * (ADR-018), nunca de nome/cargo. O PIN é fixture de desenvolvimento:
+ * comparado apenas em memória e descartado.
  */
 export const FIXTURE_OPERATORS: readonly FixtureOperator[] = [
   {
@@ -57,7 +66,7 @@ export const FIXTURE_OPERATORS: readonly FixtureOperator[] = [
     membershipId: 'memb-0001',
     name: 'Marina Álvares',
     pin: '2468',
-    permissions: ['session.open', 'session.close', 'audit.read'],
+    permissions: [CAPABILITY_SESSION_OPEN, CAPABILITY_SESSION_CLOSE, 'audit.read'],
   },
   {
     employeeId: 'emp-0002',
@@ -73,7 +82,7 @@ export const FIXTURE_OPERATORS: readonly FixtureOperator[] = [
     membershipId: 'memb-0003',
     name: 'Rita Belmonte',
     pin: '9753',
-    permissions: ['session.open', 'audit.read'],
+    permissions: [CAPABILITY_SESSION_OPEN, 'audit.read'],
   },
   {
     employeeId: 'emp-0004',
@@ -81,7 +90,7 @@ export const FIXTURE_OPERATORS: readonly FixtureOperator[] = [
     membershipId: 'memb-0004',
     name: 'Elber',
     pin: '1234',
-    permissions: ['config.write', 'audit.read'],
+    permissions: [CAPABILITY_SESSION_OPEN, CAPABILITY_CONFIG_WRITE, 'audit.read'],
   },
 ];
 
