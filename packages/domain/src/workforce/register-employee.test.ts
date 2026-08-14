@@ -14,6 +14,7 @@ const command: RegisterEmployeeCommand = {
   startDate: '2026-08-17',
   positionId: 'pos-acougueiro-1',
   teamId: 'team-a',
+  shiftDefinitionId: 'def-0730',
   clientCreatedAt: NOW,
   idempotencyKey: 'employee-register:store-1:x',
 };
@@ -28,11 +29,13 @@ describe('decideRegisterEmployee', () => {
       fullName: 'João da Silva',
       active: true,
     });
-    // equipe e posição são campos SEPARADOS do vínculo — nunca um nome composto
+    // equipe, posição e JORNADA são campos SEPARADOS do vínculo — nunca um
+    // nome composto nem um horário embutido na equipe
     expect(decision.assignment).toMatchObject({
       employeeId: 'emp-1',
       teamId: 'team-a',
       operationalPositionId: 'pos-acougueiro-1',
+      shiftDefinitionId: 'def-0730',
       validFrom: '2026-08-17',
       validUntil: null,
     });

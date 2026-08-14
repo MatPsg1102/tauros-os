@@ -33,6 +33,9 @@ model Team {
   id      String @id @default(uuid()) @db.Uuid
   storeId String @map("store_id") @db.Uuid
   name    String
+  /// Posição da equipe no ciclo do padrão de escala vigente da loja
+  /// (12x36 A/B = offsets 0 e 1). A âncora vive em stores.shift_anchor_date.
+  rotationOffset Int @default(0) @map("rotation_offset")
 
   assignments      EmployeeAssignment[]
   shiftOccurrences ShiftOccurrence[]
@@ -42,19 +45,23 @@ model Team {
   @@map("teams")
 }
 
-/// Atribuição temporal de um employee a equipe/posição.
+/// Atribuição temporal de um employee a equipe/posição/jornada.
 model EmployeeAssignment {
   id                    String    @id @default(uuid()) @db.Uuid
   storeId               String    @map("store_id") @db.Uuid
   employeeId            String    @map("employee_id") @db.Uuid
   teamId                String?   @map("team_id") @db.Uuid
   operationalPositionId String    @map("operational_position_id") @db.Uuid
+  /// Jornada declarada do VÍNCULO (equipe ≠ jornada: pessoas da mesma equipe
+  /// podem ter horários diferentes). NULL = vínculo anterior à Escala V1.
+  shiftDefinitionId     String?   @map("shift_definition_id") @db.Uuid
   validFrom             DateTime  @default(now()) @map("valid_from") @db.Timestamptz(6)
   validUntil            DateTime? @map("valid_until") @db.Timestamptz(6)
 
   employee            Employee            @relation(fields: [employeeId], references: [id])
   team                Team?               @relation(fields: [teamId], references: [id])
   operationalPosition OperationalPosition @relation(fields: [operationalPositionId], references: [id])
+  shiftDefinition     ShiftDefinition?    @relation(fields: [shiftDefinitionId], references: [id])
 
   @@index([storeId])
   @@index([employeeId])

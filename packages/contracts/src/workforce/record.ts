@@ -50,6 +50,12 @@ export interface EmployeeAssignmentRecord {
   readonly teamId: string | null;
   readonly operationalPositionId: string;
   /**
+   * JORNADA declarada do vínculo (shift_definitions) — equipe ≠ jornada:
+   * pessoas da mesma equipe podem ter horários diferentes. null = vínculo
+   * anterior à Escala V1 (sem jornada declarada).
+   */
+  readonly shiftDefinitionId: string | null;
+  /**
    * Data civil YYYY-MM-DD (fuso da LOJA) do início do vínculo — o backend
    * converte para timestamptz na meia-noite civil da loja.
    */
@@ -62,6 +68,11 @@ export interface TeamRecord {
   readonly id: string;
   readonly storeId: string;
   readonly name: string;
+  /**
+   * Posição da equipe no ciclo do padrão de escala vigente da loja (12x36
+   * A/B = 0 e 1). A EQUIPE nunca define horário — jornada vive no vínculo.
+   */
+  readonly rotationOffset: number;
 }
 
 /** Registro local de operational_positions (dado configurável, ADR-019). */

@@ -15,6 +15,8 @@ export interface WorkforceRepositoryPort {
   assignments(storeId: string): Promise<readonly EmployeeAssignmentRecord[]>;
   /** Cadastro ATÔMICO: pessoa + vínculo na MESMA transação local. */
   saveRegistration(employee: EmployeeRecord, assignment: EmployeeAssignmentRecord): Promise<void>;
+  /** Grava/atualiza um vínculo isolado (troca de jornada por vigência). */
+  saveAssignment(record: EmployeeAssignmentRecord): Promise<void>;
   updateEmployeeSyncStatus(id: string, status: WorkforceSyncStatus): Promise<void>;
   teams(storeId: string): Promise<readonly TeamRecord[]>;
   saveTeam(record: TeamRecord): Promise<void>;

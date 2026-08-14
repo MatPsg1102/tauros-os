@@ -25,7 +25,10 @@ import {
   Select,
   Stack,
   Text,
+  TimePicker,
 } from '@tauros/ui-primitives';
+
+import type { PlannedScheduleDay } from '@tauros/contracts';
 
 import type {
   TeamManagementActions,
@@ -54,6 +57,9 @@ function RegisterEmployeeDrawer({
   const [startDate, setStartDate] = useState(view.today);
   const [positionId, setPositionId] = useState('');
   const [teamId, setTeamId] = useState('');
+  // jornada default = primeira cadastrada (dado da loja, nunca hardcode)
+  const defaultShiftDefinitionId = view.definitionOptions[0]?.id ?? '';
+  const [shiftDefinitionId, setShiftDefinitionId] = useState(defaultShiftDefinitionId);
   const open = view.registration.status !== 'idle';
   const submitting = view.registration.status === 'submitting';
 
@@ -65,10 +71,11 @@ function RegisterEmployeeDrawer({
     setStartDate(view.today);
     setPositionId('');
     setTeamId('');
-  }, [open, view.today]);
+    setShiftDefinitionId(defaultShiftDefinitionId);
+  }, [defaultShiftDefinitionId, open, view.today]);
 
   function submit(): void {
-    void actions.register({ fullName, startDate, positionId, teamId });
+    void actions.register({ fullName, startDate, positionId, teamId, shiftDefinitionId });
   }
 
   return (
@@ -117,6 +124,19 @@ function RegisterEmployeeDrawer({
             {view.teams.map((team) => (
               <option key={team.id} value={team.id}>
                 {team.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Horário de trabalho">
+          <Select
+            value={shiftDefinitionId}
+            onChange={(event) => setShiftDefinitionId(event.target.value)}
+            disabled={submitting}
+          >
+            {view.definitionOptions.map((definition) => (
+              <option key={definition.id} value={definition.id}>
+                {definition.label}
               </option>
             ))}
           </Select>
@@ -195,6 +215,7 @@ function MemberItem({ member }: { readonly member: TeamMemberItemView }): ReactE
         <Heading level={3}>{member.fullName}</Heading>
         <Text role="data" tone="secondary">
           {member.positionName} · {member.teamName}
+          {member.workPeriodLabel !== null ? ` · ${member.workPeriodLabel}` : ''}
         </Text>
         <Text tone="secondary">Ativo desde {member.startDateLabel}</Text>
         {sync !== null && (
@@ -204,6 +225,119 @@ function MemberItem({ member }: { readonly member: TeamMemberItemView }): ReactE
         )}
       </Stack>
     </Card>
+  );
+}
+
+/** dd/mm a partir de YYYY-MM-DD — apresentação, nunca cálculo de escala. */
+function dayLabel(operationalDate: string): string {
+  return `${operationalDate.slice(8, 10)}/${operationalDate.slice(5, 7)}`;
+}
+
+function PlannedDayCard({
+  day,
+  expanded,
+}: {
+  readonly day: PlannedScheduleDay;
+  readonly expanded: boolean;
+}): ReactElement {
+  const teamNames = day.scheduledTeams.map((team) => team.teamName).join(' + ');
+  return (
+    <Card>
+      <Stack gap={100}>
+        <Heading level={3}>
+          {expanded ? `Hoje — ${dayLabel(day.operationalDate)}` : dayLabel(day.operationalDate)}
+        </Heading>
+        {day.status === 'unconfigured' ? (
+          <Text tone="secondary">Sem escala configurada para esta data.</Text>
+        ) : (
+          <>
+            <Text role="data" tone="secondary">
+              {day.scheduledTeams.length === 0 ? 'Ninguém escalado' : teamNames}
+              {day.patternName !== null ? ` · ${day.patternName}` : ''}
+            </Text>
+            {expanded &&
+              (day.employees.length === 0 ? (
+                <Text tone="secondary">Nenhum colaborador escalado nesta data.</Text>
+              ) : (
+                <Stack gap={100}>
+                  {day.employees.map((employee) => (
+                    <Text role="data" key={employee.employeeId}>
+                      {employee.fullName}
+                      {employee.positionName !== null ? ` — ${employee.positionName}` : ''}
+                      {employee.workPeriod !== null
+                        ? ` · ${employee.workPeriod.startTime}–${employee.workPeriod.endTime}`
+                        : ''}
+                    </Text>
+                  ))}
+                </Stack>
+              ))}
+          </>
+        )}
+      </Stack>
+    </Card>
+  );
+}
+
+function CreateShiftDefinitionDrawer({
+  view,
+  actions,
+}: {
+  readonly view: TeamManagementView;
+  readonly actions: TeamManagementActions;
+}): ReactElement {
+  const [name, setName] = useState('');
+  const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime] = useState('');
+  const open = view.shiftDefinitionCreation.status !== 'idle';
+  const submitting = view.shiftDefinitionCreation.status === 'submitting';
+
+  // mesmo contrato dos demais drawers: erro preserva; reabrir limpa
+  useEffect(() => {
+    if (open) return;
+    setName('');
+    setStartTime('');
+    setEndTime('');
+  }, [open]);
+
+  function submit(): void {
+    void actions.createShiftDefinition({ name, startTime, endTime });
+  }
+
+  return (
+    <Drawer
+      open={open}
+      side="right"
+      title="Novo horário"
+      description="O horário fica reutilizável para outros colaboradores"
+      closeLabel="Fechar"
+      onOpenChange={(isOpen) => {
+        if (!isOpen) actions.closeCreateShiftDefinition();
+      }}
+    >
+      <Stack gap={200}>
+        <Field label="Nome (opcional)">
+          <Input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            disabled={submitting}
+          />
+        </Field>
+        <Field label="Hora início">
+          <TimePicker value={startTime} onValueChange={setStartTime} disabled={submitting} />
+        </Field>
+        <Field label="Hora fim">
+          <TimePicker value={endTime} onValueChange={setEndTime} disabled={submitting} />
+        </Field>
+        {view.shiftDefinitionCreation.status === 'error' && (
+          <Alert status="error" live="polite" title="Horário não criado">
+            {view.shiftDefinitionCreation.message}
+          </Alert>
+        )}
+        <Button fullWidth disabled={submitting} onClick={submit}>
+          {submitting ? 'Criando horário…' : 'Criar horário'}
+        </Button>
+      </Stack>
+    </Drawer>
   );
 }
 
@@ -238,6 +372,9 @@ export function TeamManagementSection({
           {view.tab === 'positions' && view.canCreatePosition && (
             <Button onClick={actions.openCreatePosition}>+ Nova posição</Button>
           )}
+          {view.tab === 'schedule' && view.canCreateShiftDefinition && (
+            <Button onClick={actions.openCreateShiftDefinition}>+ Novo horário</Button>
+          )}
         </>
       }
     >
@@ -250,6 +387,7 @@ export function TeamManagementSection({
             { value: 'members', label: 'Colaboradores' },
             { value: 'positions', label: 'Posições' },
             { value: 'teams', label: 'Equipes' },
+            { value: 'schedule', label: 'Escala' },
           ]}
         />
 
@@ -306,6 +444,7 @@ export function TeamManagementSection({
                       {group.members.map((member) => (
                         <Text role="data" key={member.employeeId}>
                           {member.fullName} — {member.positionName}
+                          {member.workPeriodLabel !== null ? ` · ${member.workPeriodLabel}` : ''}
                         </Text>
                       ))}
                     </Stack>
@@ -315,10 +454,45 @@ export function TeamManagementSection({
             ))}
           </Stack>
         )}
+
+        {view.tab === 'schedule' && (
+          <Stack gap={200}>
+            {view.scheduleDays.length === 0 ? (
+              <EmptyState
+                title="Escala indisponível"
+                description="Não foi possível resolver a escala desta loja agora."
+              />
+            ) : (
+              <>
+                {view.scheduleDays.map((day, index) => (
+                  <PlannedDayCard key={day.operationalDate} day={day} expanded={index === 0} />
+                ))}
+              </>
+            )}
+            <Card>
+              <Stack gap={100}>
+                <Heading level={3}>Horários de trabalho</Heading>
+                {view.definitionItems.map((definition) => (
+                  <Flex gap={100} wrap align="center" justify="between" key={definition.id}>
+                    <Text role="data">
+                      {definition.name === definition.windowLabel
+                        ? definition.windowLabel
+                        : `${definition.name} · ${definition.windowLabel}`}
+                    </Text>
+                    {definition.syncStatus === 'queued' && (
+                      <Badge status="info">Aguardando sincronização</Badge>
+                    )}
+                  </Flex>
+                ))}
+              </Stack>
+            </Card>
+          </Stack>
+        )}
       </Stack>
 
       <RegisterEmployeeDrawer view={view} actions={actions} />
       <CreatePositionDrawer view={view} actions={actions} />
+      <CreateShiftDefinitionDrawer view={view} actions={actions} />
     </Section>
   );
 }

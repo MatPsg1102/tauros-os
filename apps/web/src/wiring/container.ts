@@ -5,10 +5,13 @@
 
 import {
   AssignDailyTaskUseCase,
+  ChangeEmployeeWorkPeriodUseCase,
   CloseOperatorSessionUseCase,
   CreateOperationalPositionUseCase,
+  CreateShiftDefinitionUseCase,
   CreateTaskTemplateUseCase,
   LoadDailyTasksUseCase,
+  LoadPlannedScheduleUseCase,
   OpenOperatorSessionUseCase,
   operationalDateFor,
   RecordTaskOutcomeUseCase,
@@ -17,8 +20,10 @@ import {
 import { ConfigResolver } from '@tauros/config-engine';
 import type {
   AssignDailyTaskQueuePayload,
+  ChangeWorkPeriodQueuePayload,
   CloseSessionQueuePayload,
   CreatePositionQueuePayload,
+  CreateShiftDefinitionQueuePayload,
   CreateTemplateQueuePayload,
   EffectiveAuthorization,
   OperatorSessionRecord,
@@ -31,8 +36,10 @@ import type {
 import {
   ENTITY_DAILY_TASK,
   ENTITY_EMPLOYEE,
+  ENTITY_EMPLOYEE_ASSIGNMENT,
   ENTITY_OPERATIONAL_POSITION,
   ENTITY_OPERATOR_SESSION,
+  ENTITY_SHIFT_DEFINITION,
   ENTITY_TASK_EXECUTION,
   ENTITY_TASK_TEMPLATE,
 } from '@tauros/contracts';
@@ -71,9 +78,11 @@ import {
   DailyTaskAuditAdapter,
   LocalDailyTaskRepository,
   LocalOperatorSessionRepository,
+  LocalScheduleRepository,
   LocalTaskTemplateRepository,
   LocalTeamDirectory,
   LocalWorkforceRepository,
+  ScheduleQueueAdapter,
   SessionAuditAdapter,
   SessionQueueAdapter,
   TaskExecutionQueueAdapter,
@@ -116,6 +125,7 @@ export interface AppContainer {
   readonly templates: LocalTaskTemplateRepository;
   readonly team: TeamDirectoryPort;
   readonly workforce: LocalWorkforceRepository;
+  readonly scheduleData: LocalScheduleRepository;
   readonly setAuthorization: (auth: EffectiveAuthorization | null) => void;
   readonly openSession: OpenOperatorSessionUseCase;
   readonly closeSession: CloseOperatorSessionUseCase;
@@ -125,6 +135,9 @@ export interface AppContainer {
   readonly assignDailyTask: AssignDailyTaskUseCase;
   readonly registerEmployee: RegisterEmployeeUseCase;
   readonly createPosition: CreateOperationalPositionUseCase;
+  readonly createShiftDefinition: CreateShiftDefinitionUseCase;
+  readonly changeWorkPeriod: ChangeEmployeeWorkPeriodUseCase;
+  readonly loadPlannedSchedule: LoadPlannedScheduleUseCase;
   /** Drena a fila e reflete o desfecho no syncStatus do registro local. */
   readonly drainAndReflect: () => Promise<void>;
   /** Recuperação de boot: fila com intenção sem registro local ⇒ reconstrói. */
@@ -241,6 +254,7 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
   // o diretório de equipe passa a COMPOR base (fixtures até o backend real)
   // com o cadastro criado nesta loja.
   const workforce = new LocalWorkforceRepository(appStore);
+  const scheduleData = new LocalScheduleRepository(appStore);
   const localDirectory = new LocalTeamDirectory(workforce, () =>
     operationalDateFor(clock(), FIXTURE_STORE.timeZone),
   );
@@ -250,6 +264,7 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     { now: clock },
     ids,
     workforce,
+    scheduleData,
     workforceQueueAdapter,
     workforceAuditAdapter,
   );
@@ -259,6 +274,30 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     workforce,
     workforceQueueAdapter,
     workforceAuditAdapter,
+  );
+
+  // Escala Operacional — jornadas/padrões como dados da loja + fonte oficial
+  // de presença planejada (o ÚNICO resolver de escala vive no domínio).
+  const scheduleQueueAdapter = new ScheduleQueueAdapter(queue, authorization, deviceId, clock);
+  const createShiftDefinition = new CreateShiftDefinitionUseCase(
+    { now: clock },
+    ids,
+    scheduleData,
+    scheduleQueueAdapter,
+    workforceAuditAdapter,
+  );
+  const changeWorkPeriod = new ChangeEmployeeWorkPeriodUseCase(
+    { now: clock },
+    ids,
+    workforce,
+    scheduleData,
+    scheduleQueueAdapter,
+    workforceAuditAdapter,
+  );
+  const loadPlannedSchedule = new LoadPlannedScheduleUseCase(
+    { now: clock },
+    workforce,
+    scheduleData,
   );
 
   // Área do Encarregado — criação de definição de tarefa + atribuição situacional
@@ -351,6 +390,12 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
         await workforce.updatePositionSyncStatus(item.entityId, status);
         continue;
       }
+      if (item.entityType === ENTITY_SHIFT_DEFINITION) {
+        await scheduleData.updateDefinitionSyncStatus(item.entityId, status);
+        continue;
+      }
+      // troca de vínculo: o estado local já foi aplicado na operação
+      if (item.entityType === ENTITY_EMPLOYEE_ASSIGNMENT) continue;
 
       // atribuição situacional: reflete o desfecho na ocorrência
       if (item.entityType === ENTITY_DAILY_TASK) {
@@ -361,8 +406,9 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
   };
 
   const reconcileFromQueue = async (): Promise<void> => {
-    // catálogo inicial da loja (Equipes A/B + posições) ANTES de qualquer leitura
-    await ensureWorkforceBaseline(workforce, FIXTURE_STORE.id);
+    // catálogo inicial da loja (equipes/posições/jornadas/padrão) ANTES de
+    // qualquer leitura
+    await ensureWorkforceBaseline(workforce, scheduleData, FIXTURE_STORE.id);
     const items = await queue.all();
     for (const item of items) {
       // 1) abertura enfileirada sem registro local (falha entre enqueue e save)
@@ -423,6 +469,29 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
         continue;
       }
 
+      // 3e) jornada enfileirada sem registro local
+      if (item.entityType === ENTITY_SHIFT_DEFINITION) {
+        const payload = item.payload as CreateShiftDefinitionQueuePayload;
+        const known = await scheduleData.definitionByWindow(
+          payload.definition.storeId,
+          payload.definition.startTime,
+          payload.definition.endTime,
+        );
+        if (known === null) await scheduleData.saveDefinition(payload.definition);
+        continue;
+      }
+
+      // 3f) troca de jornada enfileirada sem persistir os vínculos locais
+      if (item.entityType === ENTITY_EMPLOYEE_ASSIGNMENT) {
+        const payload = item.payload as ChangeWorkPeriodQueuePayload;
+        const assignments = await workforce.assignments(payload.openedAssignment.storeId);
+        if (!assignments.some((known) => known.id === payload.openedAssignment.id)) {
+          await workforce.saveAssignment(payload.closedAssignment);
+          await workforce.saveAssignment(payload.openedAssignment);
+        }
+        continue;
+      }
+
       // 3b) atribuição enfileirada sem persistir na ocorrência local
       if (item.entityType === ENTITY_DAILY_TASK && item.operation === 'update') {
         const payload = item.payload as AssignDailyTaskQueuePayload;
@@ -472,6 +541,7 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     templates,
     team,
     workforce,
+    scheduleData,
     setAuthorization: (auth) => {
       currentAuth = auth;
     },
@@ -483,6 +553,9 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     assignDailyTask,
     registerEmployee,
     createPosition,
+    createShiftDefinition,
+    changeWorkPeriod,
+    loadPlannedSchedule,
     drainAndReflect,
     reconcileFromQueue,
     queueItemForSession,

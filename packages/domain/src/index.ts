@@ -51,6 +51,38 @@ export type {
   CreatePositionDecision,
   CreatePositionRejectionCode,
 } from './workforce/create-position.js';
+export {
+  activePatternFor,
+  currentAssignmentFor,
+  daysBetweenCivil,
+  resolvePlannedDay,
+  teamWorksOn,
+} from './schedule/resolve-planned-day.js';
+export type {
+  CyclePatternView,
+  PlannedAssignmentInput,
+  PlannedDayDecision,
+  PlannedDayEmployee,
+  PlannedMemberInput,
+  ResolvePlannedDayInput,
+  RotatingTeamView,
+} from './schedule/resolve-planned-day.js';
+export { decideCreateShiftDefinition } from './schedule/create-shift-definition.js';
+export type {
+  CreatedShiftDefinition,
+  CreateShiftDefinitionCommand,
+  CreateShiftDefinitionDecision,
+  CreateShiftDefinitionRejectionCode,
+} from './schedule/create-shift-definition.js';
+export { decideChangeWorkPeriod, previousCivilDay } from './schedule/change-work-period.js';
+export type {
+  ChangeWorkPeriodCommand,
+  ChangeWorkPeriodDecision,
+  ChangeWorkPeriodRejectionCode,
+  ClosedAssignmentPatch,
+  CurrentAssignmentView,
+  OpenedAssignment,
+} from './schedule/change-work-period.js';
 export { decideTaskOutcome, isOverdue } from './daily-task/task-outcome.js';
 export type {
   DailyTaskStatus,

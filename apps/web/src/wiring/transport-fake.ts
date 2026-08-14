@@ -6,8 +6,10 @@
 // UI, controllers ou use cases — nenhuma condicional de fake vaza para fora.
 
 import type {
+  ChangeWorkPeriodQueuePayload,
   CloseSessionQueuePayload,
   CreatePositionQueuePayload,
+  CreateShiftDefinitionQueuePayload,
   CreateTemplateQueuePayload,
   OpenSessionQueuePayload,
   RegisterEmployeeQueuePayload,
@@ -15,7 +17,9 @@ import type {
 } from '@tauros/contracts';
 import {
   ENTITY_EMPLOYEE,
+  ENTITY_EMPLOYEE_ASSIGNMENT,
   ENTITY_OPERATIONAL_POSITION,
+  ENTITY_SHIFT_DEFINITION,
   ENTITY_TASK_EXECUTION,
   ENTITY_TASK_TEMPLATE,
 } from '@tauros/contracts';
@@ -85,6 +89,12 @@ export class FakeSessionSyncTransport implements SyncTransportPort {
     }
     if (item.entityType === ENTITY_OPERATIONAL_POSITION) {
       return Promise.resolve(this.submitCreatePosition(item));
+    }
+    if (item.entityType === ENTITY_SHIFT_DEFINITION) {
+      return Promise.resolve(this.submitCreateShiftDefinition(item));
+    }
+    if (item.entityType === ENTITY_EMPLOYEE_ASSIGNMENT) {
+      return Promise.resolve(this.submitChangeWorkPeriod(item));
     }
     if (item.operation === 'update') {
       return Promise.resolve(this.submitSessionClose(item));
@@ -174,6 +184,32 @@ export class FakeSessionSyncTransport implements SyncTransportPort {
     }
     if (payload.position.name.trim() === '') {
       return { kind: 'rejected', message: 'posição inválida' };
+    }
+    this.seenIdempotencyKeys.add(item.idempotencyKey);
+    return { kind: 'persisted' };
+  }
+
+  private submitCreateShiftDefinition(item: QueueItem): SubmitOutcome {
+    const payload = item.payload as CreateShiftDefinitionQueuePayload;
+    // jornada é dado configurável (ADR-019): config.write na RLS congelada
+    if (!item.authorization.permissions.includes('config.write')) {
+      return { kind: 'rejected', message: 'sem permissão para criar jornada' };
+    }
+    if (payload.definition.startTime.trim() === '' || payload.definition.endTime.trim() === '') {
+      return { kind: 'rejected', message: 'jornada inválida' };
+    }
+    this.seenIdempotencyKeys.add(item.idempotencyKey);
+    return { kind: 'persisted' };
+  }
+
+  private submitChangeWorkPeriod(item: QueueItem): SubmitOutcome {
+    const payload = item.payload as ChangeWorkPeriodQueuePayload;
+    // vínculo do colaborador é RH operacional: workforce.write no servidor
+    if (!item.authorization.permissions.includes('workforce.write')) {
+      return { kind: 'rejected', message: 'sem permissão para alterar vínculo' };
+    }
+    if (payload.openedAssignment.shiftDefinitionId === null) {
+      return { kind: 'rejected', message: 'troca de jornada sem jornada' };
     }
     this.seenIdempotencyKeys.add(item.idempotencyKey);
     return { kind: 'persisted' };

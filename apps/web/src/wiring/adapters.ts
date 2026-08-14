@@ -25,6 +25,11 @@ import type {
   TaskTemplateRepositoryPort,
   TaskTemplateSnapshot,
   TaskTemplateSourcePort,
+  ScheduleEnqueuePort,
+  ScheduleRepositoryPort,
+  ScheduleSyncStatus,
+  ShiftDefinitionRecord,
+  ShiftPatternRecord,
   TeamDirectoryPort,
   TeamMemberView,
   TeamRecord,
@@ -39,11 +44,14 @@ import type {
 import {
   ENTITY_DAILY_TASK,
   ENTITY_EMPLOYEE,
+  ENTITY_EMPLOYEE_ASSIGNMENT,
   ENTITY_OPERATIONAL_POSITION,
   ENTITY_OPERATOR_SESSION,
+  ENTITY_SHIFT_DEFINITION,
   ENTITY_TASK_EXECUTION,
   ENTITY_TASK_TEMPLATE,
 } from '@tauros/contracts';
+import { currentAssignmentFor } from '@tauros/domain';
 import type { ConfigResolver } from '@tauros/config-engine';
 import {
   captureSnapshot,
@@ -59,7 +67,7 @@ import {
 
 export const APP_STATE_SCHEMA: LocalSchema = {
   databaseName: 'tauros-app-state',
-  version: 4,
+  version: 5,
   migrations: [
     {
       toVersion: 1,
@@ -97,6 +105,15 @@ export const APP_STATE_SCHEMA: LocalSchema = {
         },
       ],
     },
+    {
+      // ADITIVA: Escala Operacional — jornadas e padrões de escala da loja.
+      toVersion: 5,
+      description: 'Jornadas (shift_definitions) e padrões de escala (shift_patterns)',
+      stores: [
+        { name: 'shift_definitions', indexes: { by_store: 'storeId', by_store_key: 'storeKey' } },
+        { name: 'shift_patterns', indexes: { by_store: 'storeId' } },
+      ],
+    },
   ],
 };
 
@@ -108,6 +125,8 @@ const EMPLOYEES = 'employees';
 const EMPLOYEE_ASSIGNMENTS = 'employee_assignments';
 const TEAMS = 'teams';
 const OPERATIONAL_POSITIONS = 'operational_positions';
+const SHIFT_DEFINITIONS = 'shift_definitions';
+const SHIFT_PATTERNS = 'shift_patterns';
 
 export class LocalOperatorSessionRepository {
   constructor(private readonly store: LocalStorePort) {}
@@ -319,7 +338,20 @@ export class LocalWorkforceRepository implements WorkforceRepositoryPort {
     const rows = await this.store.transaction([EMPLOYEE_ASSIGNMENTS], 'read', (tx) =>
       tx.getByIndex(EMPLOYEE_ASSIGNMENTS, 'by_store', storeId),
     );
-    return rows as EmployeeAssignmentRecord[];
+    // tolerância a registros v4 (anteriores à Escala V1): sem jornada declarada
+    return (
+      rows as (EmployeeAssignmentRecord | Omit<EmployeeAssignmentRecord, 'shiftDefinitionId'>)[]
+    ).map((row) => ({
+      ...row,
+      shiftDefinitionId: 'shiftDefinitionId' in row ? row.shiftDefinitionId : null,
+    }));
+  }
+
+  /** Grava/atualiza um vínculo isolado (troca de jornada por vigência). */
+  async saveAssignment(record: EmployeeAssignmentRecord): Promise<void> {
+    await this.store.transaction([EMPLOYEE_ASSIGNMENTS], 'write', (tx) =>
+      tx.put(EMPLOYEE_ASSIGNMENTS, record.id, record),
+    );
   }
 
   /** Cadastro ATÔMICO: pessoa + vínculo na MESMA transação local. */
@@ -346,7 +378,11 @@ export class LocalWorkforceRepository implements WorkforceRepositoryPort {
     const rows = await this.store.transaction([TEAMS], 'read', (tx) =>
       tx.getByIndex(TEAMS, 'by_store', storeId),
     );
-    return rows as TeamRecord[];
+    // tolerância a registros v4 (anteriores à Escala V1): offset padrão 0
+    return (rows as (TeamRecord | Omit<TeamRecord, 'rotationOffset'>)[]).map((row) => ({
+      ...row,
+      rotationOffset: 'rotationOffset' in row ? row.rotationOffset : 0,
+    }));
   }
 
   async saveTeam(record: TeamRecord): Promise<void> {
@@ -383,6 +419,159 @@ export class LocalWorkforceRepository implements WorkforceRepositoryPort {
   }
 }
 
+// ===== Escala Operacional — jornadas e padrões como DADOS da loja =====
+
+interface DefinitionRow extends ShiftDefinitionRecord {
+  readonly storeKey: string;
+}
+
+/** Chave natural: loja + janela — mesma jornada nunca duplica. */
+function toDefinitionRow(record: ShiftDefinitionRecord): DefinitionRow {
+  return { ...record, storeKey: `${record.storeId}:${record.startTime}-${record.endTime}` };
+}
+
+export class LocalScheduleRepository implements ScheduleRepositoryPort {
+  constructor(private readonly store: LocalStorePort) {}
+
+  async definitions(storeId: string): Promise<readonly ShiftDefinitionRecord[]> {
+    const rows = await this.store.transaction([SHIFT_DEFINITIONS], 'read', (tx) =>
+      tx.getByIndex(SHIFT_DEFINITIONS, 'by_store', storeId),
+    );
+    return rows as ShiftDefinitionRecord[];
+  }
+
+  async definitionByWindow(
+    storeId: string,
+    startTime: string,
+    endTime: string,
+  ): Promise<ShiftDefinitionRecord | null> {
+    const rows = await this.store.transaction([SHIFT_DEFINITIONS], 'read', (tx) =>
+      tx.getByIndex(SHIFT_DEFINITIONS, 'by_store_key', `${storeId}:${startTime}-${endTime}`),
+    );
+    return (rows as ShiftDefinitionRecord[])[0] ?? null;
+  }
+
+  async saveDefinition(record: ShiftDefinitionRecord): Promise<void> {
+    await this.store.transaction([SHIFT_DEFINITIONS], 'write', (tx) =>
+      tx.put(SHIFT_DEFINITIONS, record.id, toDefinitionRow(record)),
+    );
+  }
+
+  /** Único campo mutável: o reflexo do desfecho da fila. */
+  async updateDefinitionSyncStatus(id: string, status: ScheduleSyncStatus): Promise<void> {
+    await this.store.transaction([SHIFT_DEFINITIONS], 'write', async (tx) => {
+      const current = (await tx.get(SHIFT_DEFINITIONS, id)) as DefinitionRow | undefined;
+      if (current === undefined) return;
+      await tx.put(SHIFT_DEFINITIONS, id, { ...current, syncStatus: status });
+    });
+  }
+
+  async patterns(storeId: string): Promise<readonly ShiftPatternRecord[]> {
+    const rows = await this.store.transaction([SHIFT_PATTERNS], 'read', (tx) =>
+      tx.getByIndex(SHIFT_PATTERNS, 'by_store', storeId),
+    );
+    return rows as ShiftPatternRecord[];
+  }
+
+  async savePattern(record: ShiftPatternRecord): Promise<void> {
+    await this.store.transaction([SHIFT_PATTERNS], 'write', (tx) =>
+      tx.put(SHIFT_PATTERNS, record.id, record),
+    );
+  }
+}
+
+// ===== Escala na fila oficial =====
+
+export class ScheduleQueueAdapter implements ScheduleEnqueuePort {
+  constructor(
+    private readonly queue: LocalQueueRepository,
+    private readonly authorization: () => EffectiveAuthorization,
+    private readonly deviceId: string,
+    private readonly clock: () => Date,
+  ) {}
+
+  /** Snapshot de autorização vinculado ao item (RA-QUEUE-01). */
+  private snapshotNow(auth: EffectiveAuthorization) {
+    const ttlMs = Math.max(1, auth.validUntil.getTime() - this.clock().getTime());
+    return captureSnapshot(
+      {
+        operatorProfileId: auth.operatorProfileId,
+        operatorEmployeeId: auth.operatorEmployeeId,
+        storeId: auth.storeId,
+        sessionId: auth.sessionId,
+        permissions: auth.permissions,
+        ...(auth.permissionModelVersion !== undefined
+          ? { permissionModelVersion: auth.permissionModelVersion }
+          : {}),
+        ...(auth.configVersionRef !== undefined ? { configVersionRef: auth.configVersionRef } : {}),
+        authOrigin: auth.origin === 'online' ? 'online' : 'offline-pin',
+      },
+      ttlMs,
+      this.clock,
+    );
+  }
+
+  async enqueueCreateShiftDefinition(
+    input: Parameters<ScheduleEnqueuePort['enqueueCreateShiftDefinition']>[0],
+  ): Promise<void> {
+    const auth = this.authorization();
+    await this.queue.enqueue({
+      id: input.queueItemId,
+      operation: 'insert',
+      entityType: ENTITY_SHIFT_DEFINITION,
+      entityId: input.definition.id,
+      payload: { definition: input.definition },
+      idempotencyKey: input.definition.idempotencyKey,
+      authorization: this.snapshotNow(auth),
+      trace: {
+        storeId: input.definition.storeId,
+        deviceId: this.deviceId,
+        sessionId: auth.sessionId,
+        schemaVersion: 1,
+        priority: 2,
+      },
+    });
+  }
+
+  async enqueueChangeWorkPeriod(
+    input: Parameters<ScheduleEnqueuePort['enqueueChangeWorkPeriod']>[0],
+  ): Promise<void> {
+    const auth = this.authorization();
+    // a troca depende no DAG da jornada recém-criada offline que referencia e
+    // do CADASTRO do colaborador ainda pendente (FKs no servidor)
+    const all = await this.queue.all();
+    const dependsOn = all
+      .filter(
+        (item) =>
+          (item.entityType === ENTITY_SHIFT_DEFINITION &&
+            item.entityId === input.openedAssignment.shiftDefinitionId) ||
+          (item.entityType === ENTITY_EMPLOYEE &&
+            item.entityId === input.openedAssignment.employeeId),
+      )
+      .map((item) => item.id);
+    await this.queue.enqueue({
+      id: input.queueItemId,
+      operation: 'update',
+      entityType: ENTITY_EMPLOYEE_ASSIGNMENT,
+      entityId: input.openedAssignment.id,
+      payload: {
+        closedAssignment: input.closedAssignment,
+        openedAssignment: input.openedAssignment,
+      },
+      ...(dependsOn.length > 0 ? { dependsOn } : {}),
+      idempotencyKey: input.idempotencyKey,
+      authorization: this.snapshotNow(auth),
+      trace: {
+        storeId: input.openedAssignment.storeId,
+        deviceId: this.deviceId,
+        sessionId: auth.sessionId,
+        schemaVersion: 1,
+        priority: 2,
+      },
+    });
+  }
+}
+
 /**
  * Diretório de equipe (TeamDirectoryPort) sobre o CADASTRO REAL da Gestão de
  * Equipe. members() expõe a posição VIGENTE na data operacional de hoje
@@ -410,14 +599,8 @@ export class LocalTeamDirectory implements TeamDirectoryPort {
     return employees
       .filter((employee) => employee.active)
       .map((employee) => {
-        const current = assignments
-          .filter(
-            (assignment) =>
-              assignment.employeeId === employee.id &&
-              assignment.validFrom <= today &&
-              (assignment.validUntil === null || assignment.validUntil >= today),
-          )
-          .sort((a, b) => (a.validFrom < b.validFrom ? 1 : -1))[0];
+        // regra ÚNICA de vigência de vínculo — mesma do resolver de escala
+        const current = currentAssignmentFor(assignments, employee.id, today);
         return {
           employeeId: employee.id,
           fullName: employee.fullName,

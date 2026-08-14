@@ -181,8 +181,8 @@ describe('cadastro de colaborador', () => {
     await identifyElber();
     await registerJoao();
 
-    // lista operacional: posição + equipe como CONCEITOS separados
-    expect(screen.getByText('Açougueiro 1 · Equipe A')).toBeTruthy();
+    // lista operacional: posição + equipe + jornada como CONCEITOS separados
+    expect(screen.getByText(/Açougueiro 1 · Equipe A/)).toBeTruthy();
     expect(screen.getByText('Ativo desde 17/08/2026')).toBeTruthy();
     await screen.findByText('Confirmado pelo servidor');
 
@@ -257,7 +257,7 @@ describe('cadastro de colaborador', () => {
     render(app());
     await identifyElber();
     expect(await screen.findByRole('heading', { name: 'João da Silva' })).toBeTruthy();
-    expect(screen.getByText('Açougueiro 1 · Equipe A')).toBeTruthy();
+    expect(screen.getByText(/Açougueiro 1 · Equipe A/)).toBeTruthy();
   });
 });
 
@@ -355,7 +355,7 @@ describe('composição das equipes', () => {
     const teamA = (await screen.findByRole('heading', { name: 'Equipe A' })).closest(
       'div[class]',
     ) as HTMLElement;
-    expect(within(teamA).getByText('João da Silva — Açougueiro 1')).toBeTruthy();
+    expect(within(teamA).getByText(/João da Silva — Açougueiro 1/)).toBeTruthy();
 
     const teamB = screen
       .getByRole('heading', { name: 'Equipe B' })

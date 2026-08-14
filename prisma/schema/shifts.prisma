@@ -5,6 +5,10 @@ model ShiftPattern {
   id      String @id @default(uuid()) @db.Uuid
   storeId String @map("store_id") @db.Uuid
   name    String
+  /// Vigência temporal do padrão (troca de escala sem reescrever histórico).
+  /// NULL = aberto (desde sempre / sem fim).
+  effectiveFrom  DateTime? @map("effective_from") @db.Date
+  effectiveUntil DateTime? @map("effective_until") @db.Date
 
   days ShiftPatternDay[]
 
@@ -35,6 +39,7 @@ model ShiftDefinition {
   configVersionRef String? @map("config_version_ref") @db.Uuid
 
   occurrences ShiftOccurrence[]
+  assignments EmployeeAssignment[]
 
   @@index([storeId])
   @@map("shift_definitions")

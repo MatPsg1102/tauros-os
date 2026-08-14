@@ -33,6 +33,11 @@ export interface FixtureStore {
   readonly name: string;
   /** Fuso IANA oficial da LOJA (dado da loja — nunca literal na lógica). */
   readonly timeZone: string;
+  /**
+   * Âncora da rotação de escala DA LOJA (stores.shift_anchor_date):
+   * dia em que a equipe de offset 0 trabalha. Dado da loja — nunca regra.
+   */
+  readonly shiftAnchorDate: string;
 }
 
 export interface FixtureOperator {
@@ -49,6 +54,7 @@ export const FIXTURE_STORE: FixtureStore = {
   id: 'store-centro-0001',
   name: 'Casa de Carnes Modelo — Centro',
   timeZone: 'America/Sao_Paulo',
+  shiftAnchorDate: '2026-08-17',
 };
 
 /**

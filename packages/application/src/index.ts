@@ -66,3 +66,21 @@ export type {
   CreateOperationalPositionInput,
   CreateOperationalPositionResult,
 } from './workforce/create-operational-position.js';
+export { CreateShiftDefinitionUseCase } from './schedule/create-shift-definition.js';
+export type {
+  CreateShiftDefinitionFailureCode,
+  CreateShiftDefinitionInput,
+  CreateShiftDefinitionResult,
+} from './schedule/create-shift-definition.js';
+export { ChangeEmployeeWorkPeriodUseCase } from './schedule/change-employee-work-period.js';
+export type {
+  ChangeEmployeeWorkPeriodFailureCode,
+  ChangeEmployeeWorkPeriodInput,
+  ChangeEmployeeWorkPeriodResult,
+} from './schedule/change-employee-work-period.js';
+export { LoadPlannedScheduleUseCase } from './schedule/load-planned-schedule.js';
+export type {
+  LoadPlannedScheduleFailureCode,
+  LoadPlannedScheduleInput,
+  LoadPlannedScheduleResult,
+} from './schedule/load-planned-schedule.js';

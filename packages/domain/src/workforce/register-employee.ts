@@ -15,6 +15,11 @@ export interface RegisterEmployeeCommand {
   readonly startDate: string;
   readonly positionId: string;
   readonly teamId: string;
+  /**
+   * JORNADA do vínculo (Escala V1) — null tolerado para compatibilidade com
+   * cadastros anteriores; a existência é validada pela aplicação.
+   */
+  readonly shiftDefinitionId: string | null;
   /** Horário do cliente (clock port da aplicação). */
   readonly clientCreatedAt: Date;
   readonly idempotencyKey: string;
@@ -38,6 +43,7 @@ export interface RegisteredAssignment {
   readonly employeeId: string;
   readonly teamId: string;
   readonly operationalPositionId: string;
+  readonly shiftDefinitionId: string | null;
   readonly validFrom: string;
   readonly validUntil: null;
 }
@@ -138,6 +144,7 @@ export function decideRegisterEmployee(
       employeeId: command.employeeId,
       teamId: command.teamId,
       operationalPositionId: command.positionId,
+      shiftDefinitionId: command.shiftDefinitionId,
       validFrom: command.startDate,
       validUntil: null,
     },
