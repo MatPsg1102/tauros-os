@@ -486,3 +486,80 @@ Pendências (registradas, não bloqueantes):
 - Baseline de equipes/posições migra para seeds oficiais do banco junto do
   backend real (Equipe A/B precisam existir no servidor antes do primeiro
   sync de employee_assignments).
+
+## Escala Operacional V1 — jornadas, padrões por loja e presença planejada
+
+Reconciliação: o schema congelado de shifts JÁ modelava quase tudo —
+`ShiftDefinition` É a jornada (janela HH:MM), `ShiftPattern`+`ShiftPatternDay`
+É o padrão de escala como DADO cíclico genérico (`works` por `dayIndex` —
+nunca enum fechado), `stores.shift_anchor_date` É a âncora da rotação, e
+`ShiftOccurrence`/`ShiftOverride` ficam reservados para exceções/trocas
+(extensão futura registrada; nenhum workaround em task assignment). Nenhuma
+entidade paralela foi criada (sem WorkPeriod/WorkSchedule novos).
+
+Migration ADITIVA mínima (20260813210000, 4 colunas, zero tabela nova):
+`employee_assignments.shift_definition_id` (JORNADA pertence ao VÍNCULO —
+equipe nunca define horário; pessoas da mesma equipe têm janelas diferentes),
+`teams.rotation_offset` (posição da equipe no ciclo do padrão da loja) e
+`shift_patterns.effective_from/effective_until` (vigência — troca de escala
+sem reescrever histórico). Lacunas comprovadas antes de migrar; forward-only.
+
+Separação obrigatória de conceitos mantida em contrato: colaborador ≠
+posição ≠ equipe ≠ jornada ≠ padrão ≠ vigência ≠ presença planejada. O read
+model chama-se `Planned*` em TODOS os contratos — presença PLANEJADA
+("deveria trabalhar") nunca se confunde com presença REAL (comparecimento/
+falta/atestado são vertical futura; nenhum falso sistema de ponto).
+
+Fonte oficial ÚNICA: `resolvePlannedDay` (domínio puro) resolve por
+loja + data operacional + configuração DA LOJA (padrão vigente por vigência,
+âncora, offsets das equipes, vínculos vigentes) — 12x36 é apenas o PRIMEIRO
+DADO desta operação (`pattern-12x36` = ciclo [trabalha, folga] no baseline);
+semanal/dias fixos são outros registros, comprovados por teste com o MESMO
+resolver em loja diferente (anti-acoplamento multiloja). Nenhum `% 2`
+espalhado: módulo do ciclo vive só no resolver; UI e tarefas nunca calculam
+escala. `currentAssignmentFor` é a regra única de vigência de vínculo
+(compartilhada por resolver, troca de jornada e diretório de equipe).
+`LoadPlannedScheduleUseCase` projeta nomes/janelas; a aba Escala consome só
+o use case.
+
+Jornadas: seeds EDITÁVEIS 07:30–19:30 e 08:30–20:30 (dados no baseline,
+nunca hardcode em UI); "+ Novo horário" cria janelas novas
+(`CreateShiftDefinitionUseCase`, chave natural loja+janela converge,
+config.write por ADR-019 — mesmo racional de posições; auditoria
+config.changed). Troca de jornada do colaborador =
+`ChangeEmployeeWorkPeriodUseCase` (workforce.write; fecha vínculo na véspera
+e abre novo — histórico por vigência; auditoria admin.action; DAG depende de
+jornada/cadastro pendentes offline). Cadastro de colaborador ganhou o select
+"Horário de trabalho" (default = primeira jornada cadastrada — dado).
+NENHUMA capability nova: config.write e workforce.write cobrem semanticamente
+(sem lacuna RBAC; modelo intacto).
+
+Local-first: app-state v5 ADITIVA (stores shift_definitions/shift_patterns;
+upgrade v4→v5 testado); fila/auditoria/snapshot/reconciliação reutilizadas
+(nenhuma fila nova); transporte fake ganhou os cenários contratuais das
+entidades novas. FixtureShiftSchedule NÃO foi removida: segue exclusiva da
+materialização legada de templates (WHEN_SCHEDULED) até a vertical de
+recorrência trocar o adapter pelo resolver real — substituição gradual
+registrada, sem big-bang; a UI/read model novos usam SÓ a fonte oficial.
+
+Validação: 27 domínio (rotação, âncora retroativa, vigência, semanal, dias
+fixos, multiloja, troca de jornada) + 9 aplicação + 9 verticais de UI
+(mesma equipe/jornadas distintas, novo horário reutilizável+convergente,
+aba Escala hoje+rotação, offline→sync, upgrade, axe) + jornada em Chrome
+real (5 cenários + reload + 390px delta 0px).
+
+Pendências (registradas, não bloqueantes):
+
+- Recorrência "quando estiver escalado" consumindo o resolver real (troca da
+  FixtureShiftSchedule) + seletor de atribuição mostrando só escalados do
+  dia — próxima vertical de tarefas.
+- Editor de padrão de escala na UI (criar/trocar padrão, alterar vigência/
+  offsets/âncora) — hoje o padrão vigente é exibido; configuração chega por
+  dados. Exceções/trocas/folgas via ShiftOccurrence/ShiftOverride.
+- Edição de jornada de colaborador na UI (use case pronto e testado;
+  ChangeEmployeeWorkPeriodUseCase exposto no container).
+- Múltiplas equipes escaladas no MESMO dia esbarram no unique
+  (storeId, workDate) de shift_occurrences quando a materialização chegar —
+  decisão formal futura se a operação exigir.
+- Sync real das entidades novas (Edge Function) + shift_anchor_date vindo do
+  cadastro real da loja (hoje: dado da loja fixture).

@@ -90,3 +90,23 @@ export type {
   WorkforceEnqueuePort,
   WorkforceRepositoryPort,
 } from './workforce/ports.js';
+export { ENTITY_EMPLOYEE_ASSIGNMENT, ENTITY_SHIFT_DEFINITION } from './schedule/record.js';
+export type {
+  ChangeWorkPeriodQueuePayload,
+  CreateShiftDefinitionQueuePayload,
+  ScheduleSyncStatus,
+  ShiftDefinitionRecord,
+  ShiftPatternDayView,
+  ShiftPatternRecord,
+} from './schedule/record.js';
+export type {
+  ChangeWorkPeriodEnqueueInput,
+  CreateShiftDefinitionEnqueueInput,
+  PlannedEmployeeView,
+  PlannedScheduleDay,
+  PlannedTeamView,
+  PlannedWorkPeriodView,
+  ScheduleEnqueuePort,
+  ScheduleRepositoryPort,
+  ScheduleResolutionSources,
+} from './schedule/ports.js';

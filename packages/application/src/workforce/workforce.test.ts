@@ -12,6 +12,8 @@ import type {
   EmployeeRecord,
   OperationalPositionRecord,
   RegisterEmployeeEnqueueInput,
+  ScheduleRepositoryPort,
+  ShiftDefinitionRecord,
   TeamRecord,
   WorkforceAuditInput,
   WorkforceRepositoryPort,
@@ -50,6 +52,7 @@ interface Harness {
   assignments: EmployeeAssignmentRecord[];
   positions: OperationalPositionRecord[];
   teams: TeamRecord[];
+  definitions: ShiftDefinitionRecord[];
   enqueuedEmployees: RegisterEmployeeEnqueueInput[];
   enqueuedPositions: CreatePositionEnqueueInput[];
   audits: WorkforceAuditInput[];
@@ -74,8 +77,21 @@ function makeHarness(): Harness {
       },
     ],
     teams: [
-      { id: 'team-a', storeId: 'store-1', name: 'Equipe A' },
-      { id: 'team-b', storeId: 'store-1', name: 'Equipe B' },
+      { id: 'team-a', storeId: 'store-1', name: 'Equipe A', rotationOffset: 0 },
+      { id: 'team-b', storeId: 'store-1', name: 'Equipe B', rotationOffset: 1 },
+    ],
+    definitions: [
+      {
+        id: 'def-0730',
+        storeId: 'store-1',
+        name: '07:30–19:30',
+        startTime: '07:30',
+        endTime: '19:30',
+        clientCreatedAt: NOW.toISOString(),
+        idempotencyKey: 'shift-definition-baseline:store-1:07:30-19:30',
+        syncStatus: 'synced',
+        auditCorrelationId: 'def-0730',
+      },
     ],
     enqueuedEmployees: [],
     enqueuedPositions: [],
@@ -100,6 +116,12 @@ function makeHarness(): Harness {
       if (harness.failSave) return Promise.reject(new Error('disk full'));
       harness.employees.push(employee);
       harness.assignments.push(assignment);
+      return Promise.resolve();
+    },
+    saveAssignment: (record) => {
+      const index = harness.assignments.findIndex((assignment) => assignment.id === record.id);
+      if (index >= 0) harness.assignments[index] = record;
+      else harness.assignments.push(record);
       return Promise.resolve();
     },
     updateEmployeeSyncStatus: () => Promise.resolve(),
@@ -141,10 +163,37 @@ function makeHarness(): Harness {
       return Promise.resolve();
     },
   };
+  const scheduleRepository: ScheduleRepositoryPort = {
+    definitions: (storeId) =>
+      Promise.resolve(harness.definitions.filter((definition) => definition.storeId === storeId)),
+    definitionByWindow: (storeId, startTime, endTime) =>
+      Promise.resolve(
+        harness.definitions.find(
+          (definition) =>
+            definition.storeId === storeId &&
+            definition.startTime === startTime &&
+            definition.endTime === endTime,
+        ) ?? null,
+      ),
+    saveDefinition: (record) => {
+      harness.definitions.push(record);
+      return Promise.resolve();
+    },
+    updateDefinitionSyncStatus: () => Promise.resolve(),
+    patterns: () => Promise.resolve([]),
+    savePattern: () => Promise.resolve(),
+  };
   let counter = 0;
   const clock = { now: () => NOW };
   const ids = { uuid: () => `uuid-${String(++counter).padStart(2, '0')}` };
-  harness.register = new RegisterEmployeeUseCase(clock, ids, repository, queue, audit);
+  harness.register = new RegisterEmployeeUseCase(
+    clock,
+    ids,
+    repository,
+    scheduleRepository,
+    queue,
+    audit,
+  );
   harness.createPosition = new CreateOperationalPositionUseCase(
     clock,
     ids,
@@ -162,6 +211,7 @@ const registerInput = {
   startDate: '2026-08-17',
   positionId: 'pos-acougueiro-1',
   teamId: 'team-a',
+  shiftDefinitionId: 'def-0730' as string | null,
   createdOffline: false,
 };
 
@@ -185,6 +235,7 @@ describe('RegisterEmployeeUseCase — caminho autorizado', () => {
       employeeId: result.employee.id,
       teamId: 'team-a',
       operationalPositionId: 'pos-acougueiro-1',
+      shiftDefinitionId: 'def-0730',
       validFrom: '2026-08-17',
       validUntil: null,
     });
@@ -270,6 +321,17 @@ describe('RegisterEmployeeUseCase — autorização e referências', () => {
       }),
     ).toMatchObject({ kind: 'failed', code: 'UNKNOWN_TEAM' });
     expect(harness.enqueuedEmployees).toHaveLength(0);
+  });
+
+  it('rejeita jornada inexistente na loja (ID oficial)', async () => {
+    const harness = makeHarness();
+    expect(
+      await harness.register.execute({
+        authorization: authorization(),
+        ...registerInput,
+        shiftDefinitionId: 'def-inventada',
+      }),
+    ).toMatchObject({ kind: 'failed', code: 'UNKNOWN_DEFINITION' });
   });
 
   it('rejeita nome vazio e data inválida', async () => {

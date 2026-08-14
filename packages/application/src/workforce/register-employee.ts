@@ -21,6 +21,7 @@ import {
   type EmployeeAssignmentRecord,
   type EmployeeRecord,
   type IdGeneratorPort,
+  type ScheduleRepositoryPort,
   type WorkforceAuditPort,
   type WorkforceEnqueuePort,
   type WorkforceRepositoryPort,
@@ -39,6 +40,11 @@ export interface RegisterEmployeeInput {
   readonly startDate: string;
   readonly positionId: string;
   readonly teamId: string;
+  /**
+   * JORNADA do vínculo (Escala V1). null tolerado para compatibilidade —
+   * quando informada, precisa existir na loja.
+   */
+  readonly shiftDefinitionId: string | null;
   readonly createdOffline: boolean;
 }
 
@@ -48,6 +54,7 @@ export type RegisterEmployeeFailureCode =
   | 'SNAPSHOT_VERSION_INCOMPATIBLE'
   | 'UNKNOWN_POSITION'
   | 'UNKNOWN_TEAM'
+  | 'UNKNOWN_DEFINITION'
   | 'NAME_REQUIRED'
   | 'INVALID_DATE'
   | 'DOMAIN_REJECTED'
@@ -86,6 +93,7 @@ export class RegisterEmployeeUseCase {
     private readonly clock: ClockPort,
     private readonly ids: IdGeneratorPort,
     private readonly workforce: WorkforceRepositoryPort,
+    private readonly schedule: ScheduleRepositoryPort,
     private readonly queue: WorkforceEnqueuePort,
     private readonly audit: WorkforceAuditPort,
   ) {}
@@ -141,6 +149,16 @@ export class RegisterEmployeeUseCase {
     if (!teams.some((team) => team.id === input.teamId)) {
       return { kind: 'failed', code: 'UNKNOWN_TEAM', detail: 'equipe não encontrada nesta loja' };
     }
+    if (input.shiftDefinitionId !== null) {
+      const definitions = await this.schedule.definitions(auth.storeId);
+      if (!definitions.some((definition) => definition.id === input.shiftDefinitionId)) {
+        return {
+          kind: 'failed',
+          code: 'UNKNOWN_DEFINITION',
+          detail: 'jornada não encontrada nesta loja',
+        };
+      }
+    }
 
     const operationalDate = operationalDateFor(now, input.storeTimeZone);
     const idempotencyKey = employeeIdempotencyKeyFor(
@@ -165,6 +183,7 @@ export class RegisterEmployeeUseCase {
         startDate: input.startDate,
         positionId: input.positionId,
         teamId: input.teamId,
+        shiftDefinitionId: input.shiftDefinitionId,
         clientCreatedAt: now,
         idempotencyKey,
       },
@@ -203,6 +222,7 @@ export class RegisterEmployeeUseCase {
       employeeId: decision.assignment.employeeId,
       teamId: decision.assignment.teamId,
       operationalPositionId: decision.assignment.operationalPositionId,
+      shiftDefinitionId: decision.assignment.shiftDefinitionId,
       validFrom: decision.assignment.validFrom,
       validUntil: decision.assignment.validUntil,
     };

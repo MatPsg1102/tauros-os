@@ -79,6 +79,52 @@ describe('banco local do app — migração aditiva v2 → v3', () => {
   });
 });
 
+describe('banco local do app — migração aditiva v4 → v5', () => {
+  it('preserva o workforce e cria os stores da Escala Operacional', async () => {
+    const V4: LocalSchema = {
+      databaseName: 'tauros-app-state-upgrade-v5',
+      version: 4,
+      migrations: APP_STATE_SCHEMA.migrations.slice(0, 4),
+    };
+    const V5: LocalSchema = { ...APP_STATE_SCHEMA, databaseName: 'tauros-app-state-upgrade-v5' };
+
+    const v4 = new IndexedDbLocalStore(V4);
+    await v4.transaction(['employees'], 'write', (tx) =>
+      tx.put('employees', 'emp-legado', {
+        id: 'emp-legado',
+        storeId: 'store-centro-0001',
+        storeKey: 'store-centro-0001:chave-emp-legado',
+        fullName: 'Colaborador Legado',
+      }),
+    );
+    await v4.close();
+
+    const v5 = new IndexedDbLocalStore(V5);
+    const employee = await v5.transaction(['employees'], 'read', (tx) =>
+      tx.get('employees', 'emp-legado'),
+    );
+    expect(employee).toMatchObject({ fullName: 'Colaborador Legado' });
+
+    // stores novos nascem vazios e utilizáveis (chave natural indexada)
+    await v5.transaction(['shift_definitions'], 'write', (tx) =>
+      tx.put('shift_definitions', 'def-1', {
+        id: 'def-1',
+        storeId: 'store-centro-0001',
+        storeKey: 'store-centro-0001:07:30-19:30',
+      }),
+    );
+    const byWindow = await v5.transaction(['shift_definitions'], 'read', (tx) =>
+      tx.getByIndex('shift_definitions', 'by_store_key', 'store-centro-0001:07:30-19:30'),
+    );
+    expect(byWindow).toHaveLength(1);
+    const patterns = await v5.transaction(['shift_patterns'], 'read', (tx) =>
+      tx.getAll('shift_patterns'),
+    );
+    expect(patterns).toHaveLength(0);
+    await v5.close();
+  });
+});
+
 describe('banco local do app — migração aditiva v3 → v4', () => {
   it('preserva definições e cria os stores da Gestão de Equipe', async () => {
     const V3: LocalSchema = {

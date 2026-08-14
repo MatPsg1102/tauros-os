@@ -10,14 +10,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { operationalDateFor } from '@tauros/application';
-import type { TeamRecord, WorkforceSyncStatus } from '@tauros/contracts';
+import type {
+  PlannedScheduleDay,
+  ScheduleSyncStatus,
+  TeamRecord,
+  WorkforceSyncStatus,
+} from '@tauros/contracts';
 import { CAPABILITY_CONFIG_WRITE, CAPABILITY_WORKFORCE_WRITE } from '@tauros/contracts';
 
 import type { AppContainer } from '../wiring/container.js';
 import { FIXTURE_STORE } from '../wiring/fixtures.js';
 import { useOperatorSession } from './operator-session-context.js';
 
-export type TeamManagementTab = 'members' | 'positions' | 'teams';
+export type TeamManagementTab = 'members' | 'positions' | 'teams' | 'schedule';
 
 export type TeamFormState =
   | { readonly status: 'idle' }
@@ -31,6 +36,8 @@ export interface TeamMemberItemView {
   readonly positionName: string;
   readonly teamId: string | null;
   readonly teamName: string;
+  /** Janela da JORNADA do vínculo ("07:30–19:30"); null = sem jornada. */
+  readonly workPeriodLabel: string | null;
   /** dd/mm/aaaa (fuso da loja) — início do vínculo cadastrado. */
   readonly startDateLabel: string;
   readonly syncStatus: WorkforceSyncStatus;
@@ -46,6 +53,15 @@ export interface TeamGroupMemberView {
   readonly employeeId: string;
   readonly fullName: string;
   readonly positionName: string;
+  readonly workPeriodLabel: string | null;
+}
+
+/** Jornada cadastrada na loja (dado editável — nunca hardcode de horário). */
+export interface ShiftDefinitionItemView {
+  readonly id: string;
+  readonly name: string;
+  readonly windowLabel: string;
+  readonly syncStatus: ScheduleSyncStatus;
 }
 
 export interface TeamGroupView {
@@ -73,6 +89,15 @@ export interface TeamManagementView {
   readonly positionCreation: TeamFormState;
   /** Data operacional corrente YYYY-MM-DD (default do formulário). */
   readonly today: string;
+  // ===== Escala Operacional =====
+  /** Jornada é dado configurável (ADR-019) — mesma decisão de posições. */
+  readonly canCreateShiftDefinition: boolean;
+  readonly definitionItems: readonly ShiftDefinitionItemView[];
+  /** Opções do formulário de colaborador (id + rótulo da janela). */
+  readonly definitionOptions: readonly { readonly id: string; readonly label: string }[];
+  /** Presença PLANEJADA resolvida: hoje + próximos dias (fonte oficial). */
+  readonly scheduleDays: readonly PlannedScheduleDay[];
+  readonly shiftDefinitionCreation: TeamFormState;
 }
 
 export interface RegisterEmployeeFormInput {
@@ -81,6 +106,14 @@ export interface RegisterEmployeeFormInput {
   readonly startDate: string;
   readonly positionId: string;
   readonly teamId: string;
+  /** Jornada do vínculo ('' = sem jornada declarada). */
+  readonly shiftDefinitionId: string;
+}
+
+export interface CreateShiftDefinitionFormInput {
+  readonly name: string;
+  readonly startTime: string;
+  readonly endTime: string;
 }
 
 export interface TeamManagementActions {
@@ -92,6 +125,9 @@ export interface TeamManagementActions {
   readonly openCreatePosition: () => void;
   readonly closeCreatePosition: () => void;
   readonly createPosition: (name: string) => Promise<void>;
+  readonly openCreateShiftDefinition: () => void;
+  readonly closeCreateShiftDefinition: () => void;
+  readonly createShiftDefinition: (input: CreateShiftDefinitionFormInput) => Promise<void>;
   readonly reload: () => Promise<void>;
 }
 
@@ -99,6 +135,21 @@ function startDateLabelFor(civilDate: string): string {
   // YYYY-MM-DD → dd/mm/aaaa sem passar por Date (nenhum fuso envolvido)
   return `${civilDate.slice(8, 10)}/${civilDate.slice(5, 7)}/${civilDate.slice(0, 4)}`;
 }
+
+/** Sequência de datas civis a partir de `start` — apresentação, não escala. */
+function civilDateRange(start: string, count: number): readonly string[] {
+  const base = Date.UTC(
+    Number(start.slice(0, 4)),
+    Number(start.slice(5, 7)) - 1,
+    Number(start.slice(8, 10)),
+  );
+  return Array.from({ length: count }, (_, index) =>
+    new Date(base + index * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+  );
+}
+
+/** Dias de escala exibidos: hoje + próximos 6 (sem calendário complexo). */
+const SCHEDULE_DAYS_SHOWN = 7;
 
 export function useTeamManagement(
   container: AppContainer,
@@ -113,8 +164,14 @@ export function useTeamManagement(
   const [groups, setGroups] = useState<readonly TeamGroupView[]>([]);
   const [registration, setRegistration] = useState<TeamFormState>({ status: 'idle' });
   const [positionCreation, setPositionCreation] = useState<TeamFormState>({ status: 'idle' });
+  const [shiftDefinitionCreation, setShiftDefinitionCreation] = useState<TeamFormState>({
+    status: 'idle',
+  });
+  const [definitionItems, setDefinitionItems] = useState<readonly ShiftDefinitionItemView[]>([]);
+  const [scheduleDays, setScheduleDays] = useState<readonly PlannedScheduleDay[]>([]);
   const registeringRef = useRef(false);
   const creatingRef = useRef(false);
+  const creatingDefinitionRef = useRef(false);
   // callback estável para não reamarrar os efeitos ao render do pai
   const changedRef = useRef(options.onWorkforceChanged);
   changedRef.current = options.onWorkforceChanged;
@@ -123,16 +180,23 @@ export function useTeamManagement(
   const enabled = permissions.includes(CAPABILITY_WORKFORCE_WRITE);
   const canCreatePosition = permissions.includes(CAPABILITY_CONFIG_WRITE);
 
+  const authorization = identity.authorization;
+
   const load = useCallback(async () => {
     const storeId = FIXTURE_STORE.id;
-    const [employees, assignments, teamRecords, positionRecords] = await Promise.all([
-      container.workforce.employees(storeId),
-      container.workforce.assignments(storeId),
-      container.workforce.teams(storeId),
-      container.workforce.positions(storeId),
-    ]);
+    const [employees, assignments, teamRecords, positionRecords, definitionRecords] =
+      await Promise.all([
+        container.workforce.employees(storeId),
+        container.workforce.assignments(storeId),
+        container.workforce.teams(storeId),
+        container.workforce.positions(storeId),
+        container.scheduleData.definitions(storeId),
+      ]);
     const teamById = new Map(teamRecords.map((team) => [team.id, team]));
     const positionById = new Map(positionRecords.map((position) => [position.id, position]));
+    const definitionById = new Map(
+      definitionRecords.map((definition) => [definition.id, definition]),
+    );
     // vínculo mais recente por colaborador (cadastro V1: um vínculo por pessoa)
     const assignmentByEmployee = new Map<string, (typeof assignments)[number]>();
     for (const assignment of assignments) {
@@ -149,12 +213,18 @@ export function useTeamManagement(
         const team = assignment?.teamId != null ? teamById.get(assignment.teamId) : undefined;
         const position =
           assignment !== undefined ? positionById.get(assignment.operationalPositionId) : undefined;
+        const definition =
+          assignment?.shiftDefinitionId != null
+            ? definitionById.get(assignment.shiftDefinitionId)
+            : undefined;
         return {
           employeeId: employee.id,
           fullName: employee.fullName,
           positionName: position?.name ?? 'Sem posição',
           teamId: team?.id ?? null,
           teamName: team?.name ?? 'Sem equipe',
+          workPeriodLabel:
+            definition !== undefined ? `${definition.startTime}–${definition.endTime}` : null,
           startDateLabel: assignment !== undefined ? startDateLabelFor(assignment.validFrom) : '—',
           syncStatus: employee.syncStatus,
         };
@@ -184,10 +254,33 @@ export function useTeamManagement(
               employeeId: member.employeeId,
               fullName: member.fullName,
               positionName: member.positionName,
+              workPeriodLabel: member.workPeriodLabel,
             })),
         })),
     );
-  }, [container]);
+    setDefinitionItems(
+      [...definitionRecords]
+        .sort((a, b) => a.startTime.localeCompare(b.startTime))
+        .map((definition) => ({
+          id: definition.id,
+          name: definition.name,
+          windowLabel: `${definition.startTime}–${definition.endTime}`,
+          syncStatus: definition.syncStatus,
+        })),
+    );
+
+    // presença planejada: hoje + próximos dias pela FONTE OFICIAL (o resolver
+    // vive no domínio — este controller apenas pergunta)
+    if (authorization !== null) {
+      const today = operationalDateFor(container.clock(), FIXTURE_STORE.timeZone);
+      const planned = await container.loadPlannedSchedule.execute({
+        authorization,
+        storeAnchorDate: FIXTURE_STORE.shiftAnchorDate,
+        operationalDates: civilDateRange(today, SCHEDULE_DAYS_SHOWN),
+      });
+      setScheduleDays(planned.kind === 'loaded' ? planned.days : []);
+    }
+  }, [authorization, container]);
 
   // Boot: o catálogo baseline chega pela reconciliação (mesmo caminho das
   // outras telas); só carrega para quem tem a capability.
@@ -205,7 +298,6 @@ export function useTeamManagement(
 
   const register = useCallback(
     async (input: RegisterEmployeeFormInput) => {
-      const authorization = identity.authorization;
       if (authorization === null) return;
       // guarda de submissão concorrente (duplo clique / StrictMode)
       if (registeringRef.current) return;
@@ -221,6 +313,7 @@ export function useTeamManagement(
           startDate: input.startDate,
           positionId: input.positionId,
           teamId: input.teamId,
+          shiftDefinitionId: input.shiftDefinitionId === '' ? null : input.shiftDefinitionId,
           createdOffline: !readiness.readyToSync,
         });
         if (result.kind === 'failed') {
@@ -236,6 +329,9 @@ export function useTeamManagement(
               return;
             case 'UNKNOWN_TEAM':
               setRegistration({ status: 'error', message: 'Escolha a equipe.' });
+              return;
+            case 'UNKNOWN_DEFINITION':
+              setRegistration({ status: 'error', message: 'Escolha o horário de trabalho.' });
               return;
             case 'PERMISSION_DENIED':
               setRegistration({
@@ -266,12 +362,11 @@ export function useTeamManagement(
         registeringRef.current = false;
       }
     },
-    [container, identity.authorization, load],
+    [authorization, container, load],
   );
 
   const createPosition = useCallback(
     async (name: string) => {
-      const authorization = identity.authorization;
       if (authorization === null) return;
       if (creatingRef.current) return;
       creatingRef.current = true;
@@ -318,7 +413,63 @@ export function useTeamManagement(
         creatingRef.current = false;
       }
     },
-    [container, identity.authorization, load],
+    [authorization, container, load],
+  );
+
+  const createShiftDefinition = useCallback(
+    async (input: CreateShiftDefinitionFormInput) => {
+      if (authorization === null) return;
+      if (creatingDefinitionRef.current) return;
+      creatingDefinitionRef.current = true;
+      setShiftDefinitionCreation({ status: 'submitting' });
+      try {
+        const readiness = await container.connectivity.assess();
+        const result = await container.createShiftDefinition.execute({
+          authorization,
+          deviceId: container.deviceId,
+          name: input.name,
+          startTime: input.startTime,
+          endTime: input.endTime,
+          createdOffline: !readiness.readyToSync,
+        });
+        if (result.kind === 'failed') {
+          switch (result.code) {
+            case 'INVALID_TIME':
+              setShiftDefinitionCreation({
+                status: 'error',
+                message: 'Informe início e fim válidos (HH:MM), diferentes entre si.',
+              });
+              return;
+            case 'PERMISSION_DENIED':
+              setShiftDefinitionCreation({
+                status: 'error',
+                message: 'Seu perfil não permite criar horários de trabalho.',
+              });
+              return;
+            case 'SNAPSHOT_EXPIRED':
+              setShiftDefinitionCreation({
+                status: 'error',
+                message: 'Identificação expirada. Identifique-se novamente.',
+              });
+              return;
+            default:
+              setShiftDefinitionCreation({
+                status: 'error',
+                message: 'Não foi possível criar o horário agora. Tente novamente.',
+              });
+              return;
+          }
+        }
+        // 'already-created' converge para a jornada existente — não é erro
+        if (readiness.readyToSync) await container.drainAndReflect();
+        setShiftDefinitionCreation({ status: 'idle' });
+        await load();
+        changedRef.current?.();
+      } finally {
+        creatingDefinitionRef.current = false;
+      }
+    },
+    [authorization, container, load],
   );
 
   const openRegister = useCallback(() => setRegistration({ status: 'open' }), []);
@@ -333,6 +484,17 @@ export function useTeamManagement(
   const closeCreatePosition = useCallback(
     () =>
       setPositionCreation((current) =>
+        current.status === 'submitting' ? current : { status: 'idle' },
+      ),
+    [],
+  );
+  const openCreateShiftDefinition = useCallback(
+    () => setShiftDefinitionCreation({ status: 'open' }),
+    [],
+  );
+  const closeCreateShiftDefinition = useCallback(
+    () =>
+      setShiftDefinitionCreation((current) =>
         current.status === 'submitting' ? current : { status: 'idle' },
       ),
     [],
@@ -352,6 +514,17 @@ export function useTeamManagement(
     registration,
     positionCreation,
     today: operationalDateFor(container.clock(), FIXTURE_STORE.timeZone),
+    canCreateShiftDefinition: canCreatePosition,
+    definitionItems,
+    definitionOptions: definitionItems.map((definition) => ({
+      id: definition.id,
+      label:
+        definition.name === definition.windowLabel
+          ? definition.windowLabel
+          : `${definition.name} (${definition.windowLabel})`,
+    })),
+    scheduleDays,
+    shiftDefinitionCreation,
   };
 
   return [
@@ -365,6 +538,9 @@ export function useTeamManagement(
       openCreatePosition,
       closeCreatePosition,
       createPosition,
+      openCreateShiftDefinition,
+      closeCreateShiftDefinition,
+      createShiftDefinition,
       reload: load,
     },
   ];
