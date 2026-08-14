@@ -439,26 +439,37 @@ function ShiftSection({
   );
 }
 
-/** Atribuição situacional inline para ocorrências sem responsável. */
+/**
+ * Atribuição situacional inline para ocorrências sem responsável. Candidatos
+ * = posições com ocupante ESCALADO hoje (presença planejada oficial) — nunca
+ * o cadastro inteiro da loja.
+ */
 function AssignControl({
   task,
   positions,
   onAssign,
 }: {
   readonly task: SupervisorTaskView;
-  readonly positions: SupervisorDashboardView['positions'];
+  readonly positions: SupervisorDashboardView['assignablePositions'];
   readonly onAssign: SupervisorDashboardActions['assignTask'];
 }): ReactElement {
   const [positionId, setPositionId] = useState('');
+  if (positions.length === 0) {
+    return (
+      <Text tone="secondary">
+        Ninguém está escalado hoje para receber esta tarefa. Confira a aba Escala.
+      </Text>
+    );
+  }
   return (
     <Stack gap={100}>
       <Field label="Atribuir a">
         <Select value={positionId} onChange={(event) => setPositionId(event.target.value)}>
-          <option value="">Escolha a posição</option>
+          <option value="">Escolha quem está escalado hoje</option>
           {positions.map((position) => (
             <option key={position.id} value={position.id}>
               {position.name}
-              {position.memberNames.length > 0 ? ` — ${position.memberNames.join(', ')}` : ''}
+              {position.scheduledNames.length > 0 ? ` — ${position.scheduledNames.join(', ')}` : ''}
             </option>
           ))}
         </Select>
@@ -480,7 +491,7 @@ function TaskItem({
   onAssign,
 }: {
   readonly task: SupervisorTaskView;
-  readonly positions: SupervisorDashboardView['positions'];
+  readonly positions: SupervisorDashboardView['assignablePositions'];
   readonly onAssign: SupervisorDashboardActions['assignTask'];
 }): ReactElement {
   const sync = syncLine(task);
@@ -691,7 +702,7 @@ export function SupervisorDashboardScreen({
                       <TaskItem
                         key={task.id}
                         task={task}
-                        positions={view.positions}
+                        positions={view.assignablePositions}
                         onAssign={actions.assignTask}
                       />
                     ))}

@@ -72,6 +72,28 @@ async function openDrawer(): Promise<HTMLElement> {
   return screen.findByRole('dialog');
 }
 
+/** Cadastra um colaborador ESCALADO hoje (13/08 ⇒ Equipe A na rotação). */
+async function registerScheduledMember(name: string, position: string): Promise<void> {
+  fireEvent.click(await screen.findByRole('button', { name: '+ Novo colaborador' }));
+  const dialog = await screen.findByRole('dialog');
+  fireEvent.change(within(dialog).getByLabelText('Nome'), { target: { value: name } });
+  for (const [label, wanted] of [
+    ['Função/posição', position],
+    ['Equipe', 'Equipe A'],
+  ] as const) {
+    const select = within(dialog).getByLabelText(label);
+    const option = [...select.querySelectorAll('option')].find((candidate) =>
+      candidate.textContent?.includes(wanted),
+    );
+    fireEvent.change(select, { target: { value: option?.value ?? '' } });
+  }
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cadastrar colaborador' }));
+  await screen.findByRole('heading', { name });
+  await waitFor(() => {
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+}
+
 beforeEach(() => {
   world = makeWorld();
 });
@@ -170,26 +192,34 @@ describe('fila do encarregado — sem responsável e atribuição situacional', 
     await screen.findByRole('heading', { name: title });
   }
 
-  it('filtra por "Sem responsável" e atribui a ocorrência a uma posição', async () => {
+  it('filtra por "Sem responsável" e atribui a quem está ESCALADO hoje', async () => {
     render(app());
     await identifyElber();
+    // sem ninguém escalado, a atribuição orienta em vez de listar o cadastro
     await createUnassigned('Conferir estoque da ilha');
-
-    // filtro "Sem responsável" mantém a tarefa e esconde as que têm responsável
     fireEvent.click(screen.getByRole('radio', { name: 'Sem responsável' }));
     expect(screen.getByRole('heading', { name: 'Conferir estoque da ilha' })).toBeTruthy();
+    await screen.findByText(/Ninguém está escalado hoje/);
+
+    // cadastra João (Açougueiro 1, Equipe A — escalada hoje) e recarrega
+    await registerScheduledMember('João da Silva', 'Açougueiro 1');
+    fireEvent.click(screen.getByRole('radio', { name: 'Sem responsável' }));
     await waitFor(() => {
       expect(
         screen.queryByRole('heading', { name: 'Registrar temperatura da câmara fria' }),
       ).toBeNull();
     });
 
-    // atribui a ocorrência de hoje a Atendimento
-    const assign = screen.getByLabelText('Atribuir a') as HTMLSelectElement;
-    const atendimento = [...assign.querySelectorAll('option')].find((o) =>
-      o.textContent?.includes('Atendimento'),
+    // candidatos vêm da presença PLANEJADA: só quem está escalado hoje
+    const assign = (await screen.findByLabelText('Atribuir a')) as HTMLSelectElement;
+    const options = [...assign.querySelectorAll('option')].map((o) => o.textContent ?? '');
+    expect(options.some((text) => text.includes('Açougueiro 1 — João da Silva'))).toBe(true);
+    expect(options.some((text) => text.includes('Atendimento'))).toBe(false);
+
+    const joao = [...assign.querySelectorAll('option')].find((o) =>
+      o.textContent?.includes('Açougueiro 1'),
     );
-    fireEvent.change(assign, { target: { value: atendimento?.value ?? '' } });
+    fireEvent.change(assign, { target: { value: joao?.value ?? '' } });
     fireEvent.click(screen.getByRole('button', { name: 'Atribuir' }));
 
     // deixa de estar "sem responsável" — some do filtro atual
@@ -199,6 +229,6 @@ describe('fila do encarregado — sem responsável e atribuição situacional', 
     // e aparece com o responsável ao ver "Todas"
     fireEvent.click(screen.getByRole('radio', { name: 'Todas' }));
     await screen.findByRole('heading', { name: 'Conferir estoque da ilha' });
-    expect(screen.getAllByText(/Atendimento — Marina Álvares/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Açougueiro 1 — João da Silva/).length).toBeGreaterThan(0);
   });
 });
