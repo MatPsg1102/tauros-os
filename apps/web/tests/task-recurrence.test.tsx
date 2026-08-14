@@ -169,7 +169,7 @@ describe('WHEN_SCHEDULED usa o resolver REAL da Escala Operacional', () => {
     // ela fosse a fonte, este teste falharia.
     world = makeWorld(DAY_13);
     const stores = world;
-    let view = render(app());
+    const view = render(app());
     await identifyElber();
     await registerMember('Carlos Prado', 'Auxiliar de açougue', 'Equipe B');
     await createWhenScheduledTask('Higienizar câmara de resfriados', 'Auxiliar de açougue');
@@ -238,7 +238,7 @@ describe('atribuição situacional não contamina o template', () => {
     // 13/08: template "definir no dia" (todos os dias) + João escalado
     world = makeWorld(DAY_13);
     const stores = world;
-    let view = render(app());
+    const view = render(app());
     await identifyElber();
     await registerMember('João da Silva', 'Açougueiro 1', 'Equipe A');
     fireEvent.click(screen.getByRole('button', { name: '+ Nova tarefa' }));
