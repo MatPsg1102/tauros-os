@@ -91,6 +91,18 @@ export interface PositionOption {
 }
 
 /**
+ * Candidatos da ATRIBUIÇÃO situacional: somente posições com ocupante
+ * ESCALADO hoje (fonte oficial de presença planejada) — nunca o cadastro
+ * inteiro. Atribuir é distribuir o dia real, não a estrutura da loja.
+ */
+export interface AssignablePositionOption {
+  readonly id: string;
+  readonly name: string;
+  /** Ocupantes escalados hoje nesta posição. */
+  readonly scheduledNames: readonly string[];
+}
+
+/**
  * Decisões de permissão PRONTAS para a UI (ADR-018): derivadas uma única vez
  * das permissões efetivas do operador identificado — a tela nunca recalcula
  * capability nem conhece strings de permissão.
@@ -119,6 +131,8 @@ export interface SupervisorDashboardView {
   readonly filter: SupervisorFilter;
   readonly positionFilter: string | null;
   readonly positions: readonly PositionOption[];
+  /** Posições com ocupante escalado HOJE (candidatas de atribuição). */
+  readonly assignablePositions: readonly AssignablePositionOption[];
   readonly deviceOnline: boolean;
   readonly readyToSync: boolean;
   readonly pendingSyncCount: number;
@@ -231,6 +245,9 @@ export function useSupervisorDashboard(
   const [creation, setCreation] = useState<SupervisorCreation>({ status: 'idle' });
   const [tasks, setTasks] = useState<readonly SupervisorTaskView[]>([]);
   const [positions, setPositions] = useState<readonly PositionOption[]>([]);
+  const [assignablePositions, setAssignablePositions] = useState<
+    readonly AssignablePositionOption[]
+  >([]);
   const [filter, setFilter] = useState<SupervisorFilter>('all');
   const [positionFilter, setPositionFilter] = useState<string | null>(null);
   const [identifyError, setIdentifyError] = useState<string | null>(null);
@@ -288,10 +305,16 @@ export function useSupervisorDashboard(
     }
 
     const now = container.clock();
-    const [members, positionViews, localTemplates] = await Promise.all([
+    const [members, positionViews, localTemplates, plannedToday] = await Promise.all([
       container.team.members(FIXTURE_STORE.id),
       container.team.positions(FIXTURE_STORE.id),
       container.templates.byStore(FIXTURE_STORE.id),
+      // candidatos de atribuição: presença PLANEJADA de hoje (fonte oficial)
+      container.loadPlannedSchedule.execute({
+        authorization,
+        storeAnchorDate: FIXTURE_STORE.shiftAnchorDate,
+        operationalDates: [operationalDateFor(now, FIXTURE_STORE.timeZone)],
+      }),
     ]);
     const result = await container.loadDailyTasks.execute({
       authorization,
@@ -354,6 +377,23 @@ export function useSupervisorDashboard(
         id: position.id,
         name: position.name,
         memberNames: (membersByPosition.get(position.id) ?? []).map((member) => member.fullName),
+      })),
+    );
+    // agrupa os ESCALADOS de hoje por posição — só elas recebem atribuição
+    const scheduledByPosition = new Map<string, string[]>();
+    if (plannedToday.kind === 'loaded') {
+      for (const employee of plannedToday.days[0]?.employees ?? []) {
+        if (employee.positionId === null) continue;
+        const names = scheduledByPosition.get(employee.positionId) ?? [];
+        names.push(employee.fullName);
+        scheduledByPosition.set(employee.positionId, names);
+      }
+    }
+    setAssignablePositions(
+      [...scheduledByPosition.entries()].map(([positionId, names]) => ({
+        id: positionId,
+        name: positionById.get(positionId)?.name ?? 'Posição',
+        scheduledNames: names,
       })),
     );
     setPendingSyncCount(
@@ -633,6 +673,7 @@ export function useSupervisorDashboard(
     filter,
     positionFilter,
     positions,
+    assignablePositions,
     deviceOnline: connectivity.deviceOnline,
     readyToSync: connectivity.readyToSync,
     pendingSyncCount,

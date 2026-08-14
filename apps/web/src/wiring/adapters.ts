@@ -30,6 +30,7 @@ import type {
   ScheduleSyncStatus,
   ShiftDefinitionRecord,
   ShiftPatternRecord,
+  ShiftSchedulePort,
   TeamDirectoryPort,
   TeamMemberView,
   TeamRecord,
@@ -51,7 +52,7 @@ import {
   ENTITY_TASK_EXECUTION,
   ENTITY_TASK_TEMPLATE,
 } from '@tauros/contracts';
-import { currentAssignmentFor } from '@tauros/domain';
+import { currentAssignmentFor, resolvePlannedDay } from '@tauros/domain';
 import type { ConfigResolver } from '@tauros/config-engine';
 import {
   captureSnapshot,
@@ -607,6 +608,69 @@ export class LocalTeamDirectory implements TeamDirectoryPort {
           positionId: current?.operationalPositionId ?? null,
         };
       });
+  }
+}
+
+/**
+ * ShiftSchedulePort REAL (Recorrência V1): responde "a posição está escalada
+ * nesta data?" delegando ao ÚNICO resolver de escala do sistema
+ * (resolvePlannedDay — Escala Operacional V1). Substitui a antiga
+ * FixtureShiftSchedule na materialização: nenhuma regra própria aqui — uma
+ * posição está escalada quando ALGUM colaborador vigente nela pertence a uma
+ * equipe que trabalha na data (troca de OCUPANTE preserva o veredito, pois a
+ * recorrência é da POSIÇÃO, nunca do funcionário).
+ */
+export class PlannedScheduleAdapter implements ShiftSchedulePort {
+  constructor(
+    private readonly workforce: LocalWorkforceRepository,
+    private readonly schedule: LocalScheduleRepository,
+    /** Âncora da rotação da LOJA (stores.shift_anchor_date) — dado, não regra. */
+    private readonly anchorDate: () => string | null,
+  ) {}
+
+  async isPositionScheduled(
+    storeId: string,
+    positionId: string,
+    workDate: string,
+  ): Promise<boolean> {
+    const [employees, assignments, teams, patterns] = await Promise.all([
+      this.workforce.employees(storeId),
+      this.workforce.assignments(storeId),
+      this.workforce.teams(storeId),
+      this.schedule.patterns(storeId),
+    ]);
+    const decision = resolvePlannedDay({
+      storeId,
+      operationalDate: workDate,
+      anchorDate: this.anchorDate(),
+      patterns: patterns.map((pattern) => ({
+        id: pattern.id,
+        name: pattern.name,
+        effectiveFrom: pattern.effectiveFrom,
+        effectiveUntil: pattern.effectiveUntil,
+        days: pattern.days,
+      })),
+      teams: teams.map((team) => ({
+        id: team.id,
+        name: team.name,
+        rotationOffset: team.rotationOffset,
+      })),
+      employees: employees.map((employee) => ({
+        id: employee.id,
+        fullName: employee.fullName,
+        active: employee.active,
+      })),
+      assignments: assignments.map((assignment) => ({
+        employeeId: assignment.employeeId,
+        teamId: assignment.teamId,
+        positionId: assignment.operationalPositionId,
+        shiftDefinitionId: assignment.shiftDefinitionId,
+        validFrom: assignment.validFrom,
+        validUntil: assignment.validUntil,
+      })),
+    });
+    if (decision.kind !== 'resolved') return false;
+    return decision.employees.some((employee) => employee.positionId === positionId);
   }
 }
 

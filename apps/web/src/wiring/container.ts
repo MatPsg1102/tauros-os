@@ -82,6 +82,7 @@ import {
   LocalTaskTemplateRepository,
   LocalTeamDirectory,
   LocalWorkforceRepository,
+  PlannedScheduleAdapter,
   ScheduleQueueAdapter,
   SessionAuditAdapter,
   SessionQueueAdapter,
@@ -91,12 +92,7 @@ import {
   WorkforceAuditAdapter,
   WorkforceQueueAdapter,
 } from './adapters.js';
-import {
-  FIXTURE_STORE,
-  FixtureShiftSchedule,
-  FixtureTaskTemplateSource,
-  FixtureTeamDirectory,
-} from './fixtures.js';
+import { FIXTURE_STORE, FixtureTaskTemplateSource, FixtureTeamDirectory } from './fixtures.js';
 import { ensureWorkforceBaseline } from './workforce-baseline.js';
 import { FakeSessionSyncTransport } from './transport-fake.js';
 
@@ -231,6 +227,11 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     auditAdapter,
   );
 
+  // Cadastro real da loja (Gestão de Equipe + Escala) — declarado ANTES do
+  // quadro de tarefas: a materialização consulta a escala real.
+  const workforce = new LocalWorkforceRepository(appStore);
+  const scheduleData = new LocalScheduleRepository(appStore);
+
   // Quadro de tarefas do dia (7.2) — mesma infraestrutura congelada.
   // Fonte de definições = cadastro base (fixtures/backend) + definições
   // criadas localmente pelo encarregado (Área do Encarregado).
@@ -241,7 +242,11 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     templates,
   );
   const taskQueueAdapter = new TaskExecutionQueueAdapter(queue, authorization, deviceId, clock);
-  const schedule: ShiftSchedulePort = options.schedule ?? new FixtureShiftSchedule();
+  // Recorrência V1: o veredito "posição escalada?" vem do resolver REAL da
+  // Escala Operacional (fixture de escala aposentada da materialização).
+  const schedule: ShiftSchedulePort =
+    options.schedule ??
+    new PlannedScheduleAdapter(workforce, scheduleData, () => FIXTURE_STORE.shiftAnchorDate);
   const loadDailyTasks = new LoadDailyTasksUseCase({ now: clock }, templateSource, tasks, schedule);
   const recordTaskOutcome = new RecordTaskOutcomeUseCase(
     { now: clock },
@@ -250,11 +255,8 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     taskQueueAdapter,
   );
 
-  // Gestão de Equipe — cadastro real local (colaboradores/posições/equipes);
-  // o diretório de equipe passa a COMPOR base (fixtures até o backend real)
-  // com o cadastro criado nesta loja.
-  const workforce = new LocalWorkforceRepository(appStore);
-  const scheduleData = new LocalScheduleRepository(appStore);
+  // Gestão de Equipe — o diretório de equipe COMPÕE base (fixtures até o
+  // backend real) com o cadastro criado nesta loja.
   const localDirectory = new LocalTeamDirectory(workforce, () =>
     operationalDateFor(clock(), FIXTURE_STORE.timeZone),
   );

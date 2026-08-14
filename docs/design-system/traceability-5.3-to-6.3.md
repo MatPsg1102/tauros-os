@@ -563,3 +563,53 @@ Pendências (registradas, não bloqueantes):
   decisão formal futura se a operação exigir.
 - Sync real das entidades novas (Edge Function) + shift_anchor_date vindo do
   cadastro real da loja (hoje: dado da loja fixture).
+
+## Recorrência de Tarefas V1 — WHEN_SCHEDULED real + atribuição a escalados
+
+Reconciliação: o planejamento recorrente JÁ existia do PR #25 (ONCE |
+WEEKDAYS | WHEN_SCHEDULED em `shouldMaterialize`, effectiveFrom, início/fim
+planejados com fim > início, responsável opcional exceto em WHEN_SCHEDULED,
+materialização idempotente por id determinístico
+`daily-task:store:date:template`, atribuição situacional que nunca toca o
+template, bug do foco corrigido na raiz com teste de regressão). Esta
+vertical fechou o que faltava — SEM pipeline nova, SEM engine, SEM migration,
+SEM capability nova:
+
+1. `PlannedScheduleAdapter` (wiring) implementa o `ShiftSchedulePort` da
+   materialização delegando ao ÚNICO resolver de escala
+   (`resolvePlannedDay`, Escala V1): posição escalada = algum colaborador
+   vigente nela pertence a equipe que trabalha na data. A
+   **FixtureShiftSchedule ("dia ímpar") foi APOSENTADA e removida** — teste
+   de integração prova por contraste que ela não é a fonte (dia PAR
+   materializa quando a equipe do dia cobre a posição; a fixture diria não).
+   WEEKDAYS segue calendário puro (decisão de produto: dia configurado
+   materializa mesmo sem a posição escalada — sinaliza redistribuição;
+   WHEN_SCHEDULED é a opção explicitamente dependente de presença).
+2. Candidatos da ATRIBUIÇÃO situacional agora vêm da presença PLANEJADA de
+   hoje (`assignablePositions` no view model, via LoadPlannedSchedule) —
+   nunca o cadastro inteiro; sem ninguém escalado a UI orienta ("Confira a
+   aba Escala") em vez de listar todo mundo. Criação de template e filtro
+   "Por funcionário" seguem usando o CATÁLOGO (template é regra futura).
+3. Contratos provados por integração real (container default): materializa
+   no dia escalado → não materializa na folga → volta no dia seguinte;
+   troca de OCUPANTE preserva a ocorrência (recorrência é da POSIÇÃO);
+   escala esvaziada NÃO apaga ocorrência já materializada (decisão desta V1:
+   ocorrência operacional tem histórico — reconciliação/exclusão é futura);
+   atribuição não contamina o template e a ocorrência seguinte nasce
+   novamente SEM responsável.
+
+Validação: 105 testes web (12 arquivos) incl. novo `task-recurrence.test.tsx`
+(4 integrações multi-data sobre o MESMO banco local) e ui-task-planning
+atualizado para candidatos escalados; Chrome real com fluxos A (WEEKDAYS sem
+responsável → atribuir a escalado → reload), B (WHEN_SCHEDULED + rotação
+visível na aba Escala), C (todos os dias) e D (mobile 390px com drawer
+aberto, delta 0px).
+
+Pendências (antes de TaskExecution V1):
+
+- Ocupante ESPECÍFICO na atribuição quando houver mais de um escalado na
+  mesma posição (hoje atribui-se a posição; o nome exibido são os escalados).
+- Exceções de escala (ShiftOccurrence/Override) e reconciliação de
+  ocorrências quando a escala muda após materializar.
+- Sync real (Edge Function) das entidades de tarefa; reconciliação de id
+  server-side de daily_tasks (pendência antiga).
