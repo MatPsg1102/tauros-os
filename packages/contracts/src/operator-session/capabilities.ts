@@ -25,5 +25,15 @@ export const CAPABILITY_CONFIG_WRITE = 'config.write' as const;
  */
 export const CAPABILITY_WORKFORCE_WRITE = 'workforce.write' as const;
 
+/**
+ * Capacidade oficial de CONFERÊNCIA operacional: revisar, aprovar e devolver
+ * execuções de tarefa (Operação Compartilhada). Distinta de config.write
+ * (configuração) e de workforce.write (RH): conferir trabalho é
+ * responsabilidade gerencial própria. Mesmo mecanismo ADR-018 — identifier
+ * novo, modelo intacto. Executor NUNCA aprova a própria tarefa por conhecer
+ * o próprio PIN: a autorização vem desta capability, jamais de nome/cargo.
+ */
+export const CAPABILITY_TASK_REVIEW = 'task.review' as const;
+
 /** Versão vigente do modelo de permissões (ADR-018 §versionamento). */
 export const PERMISSION_MODEL_VERSION = 1 as const;

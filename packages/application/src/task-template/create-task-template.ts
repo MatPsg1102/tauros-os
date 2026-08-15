@@ -37,6 +37,8 @@ export interface CreateTaskTemplateInput {
   /** Posição responsável; null = "definir no dia" (sem responsável). */
   readonly targetPositionId: string | null;
   readonly requiresPhoto: boolean;
+  /** Exige conferência do encarregado após a execução (default: não). */
+  readonly requiresReview?: boolean;
   readonly expectedMin: number | null;
   readonly expectedMax: number | null;
   /** Data civil YYYY-MM-DD do início da vigência. */
@@ -190,6 +192,7 @@ export class CreateTaskTemplateUseCase {
         frequency: frequencyFor(input.recurrence),
         targetPositionId,
         requiresPhoto: input.requiresPhoto,
+        requiresReview: input.requiresReview ?? false,
         expectedMin: input.expectedMin,
         expectedMax: input.expectedMax,
         clientCreatedAt: now,
@@ -232,6 +235,7 @@ export class CreateTaskTemplateUseCase {
       frequency: created.frequency,
       targetPositionId: created.targetPositionId,
       requiresPhoto: created.requiresPhoto,
+      requiresReview: created.requiresReview,
       expectedMin: created.expectedMin,
       expectedMax: created.expectedMax,
       active: created.active,

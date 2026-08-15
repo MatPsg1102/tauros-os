@@ -16,8 +16,20 @@ import { useOperatorSession } from './operator-session-context.js';
 export type DailyTasksPhase =
   'loading' | 'ready' | 'no-session' | 'unavailable' | 'error' | 'expired';
 
-/** Estado apresentável de uma tarefa — já resolvido, sem booleanos soltos. */
-export type DailyTaskItemState = 'pending' | 'overdue' | 'done' | 'skipped';
+/**
+ * Estado apresentável de uma tarefa — já resolvido, sem booleanos soltos.
+ * Os estados do ciclo compartilhado aparecem com rótulo correto também no
+ * quadro individual (experiência secundária): quem está em conferência não
+ * recebe ações do operador aqui.
+ */
+export type DailyTaskItemState =
+  | 'pending'
+  | 'in-progress'
+  | 'awaiting-review'
+  | 'needs-correction'
+  | 'overdue'
+  | 'done'
+  | 'skipped';
 
 export interface DailyTaskItemView {
   readonly id: string;
@@ -62,15 +74,18 @@ export interface DailyTasksActions {
   readonly retrySync: () => Promise<void>;
 }
 
+const ITEM_STATE: Readonly<Record<DailyTaskRecord['status'], DailyTaskItemState>> = {
+  PENDING: 'pending',
+  IN_PROGRESS: 'in-progress',
+  AWAITING_REVIEW: 'awaiting-review',
+  NEEDS_CORRECTION: 'needs-correction',
+  DONE: 'done',
+  OVERDUE: 'overdue',
+  SKIPPED: 'skipped',
+};
+
 function toItem(record: DailyTaskRecord): DailyTaskItemView {
-  const state: DailyTaskItemState =
-    record.status === 'DONE'
-      ? 'done'
-      : record.status === 'SKIPPED'
-        ? 'skipped'
-        : record.status === 'OVERDUE'
-          ? 'overdue'
-          : 'pending';
+  const state = ITEM_STATE[record.status];
   const hasRange = record.expectedMinSnapshot !== null || record.expectedMaxSnapshot !== null;
   return {
     id: record.id,

@@ -7,6 +7,7 @@ import {
   CAPABILITY_CONFIG_WRITE,
   CAPABILITY_SESSION_CLOSE,
   CAPABILITY_SESSION_OPEN,
+  CAPABILITY_TASK_REVIEW,
   CAPABILITY_WORKFORCE_WRITE,
 } from '@tauros/contracts';
 
@@ -102,6 +103,7 @@ export const FIXTURE_OPERATORS: readonly FixtureOperator[] = [
       CAPABILITY_SESSION_CLOSE,
       CAPABILITY_CONFIG_WRITE,
       CAPABILITY_WORKFORCE_WRITE,
+      CAPABILITY_TASK_REVIEW,
       'audit.read',
     ],
   },
@@ -235,6 +237,19 @@ export function identifyOperator(
     (candidate) => candidate.employeeId === operatorEmployeeId,
   );
   if (operator === undefined || operator.pin !== pin) return null;
+  return { operator };
+}
+
+/**
+ * Identificação JUST-IN-TIME por PIN (Operação Compartilhada): o tablet da
+ * loja não sabe QUEM vai agir — o PIN resolve a identidade no momento da
+ * ação e é descartado. Fixture de desenvolvimento: o backend real valida
+ * PIN→identidade no servidor; a mensagem de falha segue neutra.
+ */
+export function identifyByPin(pin: string): IdentifiedOperator | null {
+  if (!fixturesEnabled()) throw new FixturesDisabledError();
+  const operator = FIXTURE_OPERATORS.find((candidate) => candidate.pin === pin);
+  if (operator === undefined) return null;
   return { operator };
 }
 

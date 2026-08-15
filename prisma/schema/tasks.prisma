@@ -7,6 +7,9 @@ model TaskTemplate {
   frequency        TaskFrequency
   targetPositionId String?       @map("target_position_id") @db.Uuid
   requiresPhoto    Boolean       @default(false) @map("requires_photo")
+  /// Execução exige CONFERÊNCIA do encarregado antes do terminal (concluir ≠
+  /// aprovar). Default false: review nunca é obrigatório para tudo.
+  requiresReview   Boolean       @default(false) @map("requires_review")
   expectedMin      Decimal?      @map("expected_min") @db.Decimal(6, 2)
   expectedMax      Decimal?      @map("expected_max") @db.Decimal(6, 2)
   active           Boolean       @default(true)
@@ -66,6 +69,10 @@ model DailyTask {
   // Atribuição SITUACIONAL da ocorrência (encarregado define no dia). NÃO
   // altera o template — a próxima ocorrência nasce pela regra da definição.
   assignedPositionId  String?         @map("assigned_position_id") @db.Uuid
+  /// Execução em andamento: horário REAL de início e ator (Operação
+  /// Compartilhada — autoria de coluna solta, mesma decisão de performed_by).
+  startedAt           DateTime?       @map("started_at") @db.Timestamptz(6)
+  startedByEmployeeId String?         @map("started_by_employee_id") @db.Uuid
   expectedMinSnapshot Decimal?        @map("expected_min_snapshot") @db.Decimal(6, 2)
   expectedMaxSnapshot Decimal?        @map("expected_max_snapshot") @db.Decimal(6, 2)
   configVersionRef    String?         @map("config_version_ref") @db.Uuid
@@ -103,6 +110,17 @@ model TaskExecution {
   idempotencyKey        String          @map("idempotency_key")
   schemaVersion         Int             @map("schema_version")
   supersededById        String?         @map("superseded_by_id") @db.Uuid
+
+  /// Horário REAL de início da execução (planejado ≠ real).
+  startedAt             DateTime?          @map("started_at") @db.Timestamptz(6)
+  /// CONFERÊNCIA gerencial (Operação Compartilhada): fato sobre a execução.
+  /// Devolução NÃO apaga nada — o reenvio nasce como NOVA execução na cadeia
+  /// superseded_by_id. (review_reason acima segue sendo de SYNC/autoria.)
+  reviewedByProfileId   String?            @map("reviewed_by_profile_id") @db.Uuid
+  reviewedByEmployeeId  String?            @map("reviewed_by_employee_id") @db.Uuid
+  reviewedAt            DateTime?          @map("reviewed_at") @db.Timestamptz(6)
+  reviewOutcome         TaskReviewOutcome? @map("review_outcome")
+  reviewNote            String?            @map("review_note")
 
   dailyTask       DailyTask       @relation(fields: [dailyTaskId], references: [id])
   operatorSession OperatorSession @relation(fields: [operatorSessionId], references: [id])

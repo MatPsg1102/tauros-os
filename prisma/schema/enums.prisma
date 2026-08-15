@@ -50,11 +50,22 @@ enum Weekday {
 
 enum DailyTaskStatus {
   PENDING
+  IN_PROGRESS
+  AWAITING_REVIEW
+  NEEDS_CORRECTION
   DONE
   OVERDUE
   SKIPPED
 
   @@map("daily_task_status")
+}
+
+/// Desfecho da CONFERÊNCIA gerencial da execução (≠ review_reason de sync).
+enum TaskReviewOutcome {
+  APPROVED
+  RETURNED
+
+  @@map("task_review_outcome")
 }
 
 enum ExecutionResult {

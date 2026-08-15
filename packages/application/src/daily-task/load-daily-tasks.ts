@@ -171,8 +171,11 @@ export class LoadDailyTasksUseCase {
     }
 
     const all = [...persisted, ...created];
+    // OVERDUE sobrescreve apenas PENDING (comportamento 7.2 preservado):
+    // IN_PROGRESS/NEEDS_CORRECTION mantêm o estado do ciclo compartilhado —
+    // o atraso deles é derivação de leitura (isOverdue), nunca sobrescrita.
     const withDerivedStatus = all.map((task) =>
-      isOverdue(task.status, new Date(task.dueAt), now)
+      task.status === 'PENDING' && isOverdue(task.status, new Date(task.dueAt), now)
         ? { ...task, status: 'OVERDUE' as const }
         : task,
     );

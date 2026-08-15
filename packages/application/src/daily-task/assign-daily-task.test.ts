@@ -79,8 +79,10 @@ function makeHarness(initial: DailyTaskRecord = task()) {
       return Promise.resolve();
     },
     executionByIdempotencyKey: () => Promise.resolve(null),
+    executionById: () => Promise.resolve(null),
     saveExecution: () => Promise.resolve(),
     updateExecutionSyncStatus: () => Promise.resolve(),
+    attachExecutionReview: () => Promise.resolve(),
   };
   const useCase = new AssignDailyTaskUseCase(
     { now: () => NOW },

@@ -4,8 +4,10 @@
 // reconcileFromQueue reconstrói o estado no boot (atomicidade §35).
 
 import {
+  AddTaskEvidenceUseCase,
   AssignDailyTaskUseCase,
   ChangeEmployeeWorkPeriodUseCase,
+  ClaimDailyTaskUseCase,
   CloseOperatorSessionUseCase,
   CreateOperationalPositionUseCase,
   CreateShiftDefinitionUseCase,
@@ -16,6 +18,8 @@ import {
   operationalDateFor,
   RecordTaskOutcomeUseCase,
   RegisterEmployeeUseCase,
+  ReviewTaskExecutionUseCase,
+  StartDailyTaskUseCase,
 } from '@tauros/application';
 import { ConfigResolver } from '@tauros/config-engine';
 import type {
@@ -26,14 +30,18 @@ import type {
   CreateShiftDefinitionQueuePayload,
   CreateTemplateQueuePayload,
   EffectiveAuthorization,
+  EvidenceBlobStorePort,
+  EvidenceQueuePayload,
   OperatorSessionRecord,
   RegisterEmployeeQueuePayload,
+  ReviewTaskExecutionQueuePayload,
   ShiftSchedulePort,
   TaskExecutionQueuePayload,
   TaskTemplateSourcePort,
   TeamDirectoryPort,
 } from '@tauros/contracts';
 import {
+  ENTITY_ATTACHMENT,
   ENTITY_DAILY_TASK,
   ENTITY_EMPLOYEE,
   ENTITY_EMPLOYEE_ASSIGNMENT,
@@ -76,16 +84,21 @@ import {
   ConfigSessionPolicyAdapter,
   DailyTaskAssignQueueAdapter,
   DailyTaskAuditAdapter,
+  EVIDENCE_BLOB_SCHEMA,
+  IndexedDbEvidenceBlobStore,
   LocalDailyTaskRepository,
+  LocalEvidenceRepository,
   LocalOperatorSessionRepository,
   LocalScheduleRepository,
   LocalTaskTemplateRepository,
   LocalTeamDirectory,
   LocalWorkforceRepository,
+  MemoryEvidenceBlobStore,
   PlannedScheduleAdapter,
   ScheduleQueueAdapter,
   SessionAuditAdapter,
   SessionQueueAdapter,
+  SharedOperationQueueAdapter,
   TaskExecutionQueueAdapter,
   TemplateAuditAdapter,
   TemplateQueueAdapter,
@@ -107,6 +120,7 @@ export interface ContainerOptions {
   readonly templates?: TaskTemplateSourcePort;
   readonly team?: TeamDirectoryPort;
   readonly schedule?: ShiftSchedulePort;
+  readonly evidenceBlobs?: EvidenceBlobStorePort;
 }
 
 export interface AppContainer {
@@ -134,6 +148,12 @@ export interface AppContainer {
   readonly createShiftDefinition: CreateShiftDefinitionUseCase;
   readonly changeWorkPeriod: ChangeEmployeeWorkPeriodUseCase;
   readonly loadPlannedSchedule: LoadPlannedScheduleUseCase;
+  readonly evidence: LocalEvidenceRepository;
+  readonly evidenceBlobs: EvidenceBlobStorePort;
+  readonly claimDailyTask: ClaimDailyTaskUseCase;
+  readonly startDailyTask: StartDailyTaskUseCase;
+  readonly reviewTaskExecution: ReviewTaskExecutionUseCase;
+  readonly addTaskEvidence: AddTaskEvidenceUseCase;
   /** Drena a fila e reflete o desfecho no syncStatus do registro local. */
   readonly drainAndReflect: () => Promise<void>;
   /** Recuperação de boot: fila com intenção sem registro local ⇒ reconstrói. */
@@ -248,11 +268,37 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     options.schedule ??
     new PlannedScheduleAdapter(workforce, scheduleData, () => FIXTURE_STORE.shiftAnchorDate);
   const loadDailyTasks = new LoadDailyTasksUseCase({ now: clock }, templateSource, tasks, schedule);
+
+  // Operação Compartilhada — evidência real (metadado no app-state; binário
+  // em DB próprio via structured clone) + ciclo assumir/iniciar/conferir.
+  const evidence = new LocalEvidenceRepository(appStore);
+  const evidenceBlobStore: EvidenceBlobStorePort =
+    options.evidenceBlobs ??
+    (typeof indexedDB === 'undefined'
+      ? new MemoryEvidenceBlobStore()
+      : new IndexedDbEvidenceBlobStore(new IndexedDbLocalStore(EVIDENCE_BLOB_SCHEMA)));
+  const sharedQueueAdapter = new SharedOperationQueueAdapter(queue, authorization, deviceId, clock);
   const recordTaskOutcome = new RecordTaskOutcomeUseCase(
     { now: clock },
     ids,
     tasks,
     taskQueueAdapter,
+    evidence,
+  );
+  const startDailyTask = new StartDailyTaskUseCase(
+    { now: clock },
+    ids,
+    tasks,
+    workforce,
+    sharedQueueAdapter,
+  );
+  const addTaskEvidence = new AddTaskEvidenceUseCase(
+    { now: clock },
+    ids,
+    tasks,
+    evidence,
+    evidenceBlobStore,
+    sharedQueueAdapter,
   );
 
   // Gestão de Equipe — o diretório de equipe COMPÕE base (fixtures até o
@@ -327,6 +373,23 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     assignQueueAdapter,
     assignAuditAdapter,
   );
+  // Assumir (auto-serviço) reutiliza a MESMA fila da atribuição situacional;
+  // conferência revalida task.review e audita admin.action (catálogo oficial).
+  const claimDailyTask = new ClaimDailyTaskUseCase(
+    { now: clock },
+    ids,
+    tasks,
+    workforce,
+    schedule,
+    assignQueueAdapter,
+  );
+  const reviewTaskExecution = new ReviewTaskExecutionUseCase(
+    { now: clock },
+    ids,
+    tasks,
+    sharedQueueAdapter,
+    workforceAuditAdapter,
+  );
 
   const queueItemForSession = async (sessionId: string): Promise<QueueItem | undefined> => {
     const all = await queue.all();
@@ -399,6 +462,12 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
       // troca de vínculo: o estado local já foi aplicado na operação
       if (item.entityType === ENTITY_EMPLOYEE_ASSIGNMENT) continue;
 
+      // metadado de evidência: reflete o desfecho da fila
+      if (item.entityType === ENTITY_ATTACHMENT) {
+        await evidence.updateSyncStatus(item.entityId, status);
+        continue;
+      }
+
       // atribuição situacional: reflete o desfecho na ocorrência
       if (item.entityType === ENTITY_DAILY_TASK) {
         const current = await tasks.byId(item.entityId);
@@ -407,12 +476,24 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     }
   };
 
+  // Recuperação SÓ para intenção ainda não aplicada no servidor: itens em
+  // estado terminal (SYNCED já refletido; CONFLICT/NEEDS_REVIEW preservados
+  // para revisão; PERMANENT_FAILURE encerrado) NUNCA reconstroem estado
+  // local — reprocessá-los regride atribuições e falsifica syncStatus.
+  const RECONCILABLE_STATES = new Set([
+    'PENDING',
+    'BLOCKED_BY_DEPENDENCY',
+    'SYNCING',
+    'RETRY_SCHEDULED',
+  ]);
+
   const reconcileFromQueue = async (): Promise<void> => {
     // catálogo inicial da loja (equipes/posições/jornadas/padrão) ANTES de
     // qualquer leitura
     await ensureWorkforceBaseline(workforce, scheduleData, FIXTURE_STORE.id);
     const items = await queue.all();
     for (const item of items) {
+      if (!RECONCILABLE_STATES.has(item.state)) continue;
       // 1) abertura enfileirada sem registro local (falha entre enqueue e save)
       if (item.entityType === ENTITY_OPERATOR_SESSION && item.operation === 'insert') {
         const payload = item.payload as { record?: OperatorSessionRecord };
@@ -494,17 +575,62 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
         continue;
       }
 
-      // 3b) atribuição enfileirada sem persistir na ocorrência local
+      // 3b) update da ocorrência (atribuir/assumir/iniciar) sem persistir
       if (item.entityType === ENTITY_DAILY_TASK && item.operation === 'update') {
         const payload = item.payload as AssignDailyTaskQueuePayload;
-        const assigned = payload.dailyTask;
-        const existing = await tasks.byId(assigned.id);
-        if (existing !== null && existing.assignedPositionId !== assigned.assignedPositionId) {
-          await tasks.save({
-            ...existing,
-            assignedPositionId: assigned.assignedPositionId,
-            syncStatus: assigned.syncStatus,
-          });
+        const intended = payload.dailyTask;
+        const existing = await tasks.byId(intended.id);
+        if (existing !== null) {
+          const missingAssign = existing.assignedPositionId !== intended.assignedPositionId;
+          // início real perdido entre enqueue e save (nunca regride desfecho)
+          const missingStart =
+            (intended.startedAt ?? null) !== null &&
+            (existing.startedAt ?? null) === null &&
+            (existing.status === 'PENDING' ||
+              existing.status === 'OVERDUE' ||
+              existing.status === 'NEEDS_CORRECTION');
+          if (missingAssign || missingStart) {
+            await tasks.save({
+              ...existing,
+              assignedPositionId: intended.assignedPositionId,
+              ...(missingStart
+                ? {
+                    status: intended.status,
+                    startedAt: intended.startedAt ?? null,
+                    startedByEmployeeId: intended.startedByEmployeeId ?? null,
+                  }
+                : {}),
+              syncStatus: intended.syncStatus,
+            });
+          }
+        }
+        continue;
+      }
+
+      // 3g) metadado de evidência enfileirado sem registro local
+      if (item.entityType === ENTITY_ATTACHMENT) {
+        const payload = item.payload as EvidenceQueuePayload;
+        const known = await evidence.byIds([payload.evidence.id]);
+        if (known.length === 0) await evidence.save(payload.evidence);
+        continue;
+      }
+
+      // 4b) conferência enfileirada sem persistir localmente
+      if (item.entityType === ENTITY_TASK_EXECUTION && item.operation === 'update') {
+        const payload = item.payload as ReviewTaskExecutionQueuePayload;
+        const reviewed = payload.execution;
+        if (reviewed.review != null) {
+          const local = await tasks.executionById(reviewed.id);
+          if (local !== null && local.review == null) {
+            await tasks.attachExecutionReview(reviewed.id, reviewed.review);
+            const task = await tasks.byId(reviewed.dailyTaskId);
+            if (task !== null && task.status === 'AWAITING_REVIEW') {
+              await tasks.save({
+                ...task,
+                status: reviewed.review.outcome === 'APPROVED' ? 'DONE' : 'NEEDS_CORRECTION',
+              });
+            }
+          }
         }
         continue;
       }
@@ -558,6 +684,12 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     createShiftDefinition,
     changeWorkPeriod,
     loadPlannedSchedule,
+    evidence,
+    evidenceBlobs: evidenceBlobStore,
+    claimDailyTask,
+    startDailyTask,
+    reviewTaskExecution,
+    addTaskEvidence,
     drainAndReflect,
     reconcileFromQueue,
     queueItemForSession,

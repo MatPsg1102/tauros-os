@@ -1,14 +1,23 @@
-// Domínio: desfecho de uma tarefa do dia (7.2). Modelo congelado
-// task_templates → daily_tasks → task_executions: NÃO existe estado
-// intermediário ("em andamento") nem "bloqueada" — os estados oficiais são
-// PENDING/DONE/OVERDUE/SKIPPED e a execução é APPEND-ONLY.
+// Domínio: desfecho de uma tarefa do dia (7.2 + Operação Compartilhada).
+// Cadeia task_templates → daily_tasks → task_executions; execução APPEND-ONLY.
+// Evolução ADITIVA registrada: o ciclo compartilhado introduz os estados
+// IN_PROGRESS / AWAITING_REVIEW / NEEDS_CORRECTION — as transições da 7.2
+// (PENDING/OVERDUE → DONE|SKIPPED) permanecem válidas; DONE segue sendo o
+// ÚNICO terminal de aprovação (concluir ≠ aprovar).
 // PURO: sem relógio real, sem aleatoriedade, sem infraestrutura.
 
 /** execution_result do schema congelado. */
 export type ExecutionResult = 'PASS' | 'FAIL' | 'NA';
 
-/** daily_task_status do schema congelado. */
-export type DailyTaskStatus = 'PENDING' | 'DONE' | 'OVERDUE' | 'SKIPPED';
+/** daily_task_status (evolução aditiva da Operação Compartilhada). */
+export type DailyTaskStatus =
+  | 'PENDING'
+  | 'IN_PROGRESS'
+  | 'AWAITING_REVIEW'
+  | 'NEEDS_CORRECTION'
+  | 'DONE'
+  | 'OVERDUE'
+  | 'SKIPPED';
 
 /** Desfechos que o operador pode registrar (append-only). */
 export type TaskOutcomeKind = 'complete' | 'skip';
@@ -21,6 +30,13 @@ export interface DailyTaskView {
   readonly status: DailyTaskStatus;
   /** requires_photo do template: evidência obrigatória para concluir. */
   readonly requiresPhoto: boolean;
+  /**
+   * requires_review do template: a execução finalizada vai para CONFERÊNCIA
+   * (AWAITING_REVIEW) em vez de DONE. Opcional por compatibilidade.
+   */
+  readonly requiresReview?: boolean;
+  /** Quem está executando (IN_PROGRESS) — opcional por compatibilidade. */
+  readonly startedByEmployeeId?: string | null;
   readonly expectedMin: number | null;
   readonly expectedMax: number | null;
 }
@@ -42,12 +58,16 @@ export interface TaskOutcomeCommand {
   readonly notes: string | null;
   /** Evidência registrada no dispositivo (upload real é pendência 7.x). */
   readonly hasEvidence: boolean;
+  /** Horário REAL de início (da ocorrência em execução); null sem start. */
+  readonly startedAt?: Date | null;
   readonly idempotencyKey: string;
 }
 
 export type TaskOutcomeRejectionCode =
   | 'TASK_NOT_FOUND'
   | 'TASK_ALREADY_RESOLVED'
+  | 'TASK_AWAITING_REVIEW'
+  | 'TASK_IN_EXECUTION_BY_OTHER'
   | 'EVIDENCE_REQUIRED'
   | 'VALUE_REQUIRED'
   | 'STORE_MISMATCH'
@@ -68,9 +88,13 @@ export interface RecordedExecution {
   readonly numericValue: number | null;
   readonly notes: string | null;
   readonly hasEvidence: boolean;
+  readonly startedAt: Date | null;
   readonly idempotencyKey: string;
-  /** Estado alcançado pela tarefa (transição oficial e terminal). */
-  readonly resultingStatus: Extract<DailyTaskStatus, 'DONE' | 'SKIPPED'>;
+  /**
+   * Estado alcançado pela tarefa: terminal (DONE|SKIPPED) ou AGUARDANDO
+   * CONFERÊNCIA quando a definição exige review (concluir ≠ aprovar).
+   */
+  readonly resultingStatus: Extract<DailyTaskStatus, 'DONE' | 'SKIPPED' | 'AWAITING_REVIEW'>;
 }
 
 export type TaskOutcomeDecision =
@@ -87,6 +111,14 @@ const WORK_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Estados terminais: uma tarefa resolvida não recebe novo desfecho. */
 const RESOLVED: readonly DailyTaskStatus[] = ['DONE', 'SKIPPED'];
+
+/** Estados em que a execução do OPERADOR pode registrar desfecho. */
+const ACTIONABLE: readonly DailyTaskStatus[] = [
+  'PENDING',
+  'OVERDUE',
+  'IN_PROGRESS',
+  'NEEDS_CORRECTION',
+];
 
 function missingField(command: TaskOutcomeCommand): string | null {
   const required: readonly (readonly [string, string])[] = [
@@ -177,6 +209,30 @@ export function decideTaskOutcome(
       detail: 'esta tarefa já foi resolvida',
     };
   }
+  if (!ACTIONABLE.includes(task.status)) {
+    // AWAITING_REVIEW: o trabalho está com o encarregado — o operador não
+    // registra novo desfecho enquanto a conferência não devolver ou aprovar.
+    return {
+      kind: 'rejected',
+      code: 'TASK_AWAITING_REVIEW',
+      detail: 'esta tarefa aguarda conferência do encarregado',
+    };
+  }
+  // ADIAR trabalho EM CURSO é decisão de quem o iniciou: terceiro não encerra
+  // a execução alheia por skip. (CONCLUIR por colega segue permitido — a
+  // autoria REAL de quem finalizou fica registrada.)
+  if (
+    command.kind === 'skip' &&
+    task.status === 'IN_PROGRESS' &&
+    task.startedByEmployeeId != null &&
+    task.startedByEmployeeId !== command.performedByEmployeeId
+  ) {
+    return {
+      kind: 'rejected',
+      code: 'TASK_IN_EXECUTION_BY_OTHER',
+      detail: 'outra pessoa está executando esta tarefa',
+    };
+  }
   if (command.kind === 'complete') {
     if (task.requiresPhoto && !command.hasEvidence) {
       return {
@@ -210,14 +266,26 @@ export function decideTaskOutcome(
       numericValue: command.kind === 'skip' ? null : command.numericValue,
       notes: command.notes,
       hasEvidence: command.hasEvidence,
+      startedAt: command.startedAt ?? null,
       idempotencyKey: command.idempotencyKey,
-      resultingStatus: command.kind === 'complete' ? 'DONE' : 'SKIPPED',
+      // concluir ≠ aprovar: com review exigido, a execução finalizada entra
+      // em conferência; adiar (skip) nunca passa por review.
+      resultingStatus:
+        command.kind === 'complete'
+          ? task.requiresReview === true
+            ? 'AWAITING_REVIEW'
+            : 'DONE'
+          : 'SKIPPED',
     },
   };
 }
 
-/** OVERDUE é derivado do vencimento congelado (due_at), nunca digitado. */
+/**
+ * OVERDUE é derivado do vencimento congelado (due_at), nunca digitado.
+ * Trabalho ENTREGUE (aguardando conferência) não conta como atraso de
+ * execução — o relógio parou na submissão.
+ */
 export function isOverdue(status: DailyTaskStatus, dueAt: Date, now: Date): boolean {
-  if (RESOLVED.includes(status)) return false;
+  if (RESOLVED.includes(status) || status === 'AWAITING_REVIEW') return false;
   return dueAt.getTime() < now.getTime();
 }

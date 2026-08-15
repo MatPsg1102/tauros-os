@@ -50,7 +50,14 @@ export type SupervisorCreation =
   | { readonly status: 'submitting' }
   | { readonly status: 'error'; readonly message: string };
 
-export type SupervisorTaskState = 'pending' | 'overdue' | 'done' | 'skipped';
+export type SupervisorTaskState =
+  | 'pending'
+  | 'in-progress'
+  | 'awaiting-review'
+  | 'needs-correction'
+  | 'overdue'
+  | 'done'
+  | 'skipped';
 
 /** 'unassigned' = ocorrências sem responsável (fila do encarregado). */
 export type SupervisorFilter = 'all' | 'unassigned' | SupervisorTaskState;
@@ -150,6 +157,8 @@ export interface CreateTaskFormInput {
   /** Fim máximo planejado HH:MM (fuso da loja). */
   readonly endTime: string;
   readonly requiresPhoto: boolean;
+  /** Exigir conferência do encarregado após a execução. */
+  readonly requiresReview: boolean;
   readonly recurrence: TaskRecurrence;
 }
 
@@ -234,6 +243,9 @@ function stateOf(record: DailyTaskRecord): SupervisorTaskState {
   if (record.status === 'DONE') return 'done';
   if (record.status === 'SKIPPED') return 'skipped';
   if (record.status === 'OVERDUE') return 'overdue';
+  if (record.status === 'IN_PROGRESS') return 'in-progress';
+  if (record.status === 'AWAITING_REVIEW') return 'awaiting-review';
+  if (record.status === 'NEEDS_CORRECTION') return 'needs-correction';
   return 'pending';
 }
 
@@ -484,6 +496,7 @@ export function useSupervisorDashboard(
           // '' ⇒ "definir no dia": null representa a ausência real de responsável
           targetPositionId: input.positionId === '' ? null : input.positionId,
           requiresPhoto: input.requiresPhoto,
+          requiresReview: input.requiresReview,
           expectedMin: null,
           expectedMax: null,
           effectiveFrom: input.effectiveFrom,
