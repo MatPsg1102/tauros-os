@@ -76,6 +76,7 @@ import {
   type SyncTransportPort,
   type TechnicalEventPort,
 } from '@tauros/infrastructure';
+import { CAPABILITY_SESSION_CLOSE, CAPABILITY_SESSION_OPEN } from '@tauros/contracts';
 import type {
   CredentialProvisioningPort,
   OperationalCredentialPort,
@@ -126,7 +127,7 @@ import {
   LocalOperationalCredentialStore,
   LocalPinLockoutStore,
   NullCredentialProvisioning,
-  UnprovisionedAuthorizationSource,
+  PilotBridgeAuthorizationSource,
 } from './identity-adapters.js';
 import { ensureWorkforceBaseline } from './workforce-baseline.js';
 import { FakeSessionSyncTransport } from './transport-fake.js';
@@ -265,12 +266,16 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     clock,
   );
   const lockouts = new LocalPinLockoutStore(appStore, clock);
+  // ⚠️ PILOT BRIDGE (ADR-021 §3): sem backend, o colaborador real identificado
+  // recebe SÓ as capacidades OPERACIONAIS do próprio turno (abrir/fechar) — nunca
+  // conferência/gestão. Trocado pela resolução real de permissões (ADR-018)
+  // quando o backend existir. Ver PilotBridgeAuthorizationSource.
   const localIdentity = new LocalCredentialIdentity(
     credentials,
     lockouts,
     pinPolicy,
     clock,
-    new UnprovisionedAuthorizationSource(),
+    new PilotBridgeAuthorizationSource([CAPABILITY_SESSION_OPEN, CAPABILITY_SESSION_CLOSE]),
   );
   const fixtureIdentity = new FixtureOperatorIdentity({
     now: clock,

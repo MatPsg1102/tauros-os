@@ -5,7 +5,14 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { CAPABILITY_TASK_REVIEW, type EffectiveAuthorization } from '@tauros/contracts';
+import {
+  CAPABILITY_CONFIG_WRITE,
+  CAPABILITY_SESSION_CLOSE,
+  CAPABILITY_SESSION_OPEN,
+  CAPABILITY_TASK_REVIEW,
+  CAPABILITY_WORKFORCE_WRITE,
+  type EffectiveAuthorization,
+} from '@tauros/contracts';
 
 import { buildContainer, type AppContainer } from '../src/wiring/container.js';
 import { FIXTURE_STORE } from '../src/wiring/fixtures.js';
@@ -101,7 +108,7 @@ describe('Fase 4B — cadastro + credencial + identidade real', () => {
     await container.close();
   });
 
-  it('10-15. IDENTIDADE ≠ AUTORIZAÇÃO: João identificado NÃO tem task.review; Elber tem', async () => {
+  it('10-15. PILOT BRIDGE: operador opera o PRÓPRIO turno, mas NÃO confere/gerencia', async () => {
     const container = buildContainer({ deviceId: DEVICE });
     await container.reconcileFromQueue();
     const auth = await elberAuthorization(container);
@@ -114,10 +121,19 @@ describe('Fase 4B — cadastro + credencial + identidade real', () => {
       deviceId: DEVICE,
     });
     if (joao.kind !== 'verified') throw new Error('João deveria verificar');
-    // colaborador novo é identificado, mas SEM capability (nada derivado de
-    // posição/equipe) — o use case de conferência negaria
+    // PILOT BRIDGE: capacidades OPERACIONAIS do próprio turno (abrir/fechar) —
+    // suficiente para executar/finalizar o ciclo do dia
+    expect(joao.authorization.permissions).toContain(CAPABILITY_SESSION_OPEN);
+    expect(joao.authorization.permissions).toContain(CAPABILITY_SESSION_CLOSE);
+    // IDENTIDADE ≠ AUTORIZAÇÃO de GESTÃO: NUNCA conferência/config/RH (nada
+    // derivado de posição/equipe/cargo) — executor não aprova a própria tarefa
     expect(joao.authorization.permissions).not.toContain(CAPABILITY_TASK_REVIEW);
-    // Elber (fixture DEV provisionado) mantém a capability oficial
+    expect(joao.authorization.permissions).not.toContain(CAPABILITY_CONFIG_WRITE);
+    expect(joao.authorization.permissions).not.toContain(CAPABILITY_WORKFORCE_WRITE);
+    // e plataforma segue sem identidade fake
+    expect(joao.authorization.operatorProfileId).toBeNull();
+    expect(joao.authorization.membershipId ?? null).toBeNull();
+    // Elber (fixture DEV provisionado) mantém a capability de conferência
     expect(auth.permissions).toContain(CAPABILITY_TASK_REVIEW);
     await container.close();
   });
