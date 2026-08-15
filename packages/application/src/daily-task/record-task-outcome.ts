@@ -18,6 +18,7 @@ import {
   type DailyTaskRecord,
   type DailyTaskRepositoryPort,
   type EffectiveAuthorization,
+  type EvidenceRepositoryPort,
   type IdGeneratorPort,
   type TaskExecutionEnqueuePort,
   type TaskExecutionRecord,
@@ -36,6 +37,11 @@ export interface RecordTaskOutcomeInput {
   readonly numericValue: number | null;
   readonly notes: string | null;
   readonly hasEvidence: boolean;
+  /**
+   * Evidências REAIS capturadas nesta execução (Operação Compartilhada).
+   * Opcional por compatibilidade: o quadro individual segue com o boolean.
+   */
+  readonly evidenceIds?: readonly string[];
   readonly performedOffline: boolean;
 }
 
@@ -65,15 +71,22 @@ export type RecordTaskOutcomeResult =
       readonly detail: string;
     };
 
-/** Identidade determinística da operação (nunca timestamp/aleatório). */
+/**
+ * Identidade determinística da operação (nunca timestamp/aleatório). O
+ * REENVIO pós-devolução ancora a chave na execução substituída: cada rodada
+ * de correção é UMA operação nova que converge no double-submit — sem jamais
+ * colidir com a submissão original (que é preservada).
+ */
 export function taskOutcomeIdempotencyKeyFor(
   kind: TaskOutcomeKind,
   storeId: string,
   dailyTaskId: string,
   operatorEmployeeId: string,
+  supersedesExecutionId: string | null = null,
 ): string {
   const verb = kind === 'complete' ? 'task-complete' : 'task-skip';
-  return `${verb}:${storeId}:${dailyTaskId}:${operatorEmployeeId}`;
+  const base = `${verb}:${storeId}:${dailyTaskId}:${operatorEmployeeId}`;
+  return supersedesExecutionId === null ? base : `${base}:r:${supersedesExecutionId}`;
 }
 
 export class RecordTaskOutcomeUseCase {
@@ -82,6 +95,8 @@ export class RecordTaskOutcomeUseCase {
     private readonly ids: IdGeneratorPort,
     private readonly repository: DailyTaskRepositoryPort,
     private readonly queue: TaskExecutionEnqueuePort,
+    /** Metadados de evidência — opcional (o quadro individual não anexa). */
+    private readonly evidence?: EvidenceRepositoryPort,
   ) {}
 
   async execute(input: RecordTaskOutcomeInput): Promise<RecordTaskOutcomeResult> {
@@ -102,18 +117,47 @@ export class RecordTaskOutcomeUseCase {
       };
     }
 
-    // replay ANTES de qualquer outra checagem: a garantia de não duplicar não
-    // pode depender do estado local da tarefa.
+    const task = await this.repository.byId(input.dailyTaskId);
+
+    // REENVIO pós-devolução: nova operação ancorada na execução DEVOLVIDA
+    // (independe de a tarefa já ter sido retomada — IN_PROGRESS). Primeira
+    // submissão usa a chave clássica (compatível com a 7.2).
+    let supersedesExecutionId: string | null = null;
+    if (task !== null && task.lastExecutionId !== null && input.kind === 'complete') {
+      const lastExecution = await this.repository.executionById(task.lastExecutionId);
+      if (lastExecution?.review?.outcome === 'RETURNED') {
+        supersedesExecutionId = task.lastExecutionId;
+      }
+    }
     const idempotencyKey = taskOutcomeIdempotencyKeyFor(
       input.kind,
       auth.storeId,
       input.dailyTaskId,
       auth.operatorEmployeeId,
+      supersedesExecutionId,
     );
+    // replay ANTES das demais checagens: não duplicar não depende do resto.
+    // AUTO-REPARO: se a execução persistiu mas a atualização da tarefa se
+    // perdeu (falha entre saveExecution e save), o replay reaplica o estado —
+    // APENAS quando a tarefa ainda aponta o elo esperado (nunca regride um
+    // desfecho posterior).
     const existing = await this.repository.executionByIdempotencyKey(auth.storeId, idempotencyKey);
-    if (existing !== null) return { kind: 'already-recorded', execution: existing };
+    if (existing !== null) {
+      const linksToPrevious =
+        task !== null &&
+        (task.lastExecutionId === null ||
+          task.lastExecutionId === (existing.supersedesExecutionId ?? null));
+      if (linksToPrevious && task.status !== existing.resultingStatus) {
+        await this.repository.save({
+          ...task,
+          status: existing.resultingStatus,
+          lastExecutionId: existing.id,
+          syncStatus: existing.syncStatus,
+        });
+      }
+      return { kind: 'already-recorded', execution: existing };
+    }
 
-    const task = await this.repository.byId(input.dailyTaskId);
     if (task === null) {
       return {
         kind: 'failed',
@@ -125,12 +169,15 @@ export class RecordTaskOutcomeUseCase {
       return { kind: 'failed', code: 'STORE_MISMATCH', detail: 'tarefa pertence a outra loja' };
     }
 
+    const evidenceIds = input.evidenceIds ?? [];
     const view: DailyTaskView = {
       id: task.id,
       storeId: task.storeId,
       workDate: task.workDate,
       status: task.status,
       requiresPhoto: task.template.requiresPhoto,
+      requiresReview: task.template.requiresReview ?? false,
+      startedByEmployeeId: task.startedByEmployeeId ?? null,
       expectedMin: task.expectedMinSnapshot,
       expectedMax: task.expectedMaxSnapshot,
     };
@@ -149,7 +196,8 @@ export class RecordTaskOutcomeUseCase {
         kind: input.kind,
         numericValue: input.numericValue,
         notes: input.notes,
-        hasEvidence: input.hasEvidence,
+        hasEvidence: input.hasEvidence || evidenceIds.length > 0,
+        startedAt: task.startedAt != null ? new Date(task.startedAt) : null,
         idempotencyKey,
       },
       view,
@@ -198,6 +246,10 @@ export class RecordTaskOutcomeUseCase {
       schemaVersion: EXECUTION_SCHEMA_VERSION,
       syncStatus: 'queued',
       resultingStatus: recorded.resultingStatus,
+      startedAt: recorded.startedAt?.toISOString() ?? null,
+      evidenceIds,
+      supersedesExecutionId,
+      review: null,
     };
 
     try {
@@ -219,6 +271,16 @@ export class RecordTaskOutcomeUseCase {
         code: 'PERSISTENCE_FAILED',
         detail: error instanceof Error ? error.message : 'falha ao registrar localmente',
       };
+    }
+
+    // vincula as evidências capturadas a ESTA execução (metadado local)
+    if (this.evidence !== undefined && evidenceIds.length > 0) {
+      const records = await this.evidence.byIds(evidenceIds);
+      for (const record of records) {
+        if (record.executionId === null) {
+          await this.evidence.save({ ...record, executionId: execution.id });
+        }
+      }
     }
 
     const updated: DailyTaskRecord = {

@@ -68,6 +68,9 @@ function stateBadge(task: SupervisorTaskView): ReactElement {
   if (task.state === 'done') return <Badge status="success">Concluída</Badge>;
   if (task.state === 'skipped') return <Badge status="neutral">Adiada</Badge>;
   if (task.state === 'overdue') return <Badge status="warn">Atrasada</Badge>;
+  if (task.state === 'in-progress') return <Badge status="info">Em execução</Badge>;
+  if (task.state === 'awaiting-review') return <Badge status="info">Aguardando conferência</Badge>;
+  if (task.state === 'needs-correction') return <Badge status="warn">Correção necessária</Badge>;
   return <Badge status="info">Pendente</Badge>;
 }
 
@@ -142,6 +145,7 @@ function CreateTaskDrawer({
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('10:00');
   const [requiresPhoto, setRequiresPhoto] = useState(false);
+  const [requiresReview, setRequiresReview] = useState(false);
   const [repeat, setRepeat] = useState(false);
   const [repeatMode, setRepeatMode] = useState<RepeatMode>('weekdays');
   const [weekdays, setWeekdays] = useState<readonly Weekday[]>(ALL_WEEKDAYS);
@@ -167,6 +171,7 @@ function CreateTaskDrawer({
     setStartTime('08:00');
     setEndTime('10:00');
     setRequiresPhoto(false);
+    setRequiresReview(false);
     setRepeat(false);
     setRepeatMode('weekdays');
     setWeekdays(ALL_WEEKDAYS);
@@ -186,6 +191,7 @@ function CreateTaskDrawer({
         startTime,
         endTime,
         requiresPhoto,
+        requiresReview,
         recurrence,
       })
       .then(reset);
@@ -257,6 +263,13 @@ function CreateTaskDrawer({
           label="Exigir foto para concluir"
           checked={requiresPhoto}
           onChange={(event) => setRequiresPhoto(event.target.checked)}
+          disabled={submitting}
+        />
+
+        <Checkbox
+          label="Exigir conferência do encarregado"
+          checked={requiresReview}
+          onChange={(event) => setRequiresReview(event.target.checked)}
           disabled={submitting}
         />
 
@@ -532,12 +545,14 @@ export function SupervisorDashboardScreen({
   teamView,
   teamActions,
   turnoLink,
+  operationsLink,
 }: {
   readonly view: SupervisorDashboardView;
   readonly actions: SupervisorDashboardActions;
   readonly teamView: TeamManagementView;
   readonly teamActions: TeamManagementActions;
   readonly turnoLink: NavigationLinkAdapter;
+  readonly operationsLink: NavigationLinkAdapter;
 }): ReactElement {
   return (
     <Page id="conteudo">
@@ -562,6 +577,14 @@ export function SupervisorDashboardScreen({
         }
         actions={
           <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                operationsLink.navigate?.();
+              }}
+            >
+              Operação de Hoje
+            </Button>
             <Button
               variant="secondary"
               onClick={() => {

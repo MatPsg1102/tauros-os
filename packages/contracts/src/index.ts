@@ -3,6 +3,7 @@ export {
   CAPABILITY_CONFIG_WRITE,
   CAPABILITY_SESSION_CLOSE,
   CAPABILITY_SESSION_OPEN,
+  CAPABILITY_TASK_REVIEW,
   CAPABILITY_WORKFORCE_WRITE,
   PERMISSION_MODEL_VERSION,
 } from './operator-session/capabilities.js';
@@ -37,9 +38,13 @@ export type {
   DailyTaskStatus,
   ExecutionResult,
   ExecutionSource,
+  ReviewTaskExecutionQueuePayload,
+  StartDailyTaskQueuePayload,
   TaskExecutionQueuePayload,
   TaskExecutionRecord,
+  TaskExecutionReview,
   TaskFrequency,
+  TaskReviewOutcome,
   TaskSyncStatus,
   TaskTemplateSnapshot,
 } from './daily-task/record.js';
@@ -49,11 +54,21 @@ export type {
   DailyTaskAuditInput,
   DailyTaskAuditPort,
   DailyTaskRepositoryPort,
+  ReviewTaskExecutionEnqueueInput,
+  SharedOperationEnqueuePort,
   ShiftSchedulePort,
+  StartDailyTaskEnqueueInput,
   TaskExecutionEnqueueInput,
   TaskExecutionEnqueuePort,
   TaskTemplateSourcePort,
 } from './daily-task/ports.js';
+export { ENTITY_ATTACHMENT } from './evidence/record.js';
+export type {
+  EvidenceQueuePayload,
+  EvidenceRecord,
+  EvidenceSyncStatus,
+} from './evidence/record.js';
+export type { EvidenceBlobStorePort, EvidenceRepositoryPort } from './evidence/ports.js';
 export { ALL_WEEKDAYS } from './task-template/recurrence.js';
 export type { RecurrenceKind, TaskRecurrence, Weekday } from './task-template/recurrence.js';
 export { ENTITY_TASK_TEMPLATE } from './task-template/record.js';

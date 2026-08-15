@@ -11,6 +11,9 @@ import type {
   EffectiveAuthorization,
   EmployeeAssignmentRecord,
   EmployeeRecord,
+  EvidenceRecord,
+  EvidenceBlobStorePort,
+  EvidenceRepositoryPort,
   OperationalPositionRecord,
   OperationalPositionView,
   OperatorSessionRecord,
@@ -18,6 +21,7 @@ import type {
   SessionEnqueuePort,
   SessionPolicyPort,
   SessionSyncStatus,
+  SharedOperationEnqueuePort,
   TaskExecutionEnqueuePort,
   TaskExecutionRecord,
   TaskSyncStatus,
@@ -43,6 +47,7 @@ import type {
   WorkforceSyncStatus,
 } from '@tauros/contracts';
 import {
+  ENTITY_ATTACHMENT,
   ENTITY_DAILY_TASK,
   ENTITY_EMPLOYEE,
   ENTITY_EMPLOYEE_ASSIGNMENT,
@@ -68,7 +73,7 @@ import {
 
 export const APP_STATE_SCHEMA: LocalSchema = {
   databaseName: 'tauros-app-state',
-  version: 5,
+  version: 6,
   migrations: [
     {
       toVersion: 1,
@@ -115,7 +120,26 @@ export const APP_STATE_SCHEMA: LocalSchema = {
         { name: 'shift_patterns', indexes: { by_store: 'storeId' } },
       ],
     },
+    {
+      // ADITIVA: Operação Compartilhada — METADADOS de evidência (espelho de
+      // attachments). O BINÁRIO vive em DB próprio (structured clone), nunca
+      // aqui nem na fila.
+      toVersion: 6,
+      description: 'Evidências de execução (metadados locais)',
+      stores: [{ name: 'evidence', indexes: { by_store_task: 'storeTaskKey' } }],
+    },
   ],
+};
+
+/**
+ * Blob store das evidências — DB PRÓPRIO fora do estado JSON do app: o
+ * IndexedDB guarda Blob por structured clone; a fila oficial (JSON puro com
+ * limite de payload) recebe SÓ o metadado. Substituível pelo upload real.
+ */
+export const EVIDENCE_BLOB_SCHEMA: LocalSchema = {
+  databaseName: 'tauros-evidence-blobs',
+  version: 1,
+  migrations: [{ toVersion: 1, description: 'Binários de evidência', stores: [{ name: 'blobs' }] }],
 };
 
 const SESSIONS = 'operator_sessions';
@@ -128,6 +152,8 @@ const TEAMS = 'teams';
 const OPERATIONAL_POSITIONS = 'operational_positions';
 const SHIFT_DEFINITIONS = 'shift_definitions';
 const SHIFT_PATTERNS = 'shift_patterns';
+const EVIDENCE = 'evidence';
+const EVIDENCE_BLOBS = 'blobs';
 
 export class LocalOperatorSessionRepository {
   constructor(private readonly store: LocalStorePort) {}
@@ -240,6 +266,25 @@ export class LocalDailyTaskRepository implements DailyTaskRepositoryPort {
     });
   }
 
+  async executionById(id: string): Promise<TaskExecutionRecord | null> {
+    const row = await this.store.transaction([TASK_EXECUTIONS], 'read', (tx) =>
+      tx.get(TASK_EXECUTIONS, id),
+    );
+    return (row as TaskExecutionRecord | undefined) ?? null;
+  }
+
+  /** Anexa a CONFERÊNCIA — único acréscimo sobre o registro append-only. */
+  async attachExecutionReview(
+    id: string,
+    review: NonNullable<TaskExecutionRecord['review']>,
+  ): Promise<void> {
+    await this.store.transaction([TASK_EXECUTIONS], 'write', async (tx) => {
+      const current = (await tx.get(TASK_EXECUTIONS, id)) as TaskExecutionRow | undefined;
+      if (current === undefined) return;
+      await tx.put(TASK_EXECUTIONS, id, { ...current, review });
+    });
+  }
+
   async allExecutions(): Promise<readonly TaskExecutionRecord[]> {
     const rows = await this.store.transaction([TASK_EXECUTIONS], 'read', (tx) =>
       tx.getAll(TASK_EXECUTIONS),
@@ -291,6 +336,95 @@ export class LocalTaskTemplateRepository implements TaskTemplateRepositoryPort {
       if (current === undefined) return;
       await tx.put(TASK_TEMPLATES, id, { ...current, syncStatus: status });
     });
+  }
+}
+
+// ===== Evidência de execução (Operação Compartilhada) =====
+
+interface EvidenceRow extends EvidenceRecord {
+  readonly storeTaskKey: string;
+}
+
+function toEvidenceRow(record: EvidenceRecord): EvidenceRow {
+  return { ...record, storeTaskKey: `${record.storeId}:${record.dailyTaskId}` };
+}
+
+export class LocalEvidenceRepository implements EvidenceRepositoryPort {
+  constructor(private readonly store: LocalStorePort) {}
+
+  async byDailyTask(storeId: string, dailyTaskId: string): Promise<readonly EvidenceRecord[]> {
+    const rows = await this.store.transaction([EVIDENCE], 'read', (tx) =>
+      tx.getByIndex(EVIDENCE, 'by_store_task', `${storeId}:${dailyTaskId}`),
+    );
+    return rows as EvidenceRecord[];
+  }
+
+  async byIds(ids: readonly string[]): Promise<readonly EvidenceRecord[]> {
+    const rows = await this.store.transaction([EVIDENCE], 'read', async (tx) => {
+      const found: EvidenceRecord[] = [];
+      for (const id of ids) {
+        const row = (await tx.get(EVIDENCE, id)) as EvidenceRecord | undefined;
+        if (row !== undefined) found.push(row);
+      }
+      return found;
+    });
+    return rows;
+  }
+
+  async save(record: EvidenceRecord): Promise<void> {
+    await this.store.transaction([EVIDENCE], 'write', (tx) =>
+      tx.put(EVIDENCE, record.id, toEvidenceRow(record)),
+    );
+  }
+
+  /** Único campo mutável: o reflexo do desfecho da fila. */
+  async updateSyncStatus(id: string, status: EvidenceRecord['syncStatus']): Promise<void> {
+    await this.store.transaction([EVIDENCE], 'write', async (tx) => {
+      const current = (await tx.get(EVIDENCE, id)) as EvidenceRow | undefined;
+      if (current === undefined) return;
+      await tx.put(EVIDENCE, id, { ...current, syncStatus: status });
+    });
+  }
+}
+
+/** Binário no IndexedDB (structured clone — Blob cru, jamais base64). */
+export class IndexedDbEvidenceBlobStore implements EvidenceBlobStorePort {
+  constructor(private readonly store: LocalStorePort) {}
+
+  async put(key: string, blob: Blob): Promise<void> {
+    await this.store.transaction([EVIDENCE_BLOBS], 'write', (tx) =>
+      tx.put(EVIDENCE_BLOBS, key, blob),
+    );
+  }
+
+  async get(key: string): Promise<Blob | null> {
+    const value = await this.store.transaction([EVIDENCE_BLOBS], 'read', (tx) =>
+      tx.get(EVIDENCE_BLOBS, key),
+    );
+    return value instanceof Blob ? value : null;
+  }
+
+  async remove(key: string): Promise<void> {
+    await this.store.transaction([EVIDENCE_BLOBS], 'write', (tx) => tx.delete(EVIDENCE_BLOBS, key));
+  }
+}
+
+/** Blob store em memória (testes) — Map direto, sem clonagem por JSON. */
+export class MemoryEvidenceBlobStore implements EvidenceBlobStorePort {
+  private readonly blobs = new Map<string, Blob>();
+
+  put(key: string, blob: Blob): Promise<void> {
+    this.blobs.set(key, blob);
+    return Promise.resolve();
+  }
+
+  get(key: string): Promise<Blob | null> {
+    return Promise.resolve(this.blobs.get(key) ?? null);
+  }
+
+  remove(key: string): Promise<void> {
+    this.blobs.delete(key);
+    return Promise.resolve();
   }
 }
 
@@ -728,6 +862,7 @@ export class CompositeTaskTemplateSource implements TaskTemplateSourcePort {
         title: record.title,
         frequency: record.frequency,
         requiresPhoto: record.requiresPhoto,
+        requiresReview: record.requiresReview ?? false,
         expectedMin: record.expectedMin,
         expectedMax: record.expectedMax,
         targetPositionId: record.targetPositionId,
@@ -932,6 +1067,116 @@ export class WorkforceAuditAdapter implements WorkforceAuditPort {
       errorCode: input.errorCode ?? null,
     });
     await this.buffer.append(event);
+  }
+}
+
+// ===== Operação Compartilhada na fila oficial =====
+
+export class SharedOperationQueueAdapter implements SharedOperationEnqueuePort {
+  constructor(
+    private readonly queue: LocalQueueRepository,
+    private readonly authorization: () => EffectiveAuthorization,
+    private readonly deviceId: string,
+    private readonly clock: () => Date,
+  ) {}
+
+  /** Snapshot de autorização vinculado ao item (RA-QUEUE-01). */
+  private snapshotNow(auth: EffectiveAuthorization) {
+    const ttlMs = Math.max(1, auth.validUntil.getTime() - this.clock().getTime());
+    return captureSnapshot(
+      {
+        operatorProfileId: auth.operatorProfileId,
+        operatorEmployeeId: auth.operatorEmployeeId,
+        storeId: auth.storeId,
+        sessionId: auth.sessionId,
+        permissions: auth.permissions,
+        ...(auth.permissionModelVersion !== undefined
+          ? { permissionModelVersion: auth.permissionModelVersion }
+          : {}),
+        ...(auth.configVersionRef !== undefined ? { configVersionRef: auth.configVersionRef } : {}),
+        authOrigin: auth.origin === 'online' ? 'online' : 'offline-pin',
+      },
+      ttlMs,
+      this.clock,
+    );
+  }
+
+  async enqueueStartDailyTask(
+    input: Parameters<SharedOperationEnqueuePort['enqueueStartDailyTask']>[0],
+  ): Promise<void> {
+    const auth = this.authorization();
+    await this.queue.enqueue({
+      id: input.queueItemId,
+      operation: 'update',
+      entityType: ENTITY_DAILY_TASK,
+      entityId: input.dailyTask.id,
+      payload: { dailyTask: input.dailyTask },
+      idempotencyKey: input.idempotencyKey,
+      authorization: this.snapshotNow(auth),
+      trace: {
+        storeId: input.dailyTask.storeId,
+        deviceId: this.deviceId,
+        sessionId: auth.sessionId,
+        schemaVersion: 1,
+        priority: 2,
+      },
+    });
+  }
+
+  async enqueueReviewExecution(
+    input: Parameters<SharedOperationEnqueuePort['enqueueReviewExecution']>[0],
+  ): Promise<void> {
+    const auth = this.authorization();
+    // a conferência só pode chegar DEPOIS da execução que confere (DAG)
+    const all = await this.queue.all();
+    const dependsOn = all
+      .filter(
+        (item) =>
+          item.entityType === ENTITY_TASK_EXECUTION &&
+          item.entityId === input.execution.id &&
+          item.operation === 'insert',
+      )
+      .map((item) => item.id);
+    await this.queue.enqueue({
+      id: input.queueItemId,
+      operation: 'update',
+      entityType: ENTITY_TASK_EXECUTION,
+      entityId: input.execution.id,
+      payload: { execution: input.execution },
+      ...(dependsOn.length > 0 ? { dependsOn } : {}),
+      idempotencyKey: input.idempotencyKey,
+      authorization: this.snapshotNow(auth),
+      trace: {
+        storeId: input.execution.storeId,
+        deviceId: this.deviceId,
+        sessionId: auth.sessionId,
+        schemaVersion: 1,
+        priority: 2,
+      },
+    });
+  }
+
+  async enqueueEvidence(
+    input: Parameters<SharedOperationEnqueuePort['enqueueEvidence']>[0],
+  ): Promise<void> {
+    const auth = this.authorization();
+    await this.queue.enqueue({
+      id: input.queueItemId,
+      operation: 'insert',
+      entityType: ENTITY_ATTACHMENT,
+      // SÓ metadado: o binário vive no blob store até o upload real
+      entityId: input.evidence.id,
+      payload: { evidence: input.evidence },
+      idempotencyKey: `evidence-add:${input.evidence.storeId}:${input.evidence.id}`,
+      authorization: this.snapshotNow(auth),
+      trace: {
+        storeId: input.evidence.storeId,
+        deviceId: this.deviceId,
+        sessionId: auth.sessionId,
+        schemaVersion: 1,
+        priority: 2,
+      },
+    });
   }
 }
 

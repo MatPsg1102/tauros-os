@@ -29,6 +29,12 @@ export interface TaskTemplateRecord {
   /** Posição responsável PADRÃO; null = "definir no dia" (sem responsável). */
   readonly targetPositionId: string | null;
   readonly requiresPhoto: boolean;
+  /**
+   * requires_review: a execução finalizada vai para conferência do
+   * encarregado. Opcional por compatibilidade (default false — sem review;
+   * review nunca é obrigatório para tudo).
+   */
+  readonly requiresReview?: boolean;
   readonly expectedMin: number | null;
   readonly expectedMax: number | null;
   readonly active: boolean;

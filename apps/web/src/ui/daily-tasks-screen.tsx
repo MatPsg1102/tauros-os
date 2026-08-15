@@ -37,6 +37,9 @@ function stateBadge(task: DailyTaskItemView): ReactElement {
   if (task.state === 'done') return <Badge status="success">Concluída</Badge>;
   if (task.state === 'skipped') return <Badge status="neutral">Adiada</Badge>;
   if (task.state === 'overdue') return <Badge status="warn">Atrasada</Badge>;
+  if (task.state === 'in-progress') return <Badge status="info">Em execução</Badge>;
+  if (task.state === 'awaiting-review') return <Badge status="info">Aguardando conferência</Badge>;
+  if (task.state === 'needs-correction') return <Badge status="warn">Correção necessária</Badge>;
   return <Badge status="info">A fazer</Badge>;
 }
 
@@ -59,7 +62,10 @@ function TaskCard({
 }): ReactElement {
   const [measurement, setMeasurement] = useState('');
   const [evidence, setEvidence] = useState(false);
-  const resolved = task.state === 'done' || task.state === 'skipped';
+  // resolvida OU em conferência: o operador não age aqui (o encarregado
+  // confere na Operação de Hoje — o domínio também rejeita, isto é só UX)
+  const resolved =
+    task.state === 'done' || task.state === 'skipped' || task.state === 'awaiting-review';
   const sync = syncLabel(task);
 
   return (

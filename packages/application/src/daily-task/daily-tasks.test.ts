@@ -8,6 +8,7 @@ import type {
   EffectiveAuthorization,
   TaskExecutionEnqueueInput,
   TaskExecutionRecord,
+  TaskExecutionReview,
   TaskTemplateSnapshot,
 } from '@tauros/contracts';
 import { PERMISSION_MODEL_VERSION } from '@tauros/contracts';
@@ -102,7 +103,13 @@ function repositoryPort(repo: Repo) {
       repo.executions.set(execution.id, execution);
       return Promise.resolve();
     },
+    executionById: (id: string) => Promise.resolve(repo.executions.get(id) ?? null),
     updateExecutionSyncStatus: () => Promise.resolve(),
+    attachExecutionReview: (id: string, review: TaskExecutionReview) => {
+      const current = repo.executions.get(id);
+      if (current !== undefined) repo.executions.set(id, { ...current, review });
+      return Promise.resolve();
+    },
   };
 }
 

@@ -33,6 +33,33 @@ export {
   RecordTaskOutcomeUseCase,
   taskOutcomeIdempotencyKeyFor,
 } from './daily-task/record-task-outcome.js';
+export { ClaimDailyTaskUseCase } from './daily-task/claim-daily-task.js';
+export type {
+  ClaimDailyTaskFailureCode,
+  ClaimDailyTaskInput,
+  ClaimDailyTaskResult,
+} from './daily-task/claim-daily-task.js';
+export {
+  StartDailyTaskUseCase,
+  taskStartIdempotencyKeyFor,
+} from './daily-task/start-daily-task.js';
+export type {
+  StartDailyTaskFailureCode,
+  StartDailyTaskInput,
+  StartDailyTaskResult,
+} from './daily-task/start-daily-task.js';
+export { ReviewTaskExecutionUseCase } from './daily-task/review-task-execution.js';
+export type {
+  ReviewTaskExecutionFailureCode,
+  ReviewTaskExecutionInput,
+  ReviewTaskExecutionResult,
+} from './daily-task/review-task-execution.js';
+export { AddTaskEvidenceUseCase } from './daily-task/add-task-evidence.js';
+export type {
+  AddTaskEvidenceFailureCode,
+  AddTaskEvidenceInput,
+  AddTaskEvidenceResult,
+} from './daily-task/add-task-evidence.js';
 export { storeDayStartFor } from './shared/operational-day.js';
 export {
   CreateTaskTemplateUseCase,

@@ -6,16 +6,21 @@
 // UI, controllers ou use cases — nenhuma condicional de fake vaza para fora.
 
 import type {
+  AssignDailyTaskQueuePayload,
   ChangeWorkPeriodQueuePayload,
   CloseSessionQueuePayload,
   CreatePositionQueuePayload,
   CreateShiftDefinitionQueuePayload,
   CreateTemplateQueuePayload,
+  EvidenceQueuePayload,
   OpenSessionQueuePayload,
   RegisterEmployeeQueuePayload,
+  ReviewTaskExecutionQueuePayload,
   TaskExecutionQueuePayload,
 } from '@tauros/contracts';
 import {
+  ENTITY_ATTACHMENT,
+  ENTITY_DAILY_TASK,
   ENTITY_EMPLOYEE,
   ENTITY_EMPLOYEE_ASSIGNMENT,
   ENTITY_OPERATIONAL_POSITION,
@@ -39,6 +44,8 @@ export class FakeSessionSyncTransport implements SyncTransportPort {
   private readonly seenIdempotencyKeys = new Set<string>();
   /** Execuções aceitas por (loja, tarefa) — base do conflito entre aparelhos. */
   private readonly serverExecutions = new Map<string, string>();
+  /** Posição responsável aceita por (loja, tarefa) — conflito de "assumir". */
+  private readonly serverClaims = new Map<string, string>();
   /** Modo de indisponibilidade (cenário offline/backend fora). */
   available = true;
   submissions = 0;
@@ -65,6 +72,11 @@ export class FakeSessionSyncTransport implements SyncTransportPort {
     this.serverExecutions.set(this.taskKey(storeId, dailyTaskId), executionId);
   }
 
+  /** Pré-carrega uma tarefa já ASSUMIDA em outro aparelho (concorrência). */
+  seedRemoteClaim(storeId: string, dailyTaskId: string, positionId: string): void {
+    this.serverClaims.set(this.taskKey(storeId, dailyTaskId), positionId);
+  }
+
   submit(item: QueueItem): Promise<SubmitOutcome> {
     this.submissions += 1;
     if (!this.available) {
@@ -79,7 +91,15 @@ export class FakeSessionSyncTransport implements SyncTransportPort {
       return Promise.resolve({ kind: 'persisted' });
     }
     if (item.entityType === ENTITY_TASK_EXECUTION) {
-      return Promise.resolve(this.submitExecution(item));
+      return Promise.resolve(
+        item.operation === 'update' ? this.submitExecutionReview(item) : this.submitExecution(item),
+      );
+    }
+    if (item.entityType === ENTITY_DAILY_TASK) {
+      return Promise.resolve(this.submitDailyTaskUpdate(item));
+    }
+    if (item.entityType === ENTITY_ATTACHMENT) {
+      return Promise.resolve(this.submitEvidence(item));
     }
     if (item.entityType === ENTITY_TASK_TEMPLATE) {
       return Promise.resolve(this.submitTemplate(item));
@@ -220,7 +240,12 @@ export class FakeSessionSyncTransport implements SyncTransportPort {
     const execution = payload.execution;
     const key = this.taskKey(execution.storeId, execution.dailyTaskId);
     const remote = this.serverExecutions.get(key);
-    if (remote !== undefined && remote !== execution.id) {
+    // reenvio pós-devolução declara a execução que substitui — não conflita
+    if (
+      remote !== undefined &&
+      remote !== execution.id &&
+      (execution.supersedesExecutionId ?? null) !== remote
+    ) {
       return {
         kind: 'conflict',
         classification: 'idempotency_divergence',
@@ -229,6 +254,52 @@ export class FakeSessionSyncTransport implements SyncTransportPort {
       };
     }
     this.serverExecutions.set(key, execution.id);
+    this.seenIdempotencyKeys.add(item.idempotencyKey);
+    return { kind: 'persisted' };
+  }
+
+  /** Conferência (update): o servidor revalida a capability oficial. */
+  private submitExecutionReview(item: QueueItem): SubmitOutcome {
+    const payload = item.payload as ReviewTaskExecutionQueuePayload;
+    if (!item.authorization.permissions.includes('task.review')) {
+      return { kind: 'rejected', message: 'sem permissão para conferir execução' };
+    }
+    if (payload.execution.review == null) {
+      return { kind: 'rejected', message: 'conferência sem desfecho' };
+    }
+    this.seenIdempotencyKeys.add(item.idempotencyKey);
+    return { kind: 'persisted' };
+  }
+
+  /**
+   * Update da OCORRÊNCIA (atribuição situacional, assumir, iniciar).
+   * Conflito contratual: dois aparelhos assumindo a MESMA tarefa para
+   * posições diferentes divergem — preserva dados e pede revisão.
+   */
+  private submitDailyTaskUpdate(item: QueueItem): SubmitOutcome {
+    const payload = item.payload as AssignDailyTaskQueuePayload;
+    const task = payload.dailyTask;
+    const key = this.taskKey(task.storeId, task.id);
+    const claimed = this.serverClaims.get(key);
+    const incoming = task.assignedPositionId ?? null;
+    if (claimed !== undefined && incoming !== null && claimed !== incoming) {
+      return {
+        kind: 'conflict',
+        classification: 'idempotency_divergence',
+        remoteEvidence: { assignedPositionId: claimed },
+        message: 'tarefa já assumida em outro dispositivo',
+      };
+    }
+    if (incoming !== null) this.serverClaims.set(key, incoming);
+    this.seenIdempotencyKeys.add(item.idempotencyKey);
+    return { kind: 'persisted' };
+  }
+
+  private submitEvidence(item: QueueItem): SubmitOutcome {
+    const payload = item.payload as EvidenceQueuePayload;
+    if (!payload.evidence.mimeType.startsWith('image/')) {
+      return { kind: 'rejected', message: 'evidência inválida' };
+    }
     this.seenIdempotencyKeys.add(item.idempotencyKey);
     return { kind: 'persisted' };
   }

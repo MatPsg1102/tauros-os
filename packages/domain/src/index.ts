@@ -83,6 +83,31 @@ export type {
   CurrentAssignmentView,
   OpenedAssignment,
 } from './schedule/change-work-period.js';
+export { decideClaimDailyTask } from './daily-task/claim-task.js';
+export type {
+  ClaimableTaskView,
+  ClaimDailyTaskCommand,
+  ClaimDailyTaskDecision,
+  ClaimDailyTaskRejectionCode,
+} from './daily-task/claim-task.js';
+export { decideStartDailyTask } from './daily-task/start-task.js';
+export type {
+  StartableTaskView,
+  StartDailyTaskCommand,
+  StartDailyTaskDecision,
+  StartDailyTaskRejectionCode,
+  StartedTaskPatch,
+} from './daily-task/start-task.js';
+export { decideReviewExecution } from './daily-task/review-execution.js';
+export type {
+  RecordedReview,
+  ReviewableExecutionView,
+  ReviewableTaskView,
+  ReviewExecutionCommand,
+  ReviewExecutionDecision,
+  ReviewExecutionRejectionCode,
+  TaskReviewOutcome,
+} from './daily-task/review-execution.js';
 export { decideTaskOutcome, isOverdue } from './daily-task/task-outcome.js';
 export type {
   DailyTaskStatus,

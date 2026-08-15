@@ -33,6 +33,7 @@ export default function EncarregadoPage(): ReactElement {
         teamView={teamView}
         teamActions={teamActions}
         turnoLink={appLink(router, '/turno')}
+        operationsLink={appLink(router, '/operacao')}
       />
     </AppShell>
   );

@@ -613,3 +613,138 @@ Pendências (antes de TaskExecution V1):
   ocorrências quando a escala muda após materializar.
 - Sync real (Edge Function) das entidades de tarefa; reconciliação de id
   server-side de daily_tasks (pendência antiga).
+
+## Operação Compartilhada V1 — Home operacional + PIN just-in-time + execução + conferência
+
+Decisão de produto: a experiência principal deixa de ser o dashboard
+individual e passa a ser a OPERAÇÃO DE HOJE (/operacao) — quadro
+compartilhado da loja para tablet no chão de operação. VISUALIZAR é do
+dispositivo; cada AÇÃO CRÍTICA (assumir, iniciar, finalizar/enviar,
+conferir, devolver) exige identificação por PIN just-in-time que resolve
+identidade + permissões efetivas, executa com autoria real e DESCARTA a
+credencial — o tablet nunca vira "login" de ninguém (ADR-018/ADR-014
+intactos; a sessão operacional do ator é resolvida/aberta pelo fluxo oficial
+quando a execução exige autoria). Interfaces individuais (/turno,
+/turno/tarefas) preservadas como experiência secundária; a raiz redireciona
+para /operacao.
+
+Classificação formal das lacunas (registrada ANTES do código; NENHUMA ADR —
+nenhuma decisão estrutural mudou):
+
+- Estados intermediários IN_PROGRESS / AWAITING_REVIEW / NEEDS_CORRECTION:
+  a decisão "sem estado intermediário" era ESCOPO da 7.2 — enum
+  daily_task_status evoluiu ADITIVAMENTE; transições antigas (PENDING/
+  OVERDUE → DONE|SKIPPED) permanecem válidas e DONE segue sendo o ÚNICO
+  terminal de aprovação (CONCLUIR ≠ APROVAR).
+- requires_review: novo DADO na definição, mesmo padrão congelado de
+  requires_photo (default false — review nunca é obrigatório para tudo).
+- Evidência: Attachment JÁ estava modelado no schema (storage_path +
+  execution_id; binário fora da linha) — implementada a extensão prevista:
+  EvidenceRecord local espelha attachments; BINÁRIO em blob store próprio
+  (IndexedDB structured clone, DB tauros-evidence-blobs) — nunca base64 na
+  tarefa nem na fila (metadado na fila; upload real ao Storage segue
+  pendência declarada, sem mentir "confirmado").
+- Conferência: colunas ADITIVAS em task_executions (started_at,
+  reviewed_by_*, reviewed_at, review_outcome APPROVED|RETURNED,
+  review_note) — a cadeia superseded_by_id JÁ EXISTENTE carrega o
+  retrabalho: devolução NUNCA apaga execução/evidência; reenvio nasce como
+  NOVA execução encadeada (idempotência do reenvio ancorada na execução
+  devolvida). review_reason (sync/autoria) intocado — conceito distinto.
+- Capability task.review pelo mecanismo oficial ADR-018 (identifier novo;
+  PERMISSION_MODEL_VERSION intacta). Executor NUNCA aprova o próprio
+  trabalho (invariante de domínio, além da capability) — UI hiding ≠
+  authorization, provado por teste chamando o use case diretamente.
+
+Ciclo implementado (domínio puro → use cases → wiring → UI):
+decideClaimDailyTask (assumir = elegibilidade por posição vigente + presença
+planejada oficial — NUNCA capability gerencial; template intacto; próxima
+ocorrência nasce sem responsável) → decideStartDailyTask (horário REAL +
+ator na ocorrência; duplo início do mesmo ator converge; de outro, rejeita —
+substituição de responsável NÃO existe: lacuna registrada, redistribuição é
+a atribuição situacional do encarregado) → decideTaskOutcome estendido
+(IN_PROGRESS/NEEDS_CORRECTION acionáveis; AWAITING_REVIEW bloqueia operador;
+requiresReview → AWAITING_REVIEW; skip nunca passa por review; trabalho
+entregue não conta atraso) → decideReviewExecution (aprovar→DONE /
+devolver→NEEDS_CORRECTION com motivo obrigatório; reconferência idêntica
+converge, divergente rejeita). Novas migrações: SQL aditiva
+20260814020000; IndexedDB app-state v6 (metadados de evidência; upgrade
+v5→v6 testado). Fila oficial reutilizada (start/review/evidence como
+operações novas; claim REUTILIZA a fila da atribuição situacional);
+transporte fake ganhou os cenários contratuais — incluindo o conflito de
+"assumir" concorrente entre aparelhos (idempotency_divergence, dados
+preservados p/ revisão) e a correção de um bug pré-existente (update de
+daily_tasks caía no branch de sessão). Auditoria: transições de negócio via
+outbox oficial + conferência com admin.action/access.denied diretos.
+
+Validação: 113 domínio + 111 aplicação + 110 web (fluxos A–D verticais,
+upgrade v6, axe corrigindo heading-order real) + Chrome real (cenários A–E:
+tarefa simples com reload; foto obrigatória bloqueando envio; conferência
+com evidência visível; devolução→correção→reenvio→aprovação; operador comum
+negado; mobile 390px delta 0 com drawer de conferência aberto). PIN provado
+fora de fila/auditoria/storage/localStorage após a jornada completa. Os
+quadros legados (/turno/tarefas, /encarregado) exibem os estados novos com
+rótulo correto e sem ações do operador em AGUARDANDO CONFERÊNCIA (o domínio
+já rejeitava; o alinhamento é de UX).
+
+DADOS OBJETIVOS agora preservados para métricas futuras (SEM score/gamificação):
+planned_start/due (planejado) × started_at/event_time (real) × reviewed_at;
+review_outcome por execução; cadeia supersedes (retrabalho); contagem de
+execuções/aprovações/devoluções por ator/posição — tudo derivável da trilha
+factual; NENHUM campo de pontuação foi criado.
+
+Pendências para o piloto:
+
+- IDENTIDADE ↔ CADASTRO: o PIN identifica fixtures de desenvolvimento; o
+  vínculo operacional (posição/equipe) vive no cadastro real. Testes/jornada
+  semeiam a ponte explicitamente — ANTES do piloto é preciso unificar
+  (identidade real do backend OU vínculo de PIN no cadastro da Gestão de
+  Equipe). Esta é a pendência número 1.
+- Upload real da evidência ao Storage (binário local até lá) e remoção de
+  evidência capturada por engano.
+- TaskExecution V1 restante: observações estruturadas além da nota,
+  solicitações (subvertical já prevista), substituição formal de responsável.
+
+### Review adversarial (gate adicional pré-PR) — achados e resolução
+
+Quatro lentes independentes (RBAC/segurança, offline/idempotência,
+domínio/estados, UI/regressão) + verificação. 23 achados brutos → 6 BUGS
+REAIS e 2 RISCOS corrigidos ANTES do PR:
+
+1. Autorização JIT vazava após ações de um passo (assumir/iniciar/abrir o
+   dia) e em falhas — o tablet retinha a credencial do último ator.
+   CORRIGIDO: descarte no finally; só os drawers (finalizar/conferir) retêm
+   o ator até fechar; leitura do quadro NUNCA reutiliza autorização residual
+   (nomes dos cards agora vêm do diretório local de ocupantes). Teste prova
+   que enfileirar após uma ação falha sem nova identificação.
+2. reconcileFromQueue reprocessava itens JÁ TERMINAIS (SYNCED/CONFLICT) em
+   ordem aleatória — regressão de atribuição e syncStatus falso. CORRIGIDO:
+   recuperação só para estados não-terminais (defeito latente desde a 7.1,
+   mecanismo geral corrigido).
+3. Falha entre gravar a execução/conferência e atualizar a ocorrência
+   deixava a tarefa presa (replay convergia sem reparar). CORRIGIDO:
+   auto-reparo nos replays com guarda de elo (nunca regride desfecho
+   posterior) — testes de tarefa presa em NEEDS_CORRECTION e
+   AWAITING_REVIEW.
+4. Evidência órfã de tentativa abandonada de OUTRO ator satisfazia o
+   requiresPhoto do submissor. CORRIGIDO: só evidências pendentes capturadas
+   pelo próprio ator entram no envio.
+5. Motivo de devolução vazava de uma conferência para a seguinte (reset por
+   tarefa) e o drawer de finalização apagava medição/observação em erro de
+   validação (reset agora só no fechamento). CORRIGIDOS.
+6. Object URLs de evidência nunca revogadas (crescimento de memória em
+   tablet ligado o dia todo). CORRIGIDO: revogação ao recriar/fechar.
+7. Chave de idempotência do INÍCIO não distinguia a rodada pós-devolução (o
+   novo started_at real seria deduplicado no servidor). CORRIGIDO: chave
+   ancorada na execução devolvida.
+8. Terceiro podia ADIAR (skip) trabalho em curso de outro ator. CORRIGIDO no
+   domínio: skip de IN_PROGRESS só por quem iniciou (concluir por colega
+   segue válido, com autoria real registrada).
+
+FALSO POSITIVO (refutado na verificação): "PIN de fixture explorável em
+produção" — sem backend, flag demo é build deliberado e documentado; a
+validação real de PIN chega com o servidor (pendência já registrada).
+RISCOS ACEITOS/pendências: conflito de conferências/inícios concorrentes
+entre aparelhos no transporte FAKE (modelagem chega com o transporte real);
+counts dos quadros legados não somam os estados novos (telas secundárias);
+"dia sem tarefas" indistinguível de "dia não aberto" no vazio da Home; GC de
+evidências órfãs.

@@ -79,6 +79,48 @@ describe('banco local do app — migração aditiva v2 → v3', () => {
   });
 });
 
+describe('banco local do app — migração aditiva v5 → v6', () => {
+  it('preserva jornadas e cria o store de metadados de evidência', async () => {
+    const V5: LocalSchema = {
+      databaseName: 'tauros-app-state-upgrade-v6',
+      version: 5,
+      migrations: APP_STATE_SCHEMA.migrations.slice(0, 5),
+    };
+    const V6: LocalSchema = { ...APP_STATE_SCHEMA, databaseName: 'tauros-app-state-upgrade-v6' };
+
+    const v5 = new IndexedDbLocalStore(V5);
+    await v5.transaction(['shift_definitions'], 'write', (tx) =>
+      tx.put('shift_definitions', 'def-legado', {
+        id: 'def-legado',
+        storeId: 'store-centro-0001',
+        storeKey: 'store-centro-0001:07:30-19:30',
+      }),
+    );
+    await v5.close();
+
+    const v6 = new IndexedDbLocalStore(V6);
+    const definition = await v6.transaction(['shift_definitions'], 'read', (tx) =>
+      tx.get('shift_definitions', 'def-legado'),
+    );
+    expect(definition).toMatchObject({ id: 'def-legado' });
+
+    // store novo nasce vazio e utilizável (índice por tarefa ativo)
+    await v6.transaction(['evidence'], 'write', (tx) =>
+      tx.put('evidence', 'ev-1', {
+        id: 'ev-1',
+        storeId: 'store-centro-0001',
+        dailyTaskId: 'task-1',
+        storeTaskKey: 'store-centro-0001:task-1',
+      }),
+    );
+    const byTask = await v6.transaction(['evidence'], 'read', (tx) =>
+      tx.getByIndex('evidence', 'by_store_task', 'store-centro-0001:task-1'),
+    );
+    expect(byTask).toHaveLength(1);
+    await v6.close();
+  });
+});
+
 describe('banco local do app — migração aditiva v4 → v5', () => {
   it('preserva o workforce e cria os stores da Escala Operacional', async () => {
     const V4: LocalSchema = {

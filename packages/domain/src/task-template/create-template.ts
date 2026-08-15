@@ -19,6 +19,8 @@ export interface CreateTemplateCommand {
   /** Posição responsável — null = "definir no dia" (sem responsável). */
   readonly targetPositionId: string | null;
   readonly requiresPhoto: boolean;
+  /** Exige conferência do encarregado após a execução (default: não). */
+  readonly requiresReview?: boolean;
   readonly expectedMin: number | null;
   readonly expectedMax: number | null;
   /** Horário do cliente (clock port da aplicação). */
@@ -50,6 +52,7 @@ export interface CreatedTemplate {
   readonly frequency: TemplateFrequency;
   readonly targetPositionId: string | null;
   readonly requiresPhoto: boolean;
+  readonly requiresReview: boolean;
   readonly expectedMin: number | null;
   readonly expectedMax: number | null;
   readonly active: true;
@@ -190,6 +193,7 @@ export function decideCreateTemplate(
       frequency: command.frequency,
       targetPositionId,
       requiresPhoto: command.requiresPhoto,
+      requiresReview: command.requiresReview ?? false,
       expectedMin: command.expectedMin,
       expectedMax: command.expectedMax,
       active: true,
