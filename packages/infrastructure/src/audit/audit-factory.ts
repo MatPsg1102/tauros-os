@@ -76,7 +76,10 @@ export class AuditEventFactory {
       sentAt: this.clock().toISOString(),
       recordedAt: null, // AUTORITATIVO: só o servidor preenche (§5/§10)
       storeId: technical.storeId ?? item?.trace.storeId ?? null,
-      actorId: item?.authorization.operatorProfileId ?? null,
+      // autoria: profile (plataforma) quando provisionado, senão employee
+      // (autoria operacional obrigatória, ADR-021) — nunca perde o ator
+      actorId:
+        item?.authorization.operatorProfileId ?? item?.authorization.operatorEmployeeId ?? null,
       actorType: item ? 'human' : 'system',
       sessionId: technical.sessionId ?? item?.trace.sessionId ?? null,
       deviceId: item?.trace.deviceId ?? null,

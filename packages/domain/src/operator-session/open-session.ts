@@ -17,7 +17,9 @@ export interface OpenSessionCommand {
   readonly sessionId: string;
   readonly storeId: string;
   readonly membershipId: string | null;
-  readonly actorProfileId: string;
+  /** Identidade de plataforma — null até provisionamento server-side (ADR-021). */
+  readonly actorProfileId: string | null;
+  /** Autoria operacional OBRIGATÓRIA (ADR-021). */
   readonly actorEmployeeId: string;
   readonly deviceId: string;
   /** Horário do cliente (clock port da aplicação). */
@@ -35,7 +37,9 @@ export interface OpenedSession {
   readonly id: string;
   readonly storeId: string;
   readonly membershipId: string | null;
-  readonly actorProfileId: string;
+  /** Identidade de plataforma — null até provisionamento server-side (ADR-021). */
+  readonly actorProfileId: string | null;
+  /** Autoria operacional OBRIGATÓRIA (ADR-021). */
   readonly actorEmployeeId: string;
   readonly deviceId: string;
   readonly clientOpenedAt: Date;
@@ -60,10 +64,11 @@ export type OpenSessionDecision =
 const OPERATIONAL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function missingField(command: OpenSessionCommand): string | null {
+  // actorProfileId é identidade de PLATAFORMA opcional (ADR-021): null até
+  // provisionamento. A autoria operacional obrigatória é actorEmployeeId.
   const required: readonly (readonly [string, string])[] = [
     ['sessionId', command.sessionId],
     ['storeId', command.storeId],
-    ['actorProfileId', command.actorProfileId],
     ['actorEmployeeId', command.actorEmployeeId],
     ['deviceId', command.deviceId],
     ['idempotencyKey', command.idempotencyKey],

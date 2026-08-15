@@ -53,7 +53,10 @@ export interface WorkforceAuditInput {
   readonly eventType: 'admin.action' | 'config.changed' | 'access.denied';
   readonly occurredAt: Date;
   readonly storeId: string;
-  readonly actorProfileId: string;
+  /** Autoria operacional OBRIGATÓRIA (ADR-021). */
+  readonly actorEmployeeId: string;
+  /** Identidade de plataforma — null até provisionamento server-side. */
+  readonly actorProfileId: string | null;
   readonly entityType: string;
   readonly entityId: string | null;
   readonly deviceId: string;

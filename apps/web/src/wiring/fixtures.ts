@@ -9,6 +9,11 @@ import {
   CAPABILITY_SESSION_OPEN,
   CAPABILITY_TASK_REVIEW,
   CAPABILITY_WORKFORCE_WRITE,
+  PERMISSION_MODEL_VERSION,
+  type EffectiveAuthorization,
+  type IdentityResult,
+  type IdentityVerificationInput,
+  type OperatorIdentityPort,
 } from '@tauros/contracts';
 
 export class FixturesDisabledError extends Error {
@@ -251,6 +256,52 @@ export function identifyByPin(pin: string): IdentifiedOperator | null {
   const operator = FIXTURE_OPERATORS.find((candidate) => candidate.pin === pin);
   if (operator === undefined) return null;
   return { operator };
+}
+
+/** Dependências do adapter de identidade DEV (relógio + janela + conectividade). */
+export interface FixtureIdentityDeps {
+  readonly now: () => Date;
+  readonly offlineValidityMs: () => Promise<number>;
+  readonly online: () => Promise<boolean>;
+}
+
+/**
+ * Adapter de identidade de DESENVOLVIMENTO que obedece ao MESMO
+ * OperatorIdentityPort do adapter real (ADR-021 §11): os controllers futuros
+ * não precisarão saber se a identidade veio de fixture, credencial local ou
+ * backend. Compara o PIN da fixture EM MEMÓRIA (DEV — sem verifier persistido)
+ * e o descarta. Bloqueado em produção pelo mesmo guard das fixtures.
+ */
+export class FixtureOperatorIdentity implements OperatorIdentityPort {
+  constructor(private readonly deps: FixtureIdentityDeps) {}
+
+  async verify(input: IdentityVerificationInput): Promise<IdentityResult> {
+    if (!fixturesEnabled()) throw new FixturesDisabledError();
+    const operator = FIXTURE_OPERATORS.find(
+      (candidate) => candidate.employeeId === input.employeeId,
+    );
+    // mensagem neutra: não revela se o funcionário/credencial existe (§8)
+    if (operator === undefined || operator.pin !== input.pin) {
+      return { kind: 'rejected', code: 'INVALID_PIN' };
+    }
+    const online = await this.deps.online();
+    const validityMs = await this.deps.offlineValidityMs();
+    const now = this.deps.now();
+    const authorization: EffectiveAuthorization = {
+      operatorEmployeeId: operator.employeeId,
+      operatorProfileId: operator.profileId,
+      membershipId: operator.membershipId,
+      storeId: input.storeId,
+      // identidade PRÓPRIA da sessão — nunca platform:<profileId> (ADR-021 §10)
+      sessionId: `fixture-identity:${input.storeId}:${operator.employeeId}`,
+      permissions: operator.permissions,
+      permissionModelVersion: PERMISSION_MODEL_VERSION,
+      configVersionRef: undefined,
+      validUntil: new Date(now.getTime() + validityMs),
+      origin: online ? 'online' : 'offline-snapshot',
+    };
+    return { kind: 'verified', authorization };
+  }
 }
 
 /**

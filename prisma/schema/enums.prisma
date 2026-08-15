@@ -16,6 +16,17 @@ enum OverrideEffect {
   @@map("override_effect")
 }
 
+/// Ciclo de vida da credencial de PIN (ADR-021). LOCAL_PENDING_PROVISIONING
+/// nasce no cliente offline; o servidor promove a PROVISIONED ao provisionar.
+enum CredentialStatus {
+  LOCAL_PENDING_PROVISIONING
+  PROVISIONED
+  BLOCKED
+  RESET_REQUIRED
+
+  @@map("credential_status")
+}
+
 enum TaskFrequency {
   ONCE
   DAILY

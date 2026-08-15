@@ -17,7 +17,7 @@ export interface ReviewExecutionCommand {
   readonly outcome: TaskReviewOutcome;
   /** Motivo curto — OBRIGATÓRIO na devolução; ignorado na aprovação. */
   readonly note: string | null;
-  readonly reviewerProfileId: string;
+  readonly reviewerProfileId: string | null;
   readonly reviewerEmployeeId: string;
   /** Horário do cliente (clock port da aplicação). */
   readonly reviewedAt: Date;
@@ -47,7 +47,7 @@ export type ReviewExecutionRejectionCode =
 
 export interface RecordedReview {
   readonly outcome: TaskReviewOutcome;
-  readonly reviewedByProfileId: string;
+  readonly reviewedByProfileId: string | null;
   readonly reviewedByEmployeeId: string;
   readonly reviewedAt: Date;
   readonly note: string | null;
@@ -72,11 +72,9 @@ export function decideReviewExecution(
   execution: ReviewableExecutionView | null,
   task: ReviewableTaskView | null,
 ): ReviewExecutionDecision {
-  if (
-    command.executionId.trim() === '' ||
-    command.reviewerProfileId.trim() === '' ||
-    command.reviewerEmployeeId.trim() === ''
-  ) {
+  // reviewerProfileId é identidade de PLATAFORMA opcional (ADR-021): a autoria
+  // obrigatória da conferência é reviewerEmployeeId.
+  if (command.executionId.trim() === '' || command.reviewerEmployeeId.trim() === '') {
     return { kind: 'rejected', code: 'INVALID_COMMAND', detail: 'identificadores obrigatórios' };
   }
   if (Number.isNaN(command.reviewedAt.getTime())) {

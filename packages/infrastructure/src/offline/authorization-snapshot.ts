@@ -5,7 +5,8 @@
 export type AuthOrigin = 'online' | 'offline-pin';
 
 export interface AuthorizationSnapshot {
-  readonly operatorProfileId: string;
+  /** Identidade de plataforma opcional (ADR-021): null até provisionamento. */
+  readonly operatorProfileId: string | null;
   readonly operatorEmployeeId: string;
   readonly storeId: string;
   readonly sessionId: string;
@@ -18,7 +19,7 @@ export interface AuthorizationSnapshot {
 }
 
 export interface SnapshotInput {
-  readonly operatorProfileId: string;
+  readonly operatorProfileId: string | null;
   readonly operatorEmployeeId: string;
   readonly storeId: string;
   readonly sessionId: string;
@@ -28,9 +29,11 @@ export interface SnapshotInput {
   readonly authOrigin: AuthOrigin;
 }
 
-/** Campos que NUNCA podem existir num snapshot (§9 — segurança local). */
+// Campos que NUNCA podem existir num snapshot (§9 — segurança local). Inclui o
+// material de credencial de PIN (ADR-021 §8): salt/verifier/hash jamais entram
+// no snapshot, que carrega CONTEXTO de autorização, nunca o segredo/prova.
 const FORBIDDEN_FIELD_PATTERN =
-  /token|secret|password|senha|pin|credential|authorization|api[_-]?key|service[_-]?role/i;
+  /token|secret|password|senha|pin|credential|authorization|api[_-]?key|service[_-]?role|verifier|salt|hash/i;
 
 export class SnapshotSecurityError extends Error {
   constructor(readonly offendingFields: readonly string[]) {

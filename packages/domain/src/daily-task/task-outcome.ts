@@ -47,7 +47,7 @@ export interface TaskOutcomeCommand {
   readonly storeId: string;
   readonly dailyTaskId: string;
   readonly operatorSessionId: string;
-  readonly performedByProfileId: string;
+  readonly performedByProfileId: string | null;
   readonly performedByEmployeeId: string;
   readonly deviceId: string;
   /** Horário do cliente (clock port da aplicação). */
@@ -80,7 +80,7 @@ export interface RecordedExecution {
   readonly storeId: string;
   readonly dailyTaskId: string;
   readonly operatorSessionId: string;
-  readonly performedByProfileId: string;
+  readonly performedByProfileId: string | null;
   readonly performedByEmployeeId: string;
   readonly deviceId: string;
   readonly eventTime: Date;
@@ -121,11 +121,12 @@ const ACTIONABLE: readonly DailyTaskStatus[] = [
 ];
 
 function missingField(command: TaskOutcomeCommand): string | null {
+  // performedByProfileId é identidade de PLATAFORMA opcional (ADR-021): a
+  // autoria obrigatória da execução é performedByEmployeeId.
   const required: readonly (readonly [string, string])[] = [
     ['executionId', command.executionId],
     ['storeId', command.storeId],
     ['dailyTaskId', command.dailyTaskId],
-    ['performedByProfileId', command.performedByProfileId],
     ['performedByEmployeeId', command.performedByEmployeeId],
     ['deviceId', command.deviceId],
     ['idempotencyKey', command.idempotencyKey],

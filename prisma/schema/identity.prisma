@@ -36,14 +36,39 @@ model Employee {
   active       Boolean  @default(true)
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  profile     Profile?             @relation(fields: [profileId], references: [id])
-  jobTitle    JobTitle?            @relation(fields: [jobTitleId], references: [id])
-  membership  StoreMembership?
-  assignments EmployeeAssignment[]
+  profile       Profile?               @relation(fields: [profileId], references: [id])
+  jobTitle      JobTitle?              @relation(fields: [jobTitleId], references: [id])
+  membership    StoreMembership?
+  assignments   EmployeeAssignment[]
+  pinCredential EmployeePinCredential?
 
   @@unique([storeId, registration])
   @@index([storeId])
   @@map("employees")
+}
+
+/// Credencial de PIN operacional (ADR-021). Conceito SEPARADO de Employee
+/// (relação 1:0..1); Employee nunca ganha coluna pin/password. Guarda o
+/// VERIFIER (hash + salt), nunca o PIN em texto puro. O verifier server-side
+/// não é bearer credential: a autenticação é verificada pelo servidor, que
+/// nunca concede acesso por igualdade de hash recebida do cliente.
+model EmployeePinCredential {
+  id                  String           @id @default(uuid()) @db.Uuid
+  storeId             String           @map("store_id") @db.Uuid
+  employeeId          String           @unique @map("employee_id") @db.Uuid
+  pinHash             String           @map("pin_hash")
+  algorithm           String
+  /// Metadados públicos do KDF (ex.: iterações). Sem segredo.
+  params              Json             @db.JsonB
+  status              CredentialStatus @default(LOCAL_PENDING_PROVISIONING)
+  lastOnlineConfirmedAt DateTime?      @map("last_online_confirmed_at") @db.Timestamptz(6)
+  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([storeId])
+  @@map("employee_pin_credentials")
 }
 
 /// Vínculo ativo profile↔loja — base da autorização efetiva (ADR-018).

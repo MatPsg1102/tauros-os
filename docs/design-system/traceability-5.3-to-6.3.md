@@ -798,3 +798,41 @@ credencial; `profileId`/`actorProfileId` opcionais; `actorEmployeeId` nos
 audit inputs), wiring/controllers (`OperatorIdentityPort` no lugar dos imports
 diretos de `fixtures.ts`), `RegisterEmployeeUseCase` (PIN opcional no
 cadastro), OperatorSession/schema e adapters de credencial local/fake.
+
+### Fase 4A — contratos + schema + domínio/adapters (SEM UI)
+
+Materializada a infraestrutura mínima da ADR-021; os fluxos `/operacao`,
+`/turno` e `/encarregado` NÃO foram tocados (UI é a Fase 4B).
+
+- **Contracts** (`@tauros/contracts`): novo módulo `identity/` —
+  `OperatorIdentityPort` (verify por `employeeId`+PIN), `OperationalCredentialPort`,
+  `PinLockoutStorePort`, `CredentialProvisioningPort` (fronteira futura),
+  `PinPolicy(Port)` e os records `OperationalCredentialRecord`/`PinLockoutState`
+  (+ `ENTITY_OPERATIONAL_CREDENTIAL`/`ENTITY_PIN_LOCKOUT`).
+- **Nullable chain**: `EffectiveAuthorization.operatorProfileId` e
+  `.membershipId` opcionais/null; `actorProfileId` nullable em
+  `OperatorSessionRecord`, execução (`performedByProfileId`/`reviewedByProfileId`),
+  comando de domínio de sessão e snapshot (codec Zod). `actorEmployeeId`
+  passou a autoria OBRIGATÓRIA nos audit inputs; adapters mapeiam
+  `actorId = profileId ?? employeeId` (autoria nunca se perde). Sem UUID fictício.
+- **KDF**: `Pbkdf2PinHasher` (WebCrypto PBKDF2-SHA256) em `@tauros/infrastructure`
+  — implementação do FALLBACK autorizado pelo Baseline (sem dependência WASM
+  nova); `algorithm`/`params` gravados por credencial permitem argon2id futuro.
+- **Adapters locais** (wiring): `LocalOperationalCredentialStore` (verifier +
+  salt, nunca PIN), `LocalPinLockoutStore` (por `employee × device`, persistente),
+  `LocalCredentialIdentity` (orquestra lockout → credencial → janela offline →
+  autorização `offline-snapshot`, sessionId próprio, NUNCA `platform:<profileId>`),
+  `ConfigPinPolicy` (7 chaves `auth.pin.*` do Baseline), `NullCredentialProvisioning`.
+  `FixtureOperatorIdentity` (DEV) implementa o MESMO `OperatorIdentityPort`.
+- **Store local**: `APP_STATE_SCHEMA` v6→v7 ADITIVA com stores DEDICADOS
+  `operational_credentials` e `pin_lockouts` (nunca a fila/evidência).
+- **Schema**: migration Prisma forward-only `20260815120000_add_pin_credentials`
+  (tabela `employee_pin_credentials` 1:0..1 + enum `credential_status` +
+  `operator_sessions.actor_profile_id` DROP NOT NULL); RLS Supabase
+  `20260815120500` (RLS+FORCE, sem policy para `authenticated` — verifier só
+  server-side, nunca bearer). `employees` intacta.
+- **Segurança endurecida**: `FORBIDDEN_FIELD_PATTERN` do snapshot passou a
+  barrar `verifier|salt|hash` além de `pin|credential` (ADR-021 §8).
+- **Testes**: hasher (5), adapters de identidade/segurança (10) e upgrade/reload
+  IndexedDB (2 novos) — pipeline local verde (format, lint, typecheck,
+  boundaries, check:hardcoded, 903 testes, db:validate). Sem PR (4A+4B juntos).

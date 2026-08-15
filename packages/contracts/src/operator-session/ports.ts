@@ -17,10 +17,18 @@ export interface IdGeneratorPort {
   uuid(): string;
 }
 
-/** Snapshot de autorização efetiva disponível à aplicação (ADR-018). */
+/**
+ * Snapshot de autorização efetiva disponível à aplicação (ADR-018/ADR-021).
+ * `operatorEmployeeId` é a autoria operacional OBRIGATÓRIA; `operatorProfileId`
+ * e `membershipId` são identidade de PLATAFORMA — null até o provisionamento
+ * server-side real (nunca UUID fictício). As permissões continuam vindo do
+ * resolver/snapshot: PIN autentica, não autoriza.
+ */
 export interface EffectiveAuthorization {
-  readonly operatorProfileId: string;
+  readonly operatorProfileId: string | null;
   readonly operatorEmployeeId: string;
+  /** Vínculo de autorização server-side; null enquanto não provisionado. */
+  readonly membershipId?: string | null;
   readonly storeId: string;
   readonly sessionId: string;
   readonly permissions: readonly string[];
@@ -82,7 +90,10 @@ export interface SessionAuditInput {
     'auth.login.success' | 'auth.login.failure' | 'access.denied' | 'auth.session.ended';
   readonly occurredAt: Date;
   readonly storeId: string;
-  readonly actorProfileId: string;
+  /** Autoria operacional OBRIGATÓRIA (ADR-021). */
+  readonly actorEmployeeId: string;
+  /** Identidade de plataforma — null até provisionamento server-side. */
+  readonly actorProfileId: string | null;
   readonly sessionId: string | null;
   readonly deviceId: string;
   readonly correlationId: string;

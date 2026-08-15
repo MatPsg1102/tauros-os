@@ -125,3 +125,23 @@ export type {
   ScheduleRepositoryPort,
   ScheduleResolutionSources,
 } from './schedule/ports.js';
+export { ENTITY_OPERATIONAL_CREDENTIAL, ENTITY_PIN_LOCKOUT } from './identity/record.js';
+export type {
+  CredentialStatus,
+  OperationalCredentialRecord,
+  PinLockoutState,
+} from './identity/record.js';
+export type {
+  CredentialProvisioningPort,
+  CredentialVerification,
+  IdentityRejectionCode,
+  IdentityResult,
+  IdentityVerificationInput,
+  OperationalCredentialPort,
+  OperatorIdentityPort,
+  PinLockoutStorePort,
+  PinPolicy,
+  PinPolicyPort,
+  ProvisioningResult,
+  UpsertCredentialInput,
+} from './identity/ports.js';
