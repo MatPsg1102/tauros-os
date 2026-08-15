@@ -884,3 +884,41 @@ identidade que se identifica e opera.
   (b) "Alterar PIN" — o port já suporta (upsert sobrescreve); UI dedicada é a
   próxima etapa; (c) validação Chromium manual dos cenários A–F recomendada
   antes do piloto (cobertos hoje pela suíte jsdom de UI).
+
+## Pilot Readiness V1 — validação operacional (sem nova feature)
+
+Preparação para o primeiro piloto controlado no açougue. Nenhuma feature/engine
+/ADR nova; um único ajuste de código (PILOT BRIDGE) para desbloquear o ciclo.
+
+**BLOCKER encontrado e corrigido — operador real não finalizava.** Um
+colaborador real identificado tinha `permissions: []` (honesto, ADR-021), mas
+FINALIZAR uma tarefa abre uma sessão de autoria que exige `session.open` →
+ciclo do dia travado para operadores reais. Correção: `PilotBridgeAuthorizationSource`
+(marcado ⚠️ PILOT BRIDGE, removível sem quebrar arquitetura) concede a QUALQUER
+colaborador identificado SÓ as capacidades OPERACIONAIS do próprio turno
+(`session.open`/`session.close`). Invariantes preservadas: NUNCA `task.review`/
+`config.write`/`workforce.write` (conferência/gestão seguem só do encarregado);
+grant CHAPADO por identidade (não deriva de posição/equipe/cargo);
+profileId/membershipId permanecem null (sem plataforma fake). Substituído pela
+resolução real de permissões efetivas quando o backend existir.
+
+**Classificação de ações (piloto):** elegibilidade/identidade (visualizar,
+assumir, iniciar, anexar foto) funcionam para operador real; operacionais do
+turno (finalizar/enviar, abrir/fechar turno) exigem `session.open`/`close` —
+providas pelo PILOT BRIDGE; gestão (criar/atribuir tarefa, conferir, devolver,
+aprovar, cadastrar colaborador, alterar escala) exigem capability e seguem só do
+encarregado (hoje Elber DEV provisionado por fixture — documentado).
+
+**Validação Chromium real (CDP puro):** /operacao renderiza sem overflow
+horizontal em desktop, 390px e 834px; diálogo de identificação com seleção de
+colaborador (roster real ∪ DEV: Marina/Carlos/Rita/Elber) + PIN de 6 células;
+fluxo completo identidade→autorização→painel provado no navegador com IndexedDB
+real (Elber seleciona → PIN 123456 → "Boa noite, Elber" + "+ Nova tarefa").
+Mobile/tablet legíveis e glove-first. Cenários A–F funcionais cobertos pela
+suíte jsdom (127 testes web, componentes React reais) + teste de integração de
+container do PILOT BRIDGE.
+
+Pipeline completo VERDE (format, lint, typecheck 16/16, boundaries,
+check:hardcoded, 908 testes, build, db:validate, audit). **Pronto para piloto
+controlado** com o encarregado usando identidade DEV provisionada (bridge
+documentado) até o backend de identidade real.

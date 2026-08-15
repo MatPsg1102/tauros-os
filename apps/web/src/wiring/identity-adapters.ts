@@ -339,6 +339,42 @@ export class UnprovisionedAuthorizationSource implements LocalAuthorizationSourc
 }
 
 /**
+ * ⚠️ PILOT BRIDGE — NÃO É ARQUITETURA DEFINITIVA (ADR-021 §3).
+ *
+ * Sem backend, um colaborador real identificado não tem membership/snapshot
+ * provisionado (permissions vazias) e por isso NÃO consegue nem FINALIZAR uma
+ * tarefa (o registro de execução abre uma sessão que exige `session.open`). Para
+ * o PRIMEIRO PILOTO CONTROLADO, concedemos a QUALQUER colaborador identificado
+ * um conjunto MÍNIMO e EXPLÍCITO de capacidades OPERACIONAIS — abrir/fechar o
+ * PRÓPRIO turno — o suficiente para executar o ciclo do dia.
+ *
+ * INVARIANTES que este bridge PRESERVA (não afrouxa a segurança do piloto):
+ *  • concede SÓ `session.open`/`session.close` — NUNCA `task.review`,
+ *    `config.write` ou `workforce.write`: conferência/gestão seguem restritas
+ *    ao encarregado autorizado (executor nunca aprova a própria tarefa);
+ *  • é um grant CHAPADO por identidade — NÃO deriva de posição/equipe/cargo;
+ *  • profileId/membershipId permanecem null — sem identidade de plataforma fake.
+ *
+ * Substituído pela resolução real de permissões efetivas (ADR-018) assim que o
+ * backend de identidade/membership existir. Removê-lo NÃO quebra a arquitetura.
+ */
+export class PilotBridgeAuthorizationSource implements LocalAuthorizationSource {
+  constructor(private readonly operationalCapabilities: readonly string[]) {}
+
+  forEmployee(): Promise<{
+    readonly permissions: readonly string[];
+    readonly profileId: string | null;
+    readonly membershipId: string | null;
+  }> {
+    return Promise.resolve({
+      permissions: [...this.operationalCapabilities],
+      profileId: null,
+      membershipId: null,
+    });
+  }
+}
+
+/**
  * Fronteira ÚNICA de identidade para a aplicação (ADR-021 §3/§12): resolve por
  * PRECEDÊNCIA DETERMINÍSTICA — credencial local REAL vence a fixture DEV quando
  * existir para aquele employeeId; caso contrário, cai no adapter DEV. O
