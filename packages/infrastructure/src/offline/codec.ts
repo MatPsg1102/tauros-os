@@ -26,7 +26,8 @@ const persistedError = z.object({
 });
 
 const persistedSnapshot = z.object({
-  operatorProfileId: z.string().min(1),
+  // Identidade de plataforma opcional (ADR-021): null até provisionamento.
+  operatorProfileId: z.string().min(1).nullable(),
   operatorEmployeeId: z.string().min(1),
   storeId: z.string().min(1),
   sessionId: z.string().min(1),

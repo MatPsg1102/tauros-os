@@ -7,20 +7,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { EffectiveAuthorization, OperatorSessionRecord } from '@tauros/contracts';
-import {
-  CAPABILITY_CONFIG_WRITE,
-  CAPABILITY_SESSION_OPEN,
-  PERMISSION_MODEL_VERSION,
-} from '@tauros/contracts';
+import { CAPABILITY_CONFIG_WRITE, CAPABILITY_SESSION_OPEN } from '@tauros/contracts';
 
 import type { AppContainer } from '../wiring/container.js';
-import {
-  FIXTURE_OPERATORS,
-  FIXTURE_STORE,
-  identifyOperator,
-  type FixtureOperator,
-} from '../wiring/fixtures.js';
-import { useOperatorSession } from './operator-session-context.js';
+import { FIXTURE_STORE } from '../wiring/fixtures.js';
+import { useOperatorSession, type IdentifiedOperatorView } from './operator-session-context.js';
 
 export type ShiftOpeningPhase =
   | 'bootstrapping'
@@ -43,6 +34,8 @@ export interface ShiftOpeningView {
   readonly store: { readonly name: string; readonly timeZone: string };
   readonly operator: { readonly name: string; readonly employeeId: string } | null;
   readonly operators: readonly { readonly employeeId: string; readonly name: string }[];
+  /** Comprimento do PIN vindo do Configuration Engine (nunca hardcoded). */
+  readonly pinLength: number;
   readonly operationalDate: string | null;
   readonly connectivity: ConnectivityView;
   readonly session: OperatorSessionRecord | null;
@@ -64,29 +57,14 @@ export interface ShiftOpeningActions {
   readonly reset: () => void;
 }
 
-function toAuthorization(
-  operator: FixtureOperator,
-  now: Date,
-  validityMs: number,
-  online: boolean,
-): EffectiveAuthorization {
-  return {
-    operatorProfileId: operator.profileId,
-    operatorEmployeeId: operator.employeeId,
-    storeId: FIXTURE_STORE.id,
-    sessionId: `platform:${operator.profileId}`,
-    permissions: operator.permissions,
-    permissionModelVersion: PERMISSION_MODEL_VERSION,
-    configVersionRef: undefined,
-    validUntil: new Date(now.getTime() + validityMs),
-    origin: online ? 'online' : 'offline-snapshot',
-  };
-}
-
 export function useShiftOpening(container: AppContainer): [ShiftOpeningView, ShiftOpeningActions] {
   const identity = useOperatorSession();
   const [phase, setPhase] = useState<ShiftOpeningPhase>('bootstrapping');
-  const [operator, setOperator] = useState<FixtureOperator | null>(null);
+  const [operator, setOperator] = useState<IdentifiedOperatorView | null>(null);
+  const [operators, setOperators] = useState<
+    readonly { readonly employeeId: string; readonly name: string }[]
+  >([]);
+  const [pinLength, setPinLength] = useState(6);
   const [session, setSession] = useState<OperatorSessionRecord | null>(null);
   const [identifyError, setIdentifyError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -126,26 +104,30 @@ export function useShiftOpening(container: AppContainer): [ShiftOpeningView, Shi
     void (async () => {
       await container.reconcileFromQueue();
       await refreshConnectivity();
+      const [roster, policy] = await Promise.all([
+        container.identityRoster(FIXTURE_STORE.id),
+        container.pinPolicy.resolve(FIXTURE_STORE.id),
+      ]);
       if (cancelled) return;
+      setOperators(roster);
+      setPinLength(policy.length);
       const shared = identityRef.current;
+      // restaura a identificação vinda do CONTEXTO — origem-agnóstica (real ou
+      // DEV): navegar entre rotas nunca exige novo PIN.
       if (shared.operator !== null && shared.authorization !== null) {
-        const sharedEmployeeId = shared.operator.employeeId;
-        const fixture = FIXTURE_OPERATORS.find(
-          (candidate) => candidate.employeeId === sharedEmployeeId,
-        );
-        if (fixture !== undefined) {
-          authRef.current = shared.authorization;
-          container.setAuthorization(shared.authorization);
-          setOperator(fixture);
-          const active = await refreshSession(fixture.employeeId);
-          if (cancelled) return;
-          if (active !== null) {
-            setPhase(active.syncStatus === 'conflict' ? 'conflict' : 'opened');
-            return;
-          }
-          setPhase(fixture.permissions.includes(CAPABILITY_SESSION_OPEN) ? 'ready' : 'denied');
+        authRef.current = shared.authorization;
+        container.setAuthorization(shared.authorization);
+        setOperator(shared.operator);
+        const active = await refreshSession(shared.operator.employeeId);
+        if (cancelled) return;
+        if (active !== null) {
+          setPhase(active.syncStatus === 'conflict' ? 'conflict' : 'opened');
           return;
         }
+        setPhase(
+          shared.operator.permissions.includes(CAPABILITY_SESSION_OPEN) ? 'ready' : 'denied',
+        );
+        return;
       }
       setPhase('identify');
     })();
@@ -157,48 +139,50 @@ export function useShiftOpening(container: AppContainer): [ShiftOpeningView, Shi
   const identify = useCallback(
     async (employeeId: string, pin: string) => {
       setIdentifyError(null);
-      const identified = identifyOperator(employeeId, pin);
-      if (identified === null) {
-        // mensagem NÃO revela se o identificador existe (§8)
-        setIdentifyError('Não foi possível confirmar a identificação. Confira e tente novamente.');
+      // employeeId identifica, PIN verifica (ADR-021); o port resolve a origem.
+      const outcome = await container.identity.verify({
+        storeId: FIXTURE_STORE.id,
+        employeeId,
+        pin,
+        deviceId: container.deviceId,
+      });
+      if (outcome.kind === 'rejected') {
+        setIdentifyError(
+          outcome.code === 'LOCKED_OUT'
+            ? 'Muitas tentativas. Aguarde alguns minutos e tente novamente.'
+            : 'Não foi possível confirmar a identificação. Confira e tente novamente.',
+        );
         return;
       }
-      const readiness = await refreshConnectivity();
-      const policy = await container.config.resolve('auth.pin.offlineValidityMs', FIXTURE_STORE.id);
-      const authorization = toAuthorization(
-        identified.operator,
-        container.clock(),
-        policy,
-        readiness.readyToSync,
-      );
+      const authorization = outcome.authorization;
+      const name =
+        operators.find((candidate) => candidate.employeeId === employeeId)?.name ?? employeeId;
+      const view: IdentifiedOperatorView = {
+        employeeId: authorization.operatorEmployeeId,
+        profileId: authorization.operatorProfileId,
+        membershipId: authorization.membershipId ?? null,
+        name,
+        permissions: authorization.permissions,
+      };
       authRef.current = authorization;
       container.setAuthorization(authorization);
-      setOperator(identified.operator);
+      setOperator(view);
       // publica no contexto de cliente: o quadro de tarefas usa a MESMA
       // identificação, sem reidentificar ao navegar entre rotas
-      identity.identify(
-        {
-          employeeId: identified.operator.employeeId,
-          profileId: identified.operator.profileId,
-          membershipId: identified.operator.membershipId,
-          name: identified.operator.name,
-          permissions: identified.operator.permissions,
-        },
-        authorization,
-      );
+      identity.identify(view, authorization);
 
-      const active = await refreshSession(identified.operator.employeeId);
+      const active = await refreshSession(view.employeeId);
       if (active !== null) {
         setPhase(active.syncStatus === 'conflict' ? 'conflict' : 'opened');
         return;
       }
-      if (!identified.operator.permissions.includes(CAPABILITY_SESSION_OPEN)) {
+      if (!authorization.permissions.includes(CAPABILITY_SESSION_OPEN)) {
         setPhase('denied');
         return;
       }
       setPhase('ready');
     },
-    [container, identity, refreshConnectivity, refreshSession],
+    [container, identity, operators, refreshSession],
   );
 
   const openShift = useCallback(async () => {
@@ -216,6 +200,7 @@ export function useShiftOpening(container: AppContainer): [ShiftOpeningView, Shi
         authorization,
         membershipId: current.membershipId,
         deviceId: container.deviceId,
+        // membership de plataforma opcional (ADR-021): null até provisionamento
         storeTimeZone: FIXTURE_STORE.timeZone,
         openedOffline: !readiness.readyToSync,
       });
@@ -279,7 +264,8 @@ export function useShiftOpening(container: AppContainer): [ShiftOpeningView, Shi
     phase,
     store: { name: FIXTURE_STORE.name, timeZone: FIXTURE_STORE.timeZone },
     operator: operator === null ? null : { name: operator.name, employeeId: operator.employeeId },
-    operators: FIXTURE_OPERATORS.map(({ employeeId, name }) => ({ employeeId, name })),
+    operators,
+    pinLength,
     operationalDate: session?.operationalDate ?? null,
     connectivity,
     session,

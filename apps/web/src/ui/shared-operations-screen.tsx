@@ -27,6 +27,7 @@ import {
   PageHeader,
   PinInput,
   Section,
+  Select,
   SegmentedControl,
   Stack,
   Text,
@@ -152,9 +153,15 @@ function ActionPinDialog({
   readonly view: SharedOperationsView;
   readonly actions: SharedOperationsActions;
 }): ReactElement {
+  const [employeeId, setEmployeeId] = useState('');
   const [pin, setPin] = useState('');
   const request = view.pinRequest;
   const open = request !== null;
+  const pinLength = request?.pinLength ?? 6;
+  const reset = (): void => {
+    setEmployeeId('');
+    setPin('');
+  };
   return (
     <Dialog
       open={open}
@@ -163,15 +170,33 @@ function ActionPinDialog({
       closeLabel="Cancelar"
       onOpenChange={(isOpen) => {
         if (!isOpen) {
-          setPin('');
+          reset();
           actions.cancelPin();
         }
       }}
     >
       <Stack gap={200}>
+        {/* employeeId IDENTIFICA; o PIN VERIFICA (ADR-021). A seleção não é
+            autorização: o que cada um pode fazer vem da autorização efetiva. */}
+        <Field label="Quem está executando?">
+          <Select
+            value={employeeId}
+            onChange={(event) => setEmployeeId(event.target.value)}
+            disabled={request?.busy === true}
+          >
+            <option value="" disabled>
+              Selecione o colaborador
+            </option>
+            {(request?.candidates ?? []).map((candidate) => (
+              <option key={candidate.employeeId} value={candidate.employeeId}>
+                {candidate.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
         <PinInput
-          key={`${request?.action ?? 'pin'}:${request?.error ?? ''}`}
-          length={4}
+          key={`${request?.action ?? 'pin'}:${employeeId}:${request?.error ?? ''}`}
+          length={pinLength}
           label="PIN"
           mask
           onValueChange={setPin}
@@ -183,11 +208,12 @@ function ActionPinDialog({
         )}
         <Button
           fullWidth
-          disabled={pin.length < 4 || request?.busy === true}
+          disabled={employeeId === '' || pin.length < pinLength || request?.busy === true}
           onClick={() => {
+            const selected = employeeId;
             const value = pin;
-            setPin('');
-            void actions.confirmPin(value);
+            reset();
+            void actions.confirmPin(selected, value);
           }}
         >
           {request?.busy === true ? 'Confirmando…' : 'Confirmar'}

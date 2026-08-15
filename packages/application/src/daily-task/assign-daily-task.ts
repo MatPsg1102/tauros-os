@@ -85,6 +85,7 @@ export class AssignDailyTaskUseCase {
         eventType: 'access.denied',
         occurredAt: now,
         storeId: auth.storeId,
+        actorEmployeeId: auth.operatorEmployeeId,
         actorProfileId: auth.operatorProfileId,
         dailyTaskId: input.dailyTaskId,
         deviceId: input.deviceId,

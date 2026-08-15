@@ -74,6 +74,8 @@ export interface TeamManagementView {
   /** Decisão pronta: a seção só existe para quem gere a equipe. */
   readonly enabled: boolean;
   readonly canRegisterEmployee: boolean;
+  /** Comprimento do PIN vindo do Configuration Engine (nunca hardcoded). */
+  readonly pinLength: number;
   /** Posição é dado configurável (ADR-019) — decisão própria. */
   readonly canCreatePosition: boolean;
   readonly tab: TeamManagementTab;
@@ -108,6 +110,13 @@ export interface RegisterEmployeeFormInput {
   readonly teamId: string;
   /** Jornada do vínculo ('' = sem jornada declarada). */
   readonly shiftDefinitionId: string;
+  /**
+   * Identidade operacional (ADR-021): PIN + confirmação. Opcional — o
+   * colaborador EXISTE sem credencial (cadastro administrativo); a credencial
+   * é conceito separado. Vazio nos dois campos ⇒ cadastra sem PIN.
+   */
+  readonly pin: string;
+  readonly pinConfirmation: string;
 }
 
 export interface CreateShiftDefinitionFormInput {
@@ -169,6 +178,7 @@ export function useTeamManagement(
   });
   const [definitionItems, setDefinitionItems] = useState<readonly ShiftDefinitionItemView[]>([]);
   const [scheduleDays, setScheduleDays] = useState<readonly PlannedScheduleDay[]>([]);
+  const [pinLength, setPinLength] = useState(6);
   const registeringRef = useRef(false);
   const creatingRef = useRef(false);
   const creatingDefinitionRef = useRef(false);
@@ -184,14 +194,16 @@ export function useTeamManagement(
 
   const load = useCallback(async () => {
     const storeId = FIXTURE_STORE.id;
-    const [employees, assignments, teamRecords, positionRecords, definitionRecords] =
+    const [employees, assignments, teamRecords, positionRecords, definitionRecords, policy] =
       await Promise.all([
         container.workforce.employees(storeId),
         container.workforce.assignments(storeId),
         container.workforce.teams(storeId),
         container.workforce.positions(storeId),
         container.scheduleData.definitions(storeId),
+        container.pinPolicy.resolve(storeId),
       ]);
+    setPinLength(policy.length);
     const teamById = new Map(teamRecords.map((team) => [team.id, team]));
     const positionById = new Map(positionRecords.map((position) => [position.id, position]));
     const definitionById = new Map(
@@ -301,6 +313,19 @@ export function useTeamManagement(
       if (authorization === null) return;
       // guarda de submissão concorrente (duplo clique / StrictMode)
       if (registeringRef.current) return;
+      // credencial é OPCIONAL, mas se informada precisa confirmar e respeitar o
+      // comprimento do Baseline (nunca hardcoded). Validado ANTES de cadastrar.
+      const wantsPin = input.pin !== '' || input.pinConfirmation !== '';
+      if (wantsPin) {
+        if (input.pin.length !== pinLength) {
+          setRegistration({ status: 'error', message: `O PIN deve ter ${pinLength} dígitos.` });
+          return;
+        }
+        if (input.pin !== input.pinConfirmation) {
+          setRegistration({ status: 'error', message: 'A confirmação do PIN não confere.' });
+          return;
+        }
+      }
       registeringRef.current = true;
       setRegistration({ status: 'submitting' });
       try {
@@ -353,6 +378,18 @@ export function useTeamManagement(
               return;
           }
         }
+        // credencial de PIN: conceito SEPARADO do Employee (ADR-021). Criada
+        // APÓS o cadastro, com o employeeId REAL; offline ⇒ nasce
+        // LOCAL_PENDING_PROVISIONING (só neste aparelho até sincronizar). O PIN
+        // é derivado em verifier e descartado — nunca entra no EmployeeRecord.
+        if (wantsPin && result.kind === 'registered') {
+          await container.credentials.upsert({
+            storeId: result.employee.storeId,
+            employeeId: result.employee.id,
+            pin: input.pin,
+            status: 'LOCAL_PENDING_PROVISIONING',
+          });
+        }
         // aparece imediatamente (persistido localmente); sincroniza depois
         if (readiness.readyToSync) await container.drainAndReflect();
         setRegistration({ status: 'idle' });
@@ -362,7 +399,7 @@ export function useTeamManagement(
         registeringRef.current = false;
       }
     },
-    [authorization, container, load],
+    [authorization, container, load, pinLength],
   );
 
   const createPosition = useCallback(
@@ -504,6 +541,7 @@ export function useTeamManagement(
     enabled,
     canRegisterEmployee: enabled,
     canCreatePosition,
+    pinLength,
     tab,
     members: members.filter((member) => memberFilter === null || member.teamId === memberFilter),
     memberFilter,

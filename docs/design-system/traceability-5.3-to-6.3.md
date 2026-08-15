@@ -748,3 +748,139 @@ entre aparelhos no transporte FAKE (modelagem chega com o transporte real);
 counts dos quadros legados não somam os estados novos (telas secundárias);
 "dia sem tarefas" indistinguível de "dia não aberto" no vazio da Home; GC de
 evidências órfãs.
+
+## Identidade Operacional V1 — decisão de arquitetura (ADR-021)
+
+Ataca a **pendência número 1** do piloto (IDENTIDADE ↔ CADASTRO): eliminar a
+ponte/fixture entre PIN e `employeeId` para que o colaborador cadastrado na
+Gestão de Equipe seja a mesma identidade que informa PIN, executa e (quando
+autorizado) confere — com autoria e auditoria reais, sem sistema paralelo de
+autenticação.
+
+DECISÃO congelada em [ADR-021](../adr/ADR-021-operational-identity.md):
+
+- **Employee é a identidade operacional**; `employeeId` é a autoria
+  obrigatória. `profileId`/`membershipId` (plataforma) são OPCIONAIS até
+  provisionamento real — proibido UUID fictício (`platform:<fakeProfileId>`).
+- **UX:** ação → selecionar colaborador → PIN → verificar aquele `employeeId`.
+  `employeeId` identifica; PIN verifica. PIN NÃO precisa ser único na loja.
+- **Credencial separada de Employee** (`OperationalCredential`, relação
+  1:0..1): salt + verifier + algo/params + status + lastOnlineConfirmedAt.
+  Proibido `employee.pin`; nunca PIN em texto puro.
+- **Política 100% do Configuration Baseline §3** (nenhum número na ADR):
+  `auth.pin.length/hashAlgo/kdfIterations/offlineValidityMs/maxAttempts/`
+  `lockoutStepsMs/hardReauthAfter`. A UI lê o comprimento do Config Engine.
+- **Servidor é autoridade final:** online é PIN via TLS → RPC verifica contra
+  o hash. Cliente NUNCA envia verifier/hash; hash NÃO é bearer credential.
+- **Offline** verifica local sob janela + snapshot + permission_model_version
+  - lockout; `origin = offline-snapshot`; servidor revalida no sync.
+- **Credencial offline** nasce `LOCAL_PENDING_PROVISIONING` (só no dispositivo
+  de origem); provisionamento oficial no sync. Sem peer-to-peer.
+- **Canal próprio** `OperationalCredentialPort` / `CredentialProvisioningPort`
+  (adapter local/fake agora): credencial NÃO trafega na fila operacional
+  genérica, nem em snapshot/audit/log/URL.
+- **Lockout** local por `employeeId × deviceId`, persistente, sem PIN,
+  auditado sanitizado; não substitui rate-limit server-side.
+- **PIN autentica, não autoriza:** capabilities seguem do PermissionResolver /
+  snapshot (ADR-018 permanece autoridade). Fixtures (`1234`) continuam DEV e
+  passarão a implementar o MESMO `OperatorIdentityPort`.
+
+Consequência de SCHEMA (autorizada conceitualmente; migration só na Fase 4):
+tabela aditiva `employee_pin_credentials` (1:0..1; `employees` inalterada) e
+relaxamento de `operator_sessions.actor_profile_id` para NULL (forward-only).
+OperatorSession passa a `actorEmployeeId` obrigatório + `actorProfileId`
+opcional. Auditoria: autoria por `actorEmployeeId` (+ `actorProfileId` quando
+existir). Threat model honesto: PIN curto protege contra uso oportunista, NÃO
+contra forense de dispositivo comprometido — sem promessa de senha forte.
+
+Fase 4 (implementação) tocará: `@tauros/contracts` (ports de identidade e
+credencial; `profileId`/`actorProfileId` opcionais; `actorEmployeeId` nos
+audit inputs), wiring/controllers (`OperatorIdentityPort` no lugar dos imports
+diretos de `fixtures.ts`), `RegisterEmployeeUseCase` (PIN opcional no
+cadastro), OperatorSession/schema e adapters de credencial local/fake.
+
+### Fase 4A — contratos + schema + domínio/adapters (SEM UI)
+
+Materializada a infraestrutura mínima da ADR-021; os fluxos `/operacao`,
+`/turno` e `/encarregado` NÃO foram tocados (UI é a Fase 4B).
+
+- **Contracts** (`@tauros/contracts`): novo módulo `identity/` —
+  `OperatorIdentityPort` (verify por `employeeId`+PIN), `OperationalCredentialPort`,
+  `PinLockoutStorePort`, `CredentialProvisioningPort` (fronteira futura),
+  `PinPolicy(Port)` e os records `OperationalCredentialRecord`/`PinLockoutState`
+  (+ `ENTITY_OPERATIONAL_CREDENTIAL`/`ENTITY_PIN_LOCKOUT`).
+- **Nullable chain**: `EffectiveAuthorization.operatorProfileId` e
+  `.membershipId` opcionais/null; `actorProfileId` nullable em
+  `OperatorSessionRecord`, execução (`performedByProfileId`/`reviewedByProfileId`),
+  comando de domínio de sessão e snapshot (codec Zod). `actorEmployeeId`
+  passou a autoria OBRIGATÓRIA nos audit inputs; adapters mapeiam
+  `actorId = profileId ?? employeeId` (autoria nunca se perde). Sem UUID fictício.
+- **KDF**: `Pbkdf2PinHasher` (WebCrypto PBKDF2-SHA256) em `@tauros/infrastructure`
+  — implementação do FALLBACK autorizado pelo Baseline (sem dependência WASM
+  nova); `algorithm`/`params` gravados por credencial permitem argon2id futuro.
+- **Adapters locais** (wiring): `LocalOperationalCredentialStore` (verifier +
+  salt, nunca PIN), `LocalPinLockoutStore` (por `employee × device`, persistente),
+  `LocalCredentialIdentity` (orquestra lockout → credencial → janela offline →
+  autorização `offline-snapshot`, sessionId próprio, NUNCA `platform:<profileId>`),
+  `ConfigPinPolicy` (7 chaves `auth.pin.*` do Baseline), `NullCredentialProvisioning`.
+  `FixtureOperatorIdentity` (DEV) implementa o MESMO `OperatorIdentityPort`.
+- **Store local**: `APP_STATE_SCHEMA` v6→v7 ADITIVA com stores DEDICADOS
+  `operational_credentials` e `pin_lockouts` (nunca a fila/evidência).
+- **Schema**: migration Prisma forward-only `20260815120000_add_pin_credentials`
+  (tabela `employee_pin_credentials` 1:0..1 + enum `credential_status` +
+  `operator_sessions.actor_profile_id` DROP NOT NULL); RLS Supabase
+  `20260815120500` (RLS+FORCE, sem policy para `authenticated` — verifier só
+  server-side, nunca bearer). `employees` intacta.
+- **Segurança endurecida**: `FORBIDDEN_FIELD_PATTERN` do snapshot passou a
+  barrar `verifier|salt|hash` além de `pin|credential` (ADR-021 §8).
+- **Testes**: hasher (5), adapters de identidade/segurança (10) e upgrade/reload
+  IndexedDB (2 novos) — pipeline local verde (format, lint, typecheck,
+  boundaries, check:hardcoded, 903 testes, db:validate). Sem PR (4A+4B juntos).
+
+### Fase 4B — wiring + cadastro de PIN + fluxos reais (com UI)
+
+Conecta a infraestrutura da 4A aos fluxos reais. A **pendência número 1**
+(IDENTIDADE ↔ CADASTRO) está fechada: o colaborador cadastrado é a MESMA
+identidade que se identifica e opera.
+
+- **Wiring** (`container.ts`): `container.identity` = `CompositeOperatorIdentity`
+  (credencial local REAL vence fixture DEV por precedência determinística) +
+  `container.credentials`/`pinPolicy`/`credentialProvisioning`/`identityRoster`.
+  Fonte de autorização = `UnprovisionedAuthorizationSource` (HONESTA): sem
+  backend, colaborador real é IDENTIFICADO mas permissions = [] — nada derivado
+  de posição/equipe/cargo/nome. `platform:<profileId>` eliminado (sessionId
+  próprio da identidade local).
+- **UX unificada** (ADR-021): ação → **selecionar colaborador** → PIN →
+  `verify(employeeId, pin)`. Migrados `/operacao` (diálogo com seleção),
+  `/turno` e `/encarregado` (o antigo `supervisorFixture()` por capability foi
+  removido — ninguém é encarregado por nome; o painel só abre se a AUTORIZAÇÃO
+  trouxer config.write). Comprimento do PIN vem do `PinPolicy` (nunca hardcoded).
+- **Controllers desacoplados**: NENHUM controller importa `identifyByPin`/
+  `identifyOperator`/`FIXTURE_OPERATORS` (removidos de fixtures.ts). Fixtures DEV
+  entram só via `FixtureOperatorIdentity` (mesmo `OperatorIdentityPort`). PINs
+  DEV migrados para 6 dígitos = comprimento do Baseline.
+- **Cadastro + PIN**: `/encarregado` ganha seção "Identidade operacional" (PIN +
+  confirmar, comprimento da política). `RegisterEmployeeUseCase` cria o
+  Employee; o controller cria a `OperationalCredential` SEPARADA (offline ⇒
+  `LOCAL_PENDING_PROVISIONING`). PIN validado (confirmação + comprimento),
+  derivado em verifier e descartado — nunca no `EmployeeRecord`. PIN é OPCIONAL:
+  o colaborador existe sem credencial (cadastro administrativo).
+- **IDENTIDADE ≠ AUTORIZAÇÃO** (o teste mais importante): João cadastrado +
+  PIN é identificado, mas SEM `task.review`/`session.open` — conferir/abrir
+  turno negados pelos use cases; assumir/iniciar (elegibilidade operacional)
+  seguem. Elber DEV (provisionado via fixture) mantém `task.review`.
+- **Lockout** conectado (`LocalPinLockoutStore`): erros consecutivos →
+  mensagem neutra → lockout do Baseline; sobrevive à recriação do container
+  (reload). **Autoria**: execução/evidência/review/sessão/auditoria usam
+  `employeeId` real; `profileId` null não quebra nada.
+- **Testes**: +5 de integração de container (`operational-identity-4b`:
+  cadastro→credencial separada, identidade+autoria real, identidade≠autorização,
+  lockout persistente, PIN/verifier fora da fila) + suíte UI existente migrada
+  para seleção+PIN de 6 dígitos. Pipeline completo VERDE: format, lint,
+  typecheck (16/16), boundaries, check:hardcoded, **908 testes**, build,
+  db:validate, pnpm audit (0 vulnerabilidades).
+- **Pendências para o piloto**: (a) sem backend, autorização real de
+  colaborador novo depende de provisionamento (hoje identificado-sem-permissão);
+  (b) "Alterar PIN" — o port já suporta (upsert sobrescreve); UI dedicada é a
+  próxima etapa; (c) validação Chromium manual dos cenários A–F recomendada
+  antes do piloto (cobertos hoje pela suíte jsdom de UI).

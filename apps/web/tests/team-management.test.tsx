@@ -64,8 +64,13 @@ function app(route: 'encarregado' | 'turno' = 'encarregado'): ReactElement {
 
 async function identifyElber(): Promise<void> {
   await screen.findByText('Digite seu PIN');
-  const cells = screen.getAllByLabelText(/Dígito \d de 4/);
-  ['1', '2', '3', '4'].forEach((digit, index) => {
+  fireEvent.change(screen.getByRole('combobox'), {
+    target: {
+      value: (screen.getByRole('option', { name: 'Elber' }) as HTMLOptionElement).value,
+    },
+  });
+  const cells = screen.getAllByLabelText(/Dígito \d de 6/);
+  ['1', '2', '3', '4', '5', '6'].forEach((digit, index) => {
     fireEvent.keyDown(cells[index] as HTMLElement, { key: digit });
   });
   fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
@@ -159,8 +164,8 @@ describe('acesso à Gestão de Equipe (capability)', () => {
     const select = await screen.findByRole('combobox');
     const option = (screen.getByText('Marina Álvares') as HTMLOptionElement).value;
     fireEvent.change(select, { target: { value: option } });
-    const cells = screen.getAllByLabelText(/Dígito \d de 4/);
-    ['2', '4', '6', '8'].forEach((digit, index) => {
+    const cells = screen.getAllByLabelText(/Dígito \d de 6/);
+    ['2', '2', '4', '4', '6', '6'].forEach((digit, index) => {
       fireEvent.keyDown(cells[index] as HTMLElement, { key: digit });
     });
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar identificação' }));
@@ -389,6 +394,6 @@ describe('segurança do PIN de desenvolvimento', () => {
     const serialized = JSON.stringify(dump);
     expect(serialized.includes('"1234"')).toBe(false);
     expect(serialized.toLowerCase().includes('pin')).toBe(false);
-    expect(JSON.stringify({ ...window.localStorage })).not.toContain('1234');
+    expect(JSON.stringify({ ...window.localStorage })).not.toContain('123456');
   });
 });

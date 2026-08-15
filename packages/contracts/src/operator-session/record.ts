@@ -21,7 +21,9 @@ export interface OperatorSessionRecord {
   readonly id: string;
   readonly storeId: string;
   readonly membershipId: string | null;
-  readonly actorProfileId: string;
+  /** Identidade de plataforma — null até provisionamento server-side (ADR-021). */
+  readonly actorProfileId: string | null;
+  /** Autoria operacional OBRIGATÓRIA (ADR-021). */
   readonly actorEmployeeId: string;
   readonly deviceId: string;
   /** Horário do CLIENTE (clock port) — o servidor preenche opened_at. */

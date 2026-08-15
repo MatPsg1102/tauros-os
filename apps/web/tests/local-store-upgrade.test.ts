@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { IndexedDbLocalStore, type LocalSchema } from '@tauros/infrastructure';
 
 import { APP_STATE_SCHEMA } from '../src/wiring/adapters.js';
+import { LocalPinLockoutStore } from '../src/wiring/identity-adapters.js';
 
 const V1_SCHEMA: LocalSchema = {
   databaseName: 'tauros-app-state-upgrade',
@@ -118,6 +119,64 @@ describe('banco local do app — migração aditiva v5 → v6', () => {
     );
     expect(byTask).toHaveLength(1);
     await v6.close();
+  });
+});
+
+describe('banco local do app — migração aditiva v6 → v7 (Identidade Operacional)', () => {
+  it('14. preserva dados e cria os stores DEDICADOS de credencial e lockout', async () => {
+    const V6: LocalSchema = {
+      databaseName: 'tauros-app-state-upgrade-v7',
+      version: 6,
+      migrations: APP_STATE_SCHEMA.migrations.slice(0, 6),
+    };
+    const V7: LocalSchema = { ...APP_STATE_SCHEMA, databaseName: 'tauros-app-state-upgrade-v7' };
+
+    const v6 = new IndexedDbLocalStore(V6);
+    await v6.transaction(['operator_sessions'], 'write', (tx) =>
+      tx.put('operator_sessions', LEGACY_SESSION.id, LEGACY_SESSION),
+    );
+    await v6.close();
+
+    const v7 = new IndexedDbLocalStore(V7);
+    const session = await v7.transaction(['operator_sessions'], 'read', (tx) =>
+      tx.get('operator_sessions', LEGACY_SESSION.id),
+    );
+    expect(session).toMatchObject({ id: LEGACY_SESSION.id });
+
+    // stores novos nascem vazios e utilizáveis (jamais reutilizam fila/evidência)
+    const creds = await v7.transaction(['operational_credentials'], 'read', (tx) =>
+      tx.getAll('operational_credentials'),
+    );
+    const locks = await v7.transaction(['pin_lockouts'], 'read', (tx) => tx.getAll('pin_lockouts'));
+    expect(creds).toHaveLength(0);
+    expect(locks).toHaveLength(0);
+    await v7.close();
+  });
+
+  it('5. estado de lockout SOBREVIVE ao reload (fecha e reabre o banco)', async () => {
+    const SCHEMA: LocalSchema = { ...APP_STATE_SCHEMA, databaseName: 'tauros-app-state-lockout' };
+    const policy = { maxAttempts: 2, lockoutStepsMs: [1000] };
+    const clock = (): Date => new Date('2026-08-15T08:00:00.000Z');
+
+    const first = new IndexedDbLocalStore(SCHEMA);
+    const store1 = new LocalPinLockoutStore(first, clock);
+    await store1.registerFailure('store-centro-0001', 'emp-9001', 'device-web-01', policy);
+    const locked = await store1.registerFailure(
+      'store-centro-0001',
+      'emp-9001',
+      'device-web-01',
+      policy,
+    );
+    expect(locked.lockedUntil).not.toBeNull();
+    await first.close();
+
+    // "reload": novo processo/instância sobre o MESMO banco persistido
+    const second = new IndexedDbLocalStore(SCHEMA);
+    const store2 = new LocalPinLockoutStore(second, clock);
+    const persisted = await store2.get('store-centro-0001', 'emp-9001', 'device-web-01');
+    expect(persisted?.consecutiveFailures).toBe(2);
+    expect(persisted?.lockedUntil).not.toBeNull();
+    await second.close();
   });
 });
 

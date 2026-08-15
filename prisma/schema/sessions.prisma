@@ -5,7 +5,9 @@ model OperatorSession {
   id                     String            @id @db.Uuid
   storeId                String            @map("store_id") @db.Uuid
   membershipId           String?           @map("membership_id") @db.Uuid
-  actorProfileId         String            @map("actor_profile_id") @db.Uuid
+  // Identidade de plataforma opcional (ADR-021): null até provisionamento
+  // server-side. A autoria operacional obrigatória é actor_employee_id.
+  actorProfileId         String?           @map("actor_profile_id") @db.Uuid
   actorEmployeeId        String            @map("actor_employee_id") @db.Uuid
   deviceId               String            @map("device_id")
   openedAt               DateTime?         @map("opened_at") @db.Timestamptz(6)

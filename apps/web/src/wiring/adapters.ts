@@ -73,7 +73,7 @@ import {
 
 export const APP_STATE_SCHEMA: LocalSchema = {
   databaseName: 'tauros-app-state',
-  version: 6,
+  version: 7,
   migrations: [
     {
       toVersion: 1,
@@ -127,6 +127,17 @@ export const APP_STATE_SCHEMA: LocalSchema = {
       toVersion: 6,
       description: 'Evidências de execução (metadados locais)',
       stores: [{ name: 'evidence', indexes: { by_store_task: 'storeTaskKey' } }],
+    },
+    {
+      // ADITIVA: Identidade Operacional (ADR-021) — stores DEDICADOS da
+      // credencial de PIN (verifier local) e do lockout por device. NUNCA
+      // reutiliza o store de fila/evidência; nunca guarda PIN em texto puro.
+      toVersion: 7,
+      description: 'Credencial de PIN local e estado de lockout (Identidade Operacional)',
+      stores: [
+        { name: 'operational_credentials', indexes: { by_store: 'storeId' } },
+        { name: 'pin_lockouts', indexes: { by_store: 'storeId' } },
+      ],
     },
   ],
 };
@@ -888,7 +899,7 @@ export class TemplateAuditAdapter implements TemplateAuditPort {
       eventType: input.eventType,
       occurredAt: input.occurredAt,
       storeId: input.storeId,
-      actorId: input.actorProfileId,
+      actorId: input.actorProfileId ?? input.actorEmployeeId,
       actorType: 'human',
       sessionId: null,
       deviceId: input.deviceId,
@@ -1054,7 +1065,7 @@ export class WorkforceAuditAdapter implements WorkforceAuditPort {
       eventType: input.eventType,
       occurredAt: input.occurredAt,
       storeId: input.storeId,
-      actorId: input.actorProfileId,
+      actorId: input.actorProfileId ?? input.actorEmployeeId,
       actorType: 'human',
       sessionId: null,
       deviceId: input.deviceId,
@@ -1245,7 +1256,7 @@ export class DailyTaskAuditAdapter implements DailyTaskAuditPort {
       eventType: input.eventType,
       occurredAt: input.occurredAt,
       storeId: input.storeId,
-      actorId: input.actorProfileId,
+      actorId: input.actorProfileId ?? input.actorEmployeeId,
       actorType: 'human',
       sessionId: null,
       deviceId: input.deviceId,
@@ -1296,7 +1307,7 @@ export class SessionAuditAdapter implements SessionAuditPort {
       eventType: input.eventType,
       occurredAt: input.occurredAt,
       storeId: input.storeId,
-      actorId: input.actorProfileId,
+      actorId: input.actorProfileId ?? input.actorEmployeeId,
       actorType: 'human',
       sessionId: input.sessionId,
       deviceId: input.deviceId,

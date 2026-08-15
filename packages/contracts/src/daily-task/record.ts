@@ -116,7 +116,9 @@ export interface TaskExecutionRecord {
   readonly dailyTaskId: string;
   readonly operatorSessionId: string;
   readonly executionSource: ExecutionSource;
-  readonly performedByProfileId: string;
+  /** Identidade de plataforma — null até provisionamento server-side (ADR-021). */
+  readonly performedByProfileId: string | null;
+  /** Autoria operacional OBRIGATÓRIA (ADR-021). */
   readonly performedByEmployeeId: string;
   readonly deviceId: string;
   readonly result: ExecutionResult;
@@ -153,7 +155,9 @@ export interface TaskExecutionRecord {
 
 export interface TaskExecutionReview {
   readonly outcome: TaskReviewOutcome;
-  readonly reviewedByProfileId: string;
+  /** Identidade de plataforma — null até provisionamento server-side (ADR-021). */
+  readonly reviewedByProfileId: string | null;
+  /** Autoria operacional OBRIGATÓRIA (ADR-021). */
   readonly reviewedByEmployeeId: string;
   readonly reviewedAt: string;
   /** Motivo curto obrigatório na devolução; null na aprovação. */

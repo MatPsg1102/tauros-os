@@ -10,7 +10,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { operationalDateFor, storeDayStartFor } from '@tauros/application';
 import type {
   DailyTaskRecord,
-  EffectiveAuthorization,
   OperationalPositionView,
   OperatorSessionRecord,
   TaskRecurrence,
@@ -21,17 +20,11 @@ import {
   CAPABILITY_CONFIG_WRITE,
   CAPABILITY_SESSION_CLOSE,
   CAPABILITY_SESSION_OPEN,
-  PERMISSION_MODEL_VERSION,
 } from '@tauros/contracts';
 
 import type { AppContainer } from '../wiring/container.js';
-import {
-  FIXTURE_OPERATORS,
-  FIXTURE_STORE,
-  identifyOperator,
-  type FixtureOperator,
-} from '../wiring/fixtures.js';
-import { useOperatorSession } from './operator-session-context.js';
+import { FIXTURE_STORE } from '../wiring/fixtures.js';
+import { useOperatorSession, type IdentifiedOperatorView } from './operator-session-context.js';
 import { useShiftClosing, type ShiftClosingView } from './use-shift-closing.js';
 
 export type SupervisorPhase =
@@ -125,6 +118,10 @@ export interface SupervisorDashboardView {
   readonly phase: SupervisorPhase;
   readonly creation: SupervisorCreation;
   readonly supervisorName: string | null;
+  /** Colaboradores selecionáveis na identificação (nome + employeeId; sem PIN). */
+  readonly operators: readonly { readonly employeeId: string; readonly name: string }[];
+  /** Comprimento do PIN vindo do Configuration Engine (nunca hardcoded). */
+  readonly pinLength: number;
   readonly greeting: string;
   readonly operationalDate: string | null;
   readonly permissions: SupervisorPermissions;
@@ -163,7 +160,7 @@ export interface CreateTaskFormInput {
 }
 
 export interface SupervisorDashboardActions {
-  readonly identify: (pin: string) => Promise<void>;
+  readonly identify: (employeeId: string, pin: string) => Promise<void>;
   readonly openCreate: () => void;
   readonly closeCreate: () => void;
   readonly createTask: (input: CreateTaskFormInput) => Promise<void>;
@@ -178,14 +175,6 @@ export interface SupervisorDashboardActions {
   readonly reload: () => Promise<void>;
   /** Saída do estado expirado: limpa a identificação e volta ao PIN. */
   readonly reidentify: () => void;
-}
-
-/** Encarregados de desenvolvimento = fixtures com a capability oficial. */
-function supervisorFixture(): FixtureOperator | null {
-  return (
-    FIXTURE_OPERATORS.find((operator) => operator.permissions.includes(CAPABILITY_CONFIG_WRITE)) ??
-    null
-  );
 }
 
 function greetingFor(now: Date, timeZone: string): string {
@@ -220,25 +209,6 @@ function hhmmToMinutes(value: string): number {
   return hours * 60 + minutes;
 }
 
-function toAuthorization(
-  operator: FixtureOperator,
-  now: Date,
-  validityMs: number,
-  online: boolean,
-): EffectiveAuthorization {
-  return {
-    operatorProfileId: operator.profileId,
-    operatorEmployeeId: operator.employeeId,
-    storeId: FIXTURE_STORE.id,
-    sessionId: `platform:${operator.profileId}`,
-    permissions: operator.permissions,
-    permissionModelVersion: PERMISSION_MODEL_VERSION,
-    configVersionRef: undefined,
-    validUntil: new Date(now.getTime() + validityMs),
-    origin: online ? 'online' : 'offline-snapshot',
-  };
-}
-
 function stateOf(record: DailyTaskRecord): SupervisorTaskState {
   if (record.status === 'DONE') return 'done';
   if (record.status === 'SKIPPED') return 'skipped';
@@ -263,6 +233,10 @@ export function useSupervisorDashboard(
   const [filter, setFilter] = useState<SupervisorFilter>('all');
   const [positionFilter, setPositionFilter] = useState<string | null>(null);
   const [identifyError, setIdentifyError] = useState<string | null>(null);
+  const [operators, setOperators] = useState<
+    readonly { readonly employeeId: string; readonly name: string }[]
+  >([]);
+  const [pinLength, setPinLength] = useState(6);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [connectivity, setConnectivity] = useState({ deviceOnline: true, readyToSync: false });
   const [session, setSession] = useState<OperatorSessionRecord | null>(null);
@@ -419,7 +393,13 @@ export function useSupervisorDashboard(
     let cancelled = false;
     void (async () => {
       await container.reconcileFromQueue();
+      const [roster, policy] = await Promise.all([
+        container.identityRoster(FIXTURE_STORE.id),
+        container.pinPolicy.resolve(FIXTURE_STORE.id),
+      ]);
       if (cancelled) return;
+      setOperators(roster);
+      setPinLength(policy.length);
       if (identity.operator === null) {
         setPhase('identify');
         return;
@@ -432,44 +412,40 @@ export function useSupervisorDashboard(
   }, [container, identity.operator, load]);
 
   const identify = useCallback(
-    async (pin: string) => {
+    async (employeeId: string, pin: string) => {
       setIdentifyError(null);
-      const supervisor = supervisorFixture();
-      if (supervisor === null) {
-        setPhase('denied');
+      // employeeId identifica, PIN verifica (ADR-021). Ninguém é "encarregado"
+      // por nome/cargo: quem seleciona a si mesmo e prova o PIN é identificado;
+      // o painel de gestão só abre se a AUTORIZAÇÃO trouxer config.write.
+      const outcome = await container.identity.verify({
+        storeId: FIXTURE_STORE.id,
+        employeeId,
+        pin,
+        deviceId: container.deviceId,
+      });
+      if (outcome.kind === 'rejected') {
+        setIdentifyError(
+          outcome.code === 'LOCKED_OUT'
+            ? 'Muitas tentativas. Aguarde alguns minutos e tente novamente.'
+            : 'Não foi possível confirmar a identificação. Confira e tente novamente.',
+        );
         return;
       }
-      const identified = identifyOperator(supervisor.employeeId, pin);
-      if (identified === null) {
-        // mensagem NÃO revela detalhes internos nem se o PIN existe
-        setIdentifyError('Não foi possível confirmar a identificação. Confira e tente novamente.');
-        return;
-      }
-      const readiness = await container.connectivity.assess();
-      const validityMs = await container.config.resolve(
-        'auth.pin.offlineValidityMs',
-        FIXTURE_STORE.id,
-      );
-      const auth = toAuthorization(
-        identified.operator,
-        container.clock(),
-        validityMs,
-        readiness.readyToSync,
-      );
+      const auth = outcome.authorization;
+      const name =
+        operators.find((candidate) => candidate.employeeId === employeeId)?.name ?? employeeId;
+      const view: IdentifiedOperatorView = {
+        employeeId: auth.operatorEmployeeId,
+        profileId: auth.operatorProfileId,
+        membershipId: auth.membershipId ?? null,
+        name,
+        permissions: auth.permissions,
+      };
       container.setAuthorization(auth);
-      identity.identify(
-        {
-          employeeId: identified.operator.employeeId,
-          profileId: identified.operator.profileId,
-          membershipId: identified.operator.membershipId,
-          name: identified.operator.name,
-          permissions: identified.operator.permissions,
-        },
-        auth,
-      );
+      identity.identify(view, auth);
       setPhase('loading');
     },
-    [container, identity],
+    [container, identity, operators],
   );
 
   const openCreate = useCallback(() => {
@@ -666,7 +642,9 @@ export function useSupervisorDashboard(
   const view: SupervisorDashboardView = {
     phase,
     creation,
-    supervisorName: identity.operator?.name ?? supervisorFixture()?.name ?? null,
+    supervisorName: identity.operator?.name ?? null,
+    operators,
+    pinLength,
     greeting: greetingFor(container.clock(), FIXTURE_STORE.timeZone),
     operationalDate:
       phase === 'ready' ? operationalDateFor(container.clock(), FIXTURE_STORE.timeZone) : null,

@@ -18,10 +18,9 @@ import type {
   EvidenceRecord,
   TaskExecutionRecord,
 } from '@tauros/contracts';
-import { PERMISSION_MODEL_VERSION } from '@tauros/contracts';
 
 import type { AppContainer } from '../wiring/container.js';
-import { FIXTURE_STORE, identifyByPin, type FixtureOperator } from '../wiring/fixtures.js';
+import { FIXTURE_STORE } from '../wiring/fixtures.js';
 
 /** Ações críticas que exigem identificação just-in-time. */
 export type SharedAction = 'materialize' | 'claim' | 'start' | 'submit' | 'review';
@@ -62,13 +61,23 @@ export interface SharedCounts {
   readonly late: number;
 }
 
-/** Pedido de identificação em curso (Dialog de PIN contextual). */
+/** Colaborador selecionável na identificação (nome + employeeId; sem PIN). */
+export interface IdentityCandidate {
+  readonly employeeId: string;
+  readonly name: string;
+}
+
+/** Pedido de identificação em curso (Dialog: selecionar colaborador → PIN). */
 export interface PinRequest {
   readonly action: SharedAction;
   readonly taskId: string | null;
   readonly taskTitle: string | null;
   /** Título operacional do pedido ("Identifique-se para assumir…"). */
   readonly prompt: string;
+  /** Colaboradores selecionáveis (ADR-021: employeeId identifica, PIN verifica). */
+  readonly candidates: readonly IdentityCandidate[];
+  /** Comprimento do PIN vindo do Configuration Engine (nunca hardcoded). */
+  readonly pinLength: number;
   readonly error: string | null;
   readonly busy: boolean;
 }
@@ -119,8 +128,8 @@ export interface SharedOperationsActions {
   /** Abre o pedido de PIN contextual para a ação crítica. */
   readonly requestAction: (action: SharedAction, taskId: string | null) => void;
   readonly cancelPin: () => void;
-  /** PIN → identidade → permissões → ação → credencial descartada. */
-  readonly confirmPin: (pin: string) => Promise<void>;
+  /** employeeId + PIN → identidade → permissões → ação → credencial descartada. */
+  readonly confirmPin: (employeeId: string, pin: string) => Promise<void>;
   readonly addEvidence: (file: File) => Promise<void>;
   readonly submitExecution: (input: {
     readonly numericValue: number | null;
@@ -170,26 +179,6 @@ function syncLabelFor(status: DailyTaskRecord['syncStatus']): string | null {
   return null;
 }
 
-/** Autorização efetiva do ator identificado just-in-time (fixture dev). */
-function jitAuthorization(
-  operator: FixtureOperator,
-  now: Date,
-  validityMs: number,
-  online: boolean,
-): EffectiveAuthorization {
-  return {
-    operatorProfileId: operator.profileId,
-    operatorEmployeeId: operator.employeeId,
-    storeId: FIXTURE_STORE.id,
-    sessionId: `platform:${operator.profileId}`,
-    permissions: operator.permissions,
-    permissionModelVersion: PERMISSION_MODEL_VERSION,
-    configVersionRef: undefined,
-    validUntil: new Date(now.getTime() + validityMs),
-    origin: online ? 'online' : 'offline-snapshot',
-  };
-}
-
 export function useSharedOperations(
   container: AppContainer,
 ): [SharedOperationsView, SharedOperationsActions] {
@@ -215,12 +204,15 @@ export function useSharedOperations(
   const busyRef = useRef(false);
   /**
    * Ator da AÇÃO em curso — efêmero por desenho: vive só entre o PIN e o fim
-   * da ação (drawer de envio/conferência) e NUNCA vira sessão do tablet.
+   * da ação (drawer de envio/conferência) e NUNCA vira sessão do tablet. A
+   * autoria usa employeeId REAL; profileId/membershipId vêm da autorização.
    */
   const actorRef = useRef<{
-    readonly operator: FixtureOperator;
+    readonly employeeId: string;
     readonly authorization: EffectiveAuthorization;
   } | null>(null);
+  const [pinLength, setPinLength] = useState(6);
+  const [roster, setRoster] = useState<readonly IdentityCandidate[]>([]);
 
   const today = operationalDateFor(container.clock(), FIXTURE_STORE.timeZone);
 
@@ -228,13 +220,17 @@ export function useSharedOperations(
     try {
       const readiness = await container.connectivity.assess();
       setConnectivity({ deviceOnline: readiness.deviceOnline, readyToSync: readiness.readyToSync });
-      const [tasks, employees, positions, assignments] = await Promise.all([
+      const [tasks, employees, positions, assignments, roster, policy] = await Promise.all([
         container.tasks.byWorkDate(FIXTURE_STORE.id, today),
         container.workforce.employees(FIXTURE_STORE.id),
         container.workforce.positions(FIXTURE_STORE.id),
         container.workforce.assignments(FIXTURE_STORE.id),
+        container.identityRoster(FIXTURE_STORE.id),
+        container.pinPolicy.resolve(FIXTURE_STORE.id),
       ]);
       void assignments;
+      setRoster(roster);
+      setPinLength(policy.length);
       setRecords([...tasks].sort((a, b) => a.dueAt.localeCompare(b.dueAt)));
       setEmployeeNames(new Map(employees.map((employee) => [employee.id, employee.fullName])));
       setPositionNames(new Map(positions.map((position) => [position.id, position.name])));
@@ -290,11 +286,13 @@ export function useSharedOperations(
         taskId,
         taskTitle: task?.template.title ?? null,
         prompt: ACTION_PROMPT[action],
+        candidates: roster,
+        pinLength,
         error: null,
         busy: false,
       });
     },
-    [records],
+    [records, roster, pinLength],
   );
 
   const cancelPin = useCallback(() => {
@@ -303,16 +301,16 @@ export function useSharedOperations(
 
   /** Sessão operacional do ator (ADR-014): reusa a ativa ou abre agora. */
   const resolveActorSession = useCallback(
-    async (
-      operator: FixtureOperator,
-      authorization: EffectiveAuthorization,
-      online: boolean,
-    ): Promise<string | null> => {
-      const active = await container.sessions.findActive(FIXTURE_STORE.id, operator.employeeId);
+    async (authorization: EffectiveAuthorization, online: boolean): Promise<string | null> => {
+      const active = await container.sessions.findActive(
+        FIXTURE_STORE.id,
+        authorization.operatorEmployeeId,
+      );
       if (active !== null) return active.id;
       const opened = await container.openSession.execute({
         authorization,
-        membershipId: operator.membershipId,
+        // membership de plataforma opcional (ADR-021): null até provisionamento
+        membershipId: authorization.membershipId ?? null,
         deviceId: container.deviceId,
         storeTimeZone: FIXTURE_STORE.timeZone,
         openedOffline: !online,
@@ -361,7 +359,7 @@ export function useSharedOperations(
   );
 
   const confirmPin = useCallback(
-    async (pin: string) => {
+    async (employeeId: string, pin: string) => {
       const request = pinRequest;
       if (request === null || busyRef.current) return;
       busyRef.current = true;
@@ -370,31 +368,33 @@ export function useSharedOperations(
       // fechamento; qualquer outro desfecho descarta a credencial no finally
       let retainActor = false;
       try {
-        const identified = identifyByPin(pin);
-        if (identified === null) {
+        // employeeId identifica, PIN verifica (ADR-021). O port resolve a
+        // origem (credencial local real OU fixture DEV) — o controller não sabe.
+        const outcome = await container.identity.verify({
+          storeId: FIXTURE_STORE.id,
+          employeeId,
+          pin,
+          deviceId: container.deviceId,
+        });
+        if (outcome.kind === 'rejected') {
+          // mensagem neutra (não revela existência); lockout não expõe detalhes
           setPinRequest({
             ...request,
             busy: false,
-            error: 'Não foi possível confirmar a identificação. Confira e tente novamente.',
+            error:
+              outcome.code === 'LOCKED_OUT'
+                ? 'Muitas tentativas. Aguarde alguns minutos e tente novamente.'
+                : 'Não foi possível confirmar a identificação. Confira e tente novamente.',
           });
           return;
         }
+        const authorization = outcome.authorization;
         const readiness = await container.connectivity.assess();
-        const validityMs = await container.config.resolve(
-          'auth.pin.offlineValidityMs',
-          FIXTURE_STORE.id,
-        );
-        const authorization = jitAuthorization(
-          identified.operator,
-          container.clock(),
-          validityMs,
-          readiness.readyToSync,
-        );
         // autorização vale SÓ para esta ação: nas ações de um passo
         // (abrir dia/assumir/iniciar) é descartada no finally; nos fluxos com
         // drawer (finalizar/conferir) sobrevive APENAS até o drawer fechar.
         container.setAuthorization(authorization);
-        actorRef.current = { operator: identified.operator, authorization };
+        actorRef.current = { employeeId: authorization.operatorEmployeeId, authorization };
 
         const fail = (message: string): void => {
           setPinRequest({ ...request, busy: false, error: message });
@@ -602,11 +602,7 @@ export function useSharedOperations(
       setSubmitForm({ ...form, busy: true, error: null });
       try {
         const readiness = await container.connectivity.assess();
-        const sessionId = await resolveActorSession(
-          actor.operator,
-          actor.authorization,
-          readiness.readyToSync,
-        );
+        const sessionId = await resolveActorSession(actor.authorization, readiness.readyToSync);
         if (sessionId === null) {
           setSubmitForm({
             ...form,
@@ -621,8 +617,7 @@ export function useSharedOperations(
         const pendingIds = evidence
           .filter(
             (record) =>
-              record.executionId === null &&
-              record.capturedByEmployeeId === actor.operator.employeeId,
+              record.executionId === null && record.capturedByEmployeeId === actor.employeeId,
           )
           .map((record) => record.id);
         const recorded = await container.recordTaskOutcome.execute({
