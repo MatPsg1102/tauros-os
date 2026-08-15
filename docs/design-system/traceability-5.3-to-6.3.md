@@ -836,3 +836,51 @@ Materializada a infraestrutura mínima da ADR-021; os fluxos `/operacao`,
 - **Testes**: hasher (5), adapters de identidade/segurança (10) e upgrade/reload
   IndexedDB (2 novos) — pipeline local verde (format, lint, typecheck,
   boundaries, check:hardcoded, 903 testes, db:validate). Sem PR (4A+4B juntos).
+
+### Fase 4B — wiring + cadastro de PIN + fluxos reais (com UI)
+
+Conecta a infraestrutura da 4A aos fluxos reais. A **pendência número 1**
+(IDENTIDADE ↔ CADASTRO) está fechada: o colaborador cadastrado é a MESMA
+identidade que se identifica e opera.
+
+- **Wiring** (`container.ts`): `container.identity` = `CompositeOperatorIdentity`
+  (credencial local REAL vence fixture DEV por precedência determinística) +
+  `container.credentials`/`pinPolicy`/`credentialProvisioning`/`identityRoster`.
+  Fonte de autorização = `UnprovisionedAuthorizationSource` (HONESTA): sem
+  backend, colaborador real é IDENTIFICADO mas permissions = [] — nada derivado
+  de posição/equipe/cargo/nome. `platform:<profileId>` eliminado (sessionId
+  próprio da identidade local).
+- **UX unificada** (ADR-021): ação → **selecionar colaborador** → PIN →
+  `verify(employeeId, pin)`. Migrados `/operacao` (diálogo com seleção),
+  `/turno` e `/encarregado` (o antigo `supervisorFixture()` por capability foi
+  removido — ninguém é encarregado por nome; o painel só abre se a AUTORIZAÇÃO
+  trouxer config.write). Comprimento do PIN vem do `PinPolicy` (nunca hardcoded).
+- **Controllers desacoplados**: NENHUM controller importa `identifyByPin`/
+  `identifyOperator`/`FIXTURE_OPERATORS` (removidos de fixtures.ts). Fixtures DEV
+  entram só via `FixtureOperatorIdentity` (mesmo `OperatorIdentityPort`). PINs
+  DEV migrados para 6 dígitos = comprimento do Baseline.
+- **Cadastro + PIN**: `/encarregado` ganha seção "Identidade operacional" (PIN +
+  confirmar, comprimento da política). `RegisterEmployeeUseCase` cria o
+  Employee; o controller cria a `OperationalCredential` SEPARADA (offline ⇒
+  `LOCAL_PENDING_PROVISIONING`). PIN validado (confirmação + comprimento),
+  derivado em verifier e descartado — nunca no `EmployeeRecord`. PIN é OPCIONAL:
+  o colaborador existe sem credencial (cadastro administrativo).
+- **IDENTIDADE ≠ AUTORIZAÇÃO** (o teste mais importante): João cadastrado +
+  PIN é identificado, mas SEM `task.review`/`session.open` — conferir/abrir
+  turno negados pelos use cases; assumir/iniciar (elegibilidade operacional)
+  seguem. Elber DEV (provisionado via fixture) mantém `task.review`.
+- **Lockout** conectado (`LocalPinLockoutStore`): erros consecutivos →
+  mensagem neutra → lockout do Baseline; sobrevive à recriação do container
+  (reload). **Autoria**: execução/evidência/review/sessão/auditoria usam
+  `employeeId` real; `profileId` null não quebra nada.
+- **Testes**: +5 de integração de container (`operational-identity-4b`:
+  cadastro→credencial separada, identidade+autoria real, identidade≠autorização,
+  lockout persistente, PIN/verifier fora da fila) + suíte UI existente migrada
+  para seleção+PIN de 6 dígitos. Pipeline completo VERDE: format, lint,
+  typecheck (16/16), boundaries, check:hardcoded, **908 testes**, build,
+  db:validate, pnpm audit (0 vulnerabilidades).
+- **Pendências para o piloto**: (a) sem backend, autorização real de
+  colaborador novo depende de provisionamento (hoje identificado-sem-permissão);
+  (b) "Alterar PIN" — o port já suporta (upsert sobrescreve); UI dedicada é a
+  próxima etapa; (c) validação Chromium manual dos cenários A–F recomendada
+  antes do piloto (cobertos hoje pela suíte jsdom de UI).

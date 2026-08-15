@@ -324,6 +324,42 @@ export class LocalCredentialIdentity implements OperatorIdentityPort {
 }
 
 /**
+ * Fonte de autorização HONESTA do piloto (ADR-021 §2/§15): sem backend não há
+ * membership/snapshot provisionado para um colaborador real recém-cadastrado.
+ * IDENTIDADE ≠ AUTORIZAÇÃO — a identificação prova QUEM é, nunca O QUE PODE.
+ * Devolve null ⇒ autorização com permissions vazias: ações de ELEGIBILIDADE
+ * operacional (assumir/iniciar) seguem as regras existentes; ações por
+ * CAPABILITY (conferir/abrir turno) são negadas pelos use cases. NUNCA deriva
+ * permissão de posição/equipe/cargo/nome.
+ */
+export class UnprovisionedAuthorizationSource implements LocalAuthorizationSource {
+  forEmployee(): Promise<null> {
+    return Promise.resolve(null);
+  }
+}
+
+/**
+ * Fronteira ÚNICA de identidade para a aplicação (ADR-021 §3/§12): resolve por
+ * PRECEDÊNCIA DETERMINÍSTICA — credencial local REAL vence a fixture DEV quando
+ * existir para aquele employeeId; caso contrário, cai no adapter DEV. O
+ * controller nunca sabe a origem. Sem credencial e sem fixture: NO_CREDENTIAL.
+ */
+export class CompositeOperatorIdentity implements OperatorIdentityPort {
+  constructor(
+    private readonly credentials: OperationalCredentialPort,
+    private readonly local: OperatorIdentityPort,
+    private readonly fixture: OperatorIdentityPort,
+  ) {}
+
+  async verify(input: IdentityVerificationInput): Promise<IdentityResult> {
+    const credential = await this.credentials.get(input.storeId, input.employeeId);
+    // credencial real materializada vence a identidade DEV (§12)
+    if (credential !== null) return this.local.verify(input);
+    return this.fixture.verify(input);
+  }
+}
+
+/**
  * Fronteira FUTURA de provisionamento (ADR-021 §8). Sem backend real, devolve
  * `unavailable` sem forjar confirmação de servidor — a credencial permanece
  * LOCAL_PENDING_PROVISIONING até o adapter server-side existir.

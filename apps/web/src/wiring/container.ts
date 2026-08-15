@@ -68,6 +68,7 @@ import {
   RetryPolicy,
   SyncCoordinator,
   ConflictResolverRegistry,
+  Pbkdf2PinHasher,
   resolveOfflineParameters,
   type ConnectivityPort,
   type LocalStorePort,
@@ -75,7 +76,13 @@ import {
   type SyncTransportPort,
   type TechnicalEventPort,
 } from '@tauros/infrastructure';
-import type { SessionSyncStatus } from '@tauros/contracts';
+import type {
+  CredentialProvisioningPort,
+  OperationalCredentialPort,
+  OperatorIdentityPort,
+  PinPolicyPort,
+  SessionSyncStatus,
+} from '@tauros/contracts';
 
 import {
   APP_STATE_SCHEMA,
@@ -105,7 +112,22 @@ import {
   WorkforceAuditAdapter,
   WorkforceQueueAdapter,
 } from './adapters.js';
-import { FIXTURE_STORE, FixtureTaskTemplateSource, FixtureTeamDirectory } from './fixtures.js';
+import {
+  FIXTURE_STORE,
+  FixtureOperatorIdentity,
+  FixtureTaskTemplateSource,
+  FixtureTeamDirectory,
+  fixtureOperatorRoster,
+} from './fixtures.js';
+import {
+  CompositeOperatorIdentity,
+  ConfigPinPolicy,
+  LocalCredentialIdentity,
+  LocalOperationalCredentialStore,
+  LocalPinLockoutStore,
+  NullCredentialProvisioning,
+  UnprovisionedAuthorizationSource,
+} from './identity-adapters.js';
 import { ensureWorkforceBaseline } from './workforce-baseline.js';
 import { FakeSessionSyncTransport } from './transport-fake.js';
 
@@ -136,6 +158,18 @@ export interface AppContainer {
   readonly team: TeamDirectoryPort;
   readonly workforce: LocalWorkforceRepository;
   readonly scheduleData: LocalScheduleRepository;
+  /** Fronteira única de identificação (ADR-021): employeeId + PIN → autorização. */
+  readonly identity: OperatorIdentityPort;
+  /** Credencial de PIN local (criação no cadastro; verifier nunca é o PIN). */
+  readonly credentials: OperationalCredentialPort;
+  /** Política de PIN materializada do Configuration Engine (Baseline §3). */
+  readonly pinPolicy: PinPolicyPort;
+  /** Fronteira futura de provisionamento server-side (sem backend hoje). */
+  readonly credentialProvisioning: CredentialProvisioningPort;
+  /** Nomes+employeeId selecionáveis na identificação (reais ∪ DEV; sem PIN). */
+  readonly identityRoster: (
+    storeId: string,
+  ) => Promise<readonly { employeeId: string; name: string }[]>;
   readonly setAuthorization: (auth: EffectiveAuthorization | null) => void;
   readonly openSession: OpenOperatorSessionUseCase;
   readonly closeSession: CloseOperatorSessionUseCase;
@@ -217,6 +251,61 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
   const coordinator = new SyncCoordinator(connectivity, queue, scheduler, processor, events, clock);
 
   const sessions = new LocalOperatorSessionRepository(appStore);
+
+  // Identidade Operacional (ADR-021). Fronteira única OperatorIdentityPort: os
+  // controllers NUNCA sabem se a identidade veio de credencial local real ou
+  // de fixture DEV. Credencial local (verifier + lockout) em store dedicado;
+  // a autorização de um colaborador real ainda-não-provisionado é HONESTA
+  // (identificado ≠ autorizado — permissions vazias, sem derivar de posição).
+  const pinPolicy: PinPolicyPort = new ConfigPinPolicy(config);
+  const credentials: OperationalCredentialPort = new LocalOperationalCredentialStore(
+    appStore,
+    new Pbkdf2PinHasher(),
+    pinPolicy,
+    clock,
+  );
+  const lockouts = new LocalPinLockoutStore(appStore, clock);
+  const localIdentity = new LocalCredentialIdentity(
+    credentials,
+    lockouts,
+    pinPolicy,
+    clock,
+    new UnprovisionedAuthorizationSource(),
+  );
+  const fixtureIdentity = new FixtureOperatorIdentity({
+    now: clock,
+    offlineValidityMs: () => config.resolve('auth.pin.offlineValidityMs', FIXTURE_STORE.id),
+    online: async () => (await connectivity.assess()).readyToSync,
+  });
+  const identity: OperatorIdentityPort = new CompositeOperatorIdentity(
+    credentials,
+    localIdentity,
+    fixtureIdentity,
+  );
+  const credentialProvisioning: CredentialProvisioningPort = new NullCredentialProvisioning();
+
+  // Lista de seleção de identidade (ADR-021 §4): colaboradores reais ativos ∪
+  // identidades DEV. Só NOMES + employeeId — nunca PIN/permissão. A seleção não
+  // é autorização: quem pode O QUÊ continua vindo da autorização efetiva.
+  const identityRoster = async (
+    storeId: string,
+  ): Promise<readonly { employeeId: string; name: string }[]> => {
+    const employees = await workforce.employees(storeId);
+    const seen = new Set<string>();
+    const roster: { employeeId: string; name: string }[] = [];
+    for (const employee of employees) {
+      if (!employee.active || seen.has(employee.id)) continue;
+      seen.add(employee.id);
+      roster.push({ employeeId: employee.id, name: employee.fullName });
+    }
+    // identidades DEV só aparecem se ainda não houver colaborador real homônimo
+    for (const dev of fixtureOperatorRoster()) {
+      if (seen.has(dev.employeeId)) continue;
+      seen.add(dev.employeeId);
+      roster.push(dev);
+    }
+    return roster;
+  };
 
   let currentAuth: EffectiveAuthorization | null = null;
   const authorization = (): EffectiveAuthorization => {
@@ -670,6 +759,11 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     team,
     workforce,
     scheduleData,
+    identity,
+    credentials,
+    pinPolicy,
+    credentialProvisioning,
+    identityRoster,
     setAuthorization: (auth) => {
       currentAuth = auth;
     },

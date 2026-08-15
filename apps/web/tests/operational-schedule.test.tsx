@@ -64,8 +64,13 @@ function app(): ReactElement {
 
 async function identifyElber(): Promise<void> {
   await screen.findByText('Digite seu PIN');
-  const cells = screen.getAllByLabelText(/Dígito \d de 4/);
-  ['1', '2', '3', '4'].forEach((digit, index) => {
+  fireEvent.change(screen.getByRole('combobox'), {
+    target: {
+      value: (screen.getByRole('option', { name: 'Elber' }) as HTMLOptionElement).value,
+    },
+  });
+  const cells = screen.getAllByLabelText(/Dígito \d de 6/);
+  ['1', '2', '3', '4', '5', '6'].forEach((digit, index) => {
     fireEvent.keyDown(cells[index] as HTMLElement, { key: digit });
   });
   fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));

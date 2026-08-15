@@ -85,7 +85,7 @@ async function identifyAs(name: string, pin: readonly string[]): Promise<void> {
   const select = await screen.findByRole('combobox');
   const option = (screen.getByText(name) as HTMLOptionElement).value;
   fireEvent.change(select, { target: { value: option } });
-  const cells = screen.getAllByLabelText(/Dígito \d de 4/);
+  const cells = screen.getAllByLabelText(/Dígito \d de 6/);
   pin.forEach((digit, index) => {
     fireEvent.keyDown(cells[index] as HTMLElement, { key: digit });
   });
@@ -106,21 +106,21 @@ beforeEach(() => {
 describe('fechamento de turno na tela', () => {
   it('turno aberto oferece o quadro de tarefas e o fechamento', async () => {
     render(app('turno'));
-    await openShiftAs('Marina Álvares', ['2', '4', '6', '8']);
+    await openShiftAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
     expect(screen.getByRole('button', { name: 'Ver tarefas de hoje' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Fechar turno' })).toBeTruthy();
   });
 
   it('navega para o quadro pelo adapter de rota da aplicação', async () => {
     render(app('turno'));
-    await openShiftAs('Marina Álvares', ['2', '4', '6', '8']);
+    await openShiftAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
     fireEvent.click(screen.getByRole('button', { name: 'Ver tarefas de hoje' }));
     expect(navigations()).toContain('/turno/tarefas');
   });
 
   it('fecha o turno após confirmação e confirma pelo servidor', async () => {
     const { container } = render(app('turno'));
-    await openShiftAs('Marina Álvares', ['2', '4', '6', '8']);
+    await openShiftAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
 
     fireEvent.click(screen.getByRole('button', { name: 'Fechar turno' }));
     await screen.findByRole('heading', { name: 'Fechar o turno agora?' });
@@ -137,7 +137,7 @@ describe('fechamento de turno na tela', () => {
 
   it('cancelar mantém o turno aberto', async () => {
     render(app('turno'));
-    await openShiftAs('Marina Álvares', ['2', '4', '6', '8']);
+    await openShiftAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
     fireEvent.click(screen.getByRole('button', { name: 'Fechar turno' }));
     await screen.findByRole('heading', { name: 'Fechar o turno agora?' });
     fireEvent.click(screen.getByRole('button', { name: 'Continuar no turno' }));
@@ -151,7 +151,7 @@ describe('fechamento de turno na tela', () => {
     world.online = false;
     world.transport.available = false;
     render(app('turno'));
-    await openShiftAs('Marina Álvares', ['2', '4', '6', '8']);
+    await openShiftAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
 
     fireEvent.click(screen.getByRole('button', { name: 'Fechar turno' }));
     await screen.findByRole('heading', { name: 'Fechar o turno agora?' });
@@ -172,7 +172,7 @@ describe('fechamento de turno na tela', () => {
 
   it('operador sem a capability não recebe a ação de fechar', async () => {
     render(app('turno'));
-    await openShiftAs('Rita Belmonte', ['9', '7', '5', '3']);
+    await openShiftAs('Rita Belmonte', ['9', '9', '7', '7', '5', '5']);
     expect(screen.queryByRole('button', { name: 'Fechar turno' })).toBeNull();
     expect(screen.getByText(/Seu perfil não permite fechar o turno/)).toBeTruthy();
   });
@@ -188,7 +188,7 @@ describe('quadro de tarefas do dia', () => {
 
   it('quadro populado lista as tarefas do dia com estado e vencimento', async () => {
     const { rerender, container } = render(app('turno'));
-    await openShiftAs('Marina Álvares', ['2', '4', '6', '8']);
+    await openShiftAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
 
     rerender(app('tarefas'));
     expect(await screen.findByRole('heading', { name: 'Tarefas de hoje' })).toBeTruthy();
@@ -203,14 +203,14 @@ describe('quadro de tarefas do dia', () => {
   it('quadro vazio quando não há definição de tarefa', async () => {
     world = makeWorld([]);
     const { rerender } = render(app('turno'));
-    await openShiftAs('Marina Álvares', ['2', '4', '6', '8']);
+    await openShiftAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
     rerender(app('tarefas'));
     expect(await screen.findByRole('heading', { name: 'Nenhuma tarefa para hoje' })).toBeTruthy();
   });
 
   it('conclui uma tarefa e confirma pelo servidor', async () => {
     const { rerender } = render(app('turno'));
-    await openShiftAs('Marina Álvares', ['2', '4', '6', '8']);
+    await openShiftAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
     rerender(app('tarefas'));
     await screen.findByRole('heading', { name: 'Conferir reposição da vitrine' });
 
@@ -224,7 +224,7 @@ describe('quadro de tarefas do dia', () => {
 
   it('tarefa com foto obrigatória só conclui após registrar a evidência', async () => {
     const { rerender } = render(app('turno'));
-    await openShiftAs('Marina Álvares', ['2', '4', '6', '8']);
+    await openShiftAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
     rerender(app('tarefas'));
     await screen.findByRole('heading', { name: 'Higienizar bancada de manipulação' });
 
@@ -238,7 +238,7 @@ describe('quadro de tarefas do dia', () => {
 
   it('adia uma tarefa (desfecho previsto no modelo oficial)', async () => {
     const { rerender } = render(app('turno'));
-    await openShiftAs('Marina Álvares', ['2', '4', '6', '8']);
+    await openShiftAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
     rerender(app('tarefas'));
     await screen.findByRole('heading', { name: 'Conferir reposição da vitrine' });
 
@@ -250,7 +250,7 @@ describe('quadro de tarefas do dia', () => {
     world.online = false;
     world.transport.available = false;
     const { rerender } = render(app('turno'));
-    await openShiftAs('Marina Álvares', ['2', '4', '6', '8']);
+    await openShiftAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
     rerender(app('tarefas'));
     await screen.findByRole('heading', { name: 'Conferir reposição da vitrine' });
     expect(screen.getByText(/Sem conexão com o servidor/)).toBeTruthy();
@@ -269,7 +269,7 @@ describe('quadro de tarefas do dia', () => {
 
   it('conflito preserva o registro local e explica sem jargão', async () => {
     const { rerender } = render(app('turno'));
-    await openShiftAs('Marina Álvares', ['2', '4', '6', '8']);
+    await openShiftAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
     rerender(app('tarefas'));
     await screen.findByRole('heading', { name: 'Conferir reposição da vitrine' });
 

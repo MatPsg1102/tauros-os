@@ -61,16 +61,23 @@ function app(route: 'encarregado' | 'turno' = 'encarregado'): ReactElement {
   );
 }
 
-async function enterPin(pin: readonly string[]): Promise<void> {
+function selectSupervisor(name: string): void {
+  const select = screen.getByRole('combobox');
+  const option = (screen.getByRole('option', { name }) as HTMLOptionElement).value;
+  fireEvent.change(select, { target: { value: option } });
+}
+
+async function enterPin(pin: readonly string[], supervisorName = 'Elber'): Promise<void> {
   await screen.findByText('Digite seu PIN');
-  const cells = screen.getAllByLabelText(/Dígito \d de 4/);
+  selectSupervisor(supervisorName);
+  const cells = screen.getAllByLabelText(/Dígito \d de 6/);
   pin.forEach((digit, index) => {
     fireEvent.keyDown(cells[index] as HTMLElement, { key: digit });
   });
 }
 
 async function identifyElber(): Promise<void> {
-  await enterPin(['1', '2', '3', '4']);
+  await enterPin(['1', '2', '3', '4', '5', '6']);
   fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
   await screen.findByRole('heading', { name: /Bom dia, Elber/ });
 }
@@ -113,8 +120,8 @@ describe('navegação integrada /turno ↔ /encarregado (identidade compartilhad
     const select = await screen.findByRole('combobox');
     const option = (screen.getByText('Elber') as HTMLOptionElement).value;
     fireEvent.change(select, { target: { value: option } });
-    const cells = screen.getAllByLabelText(/Dígito \d de 4/);
-    ['1', '2', '3', '4'].forEach((digit, index) => {
+    const cells = screen.getAllByLabelText(/Dígito \d de 6/);
+    ['1', '2', '3', '4', '5', '6'].forEach((digit, index) => {
       fireEvent.keyDown(cells[index] as HTMLElement, { key: digit });
     });
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar identificação' }));
@@ -149,7 +156,7 @@ describe('acesso do encarregado', () => {
 
   it('PIN incorreto orienta sem revelar detalhes internos', async () => {
     render(app());
-    await enterPin(['9', '9', '9', '9']);
+    await enterPin(['9', '9', '9', '9', '9', '9']);
     fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
     const alert = await screen.findByText(/Não foi possível confirmar a identificação/);
     expect(alert.textContent).not.toMatch(/401|snapshot|banco|senha/i);
@@ -171,8 +178,8 @@ describe('acesso do encarregado', () => {
     const select = await screen.findByRole('combobox');
     const option = (screen.getByText('Marina Álvares') as HTMLOptionElement).value;
     fireEvent.change(select, { target: { value: option } });
-    const cells = screen.getAllByLabelText(/Dígito \d de 4/);
-    ['2', '4', '6', '8'].forEach((digit, index) => {
+    const cells = screen.getAllByLabelText(/Dígito \d de 6/);
+    ['2', '2', '4', '4', '6', '6'].forEach((digit, index) => {
       fireEvent.keyDown(cells[index] as HTMLElement, { key: digit });
     });
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar identificação' }));
@@ -434,8 +441,8 @@ describe('segurança do PIN de desenvolvimento', () => {
       }
     }
     const serialized = JSON.stringify(dump);
-    expect(serialized.includes('1234')).toBe(false);
+    expect(serialized.includes('123456')).toBe(false);
     expect(serialized.toLowerCase().includes('pin')).toBe(false);
-    expect(JSON.stringify({ ...window.localStorage })).not.toContain('1234');
+    expect(JSON.stringify({ ...window.localStorage })).not.toContain('123456');
   });
 });

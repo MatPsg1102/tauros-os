@@ -210,11 +210,11 @@ describe('FixtureOperatorIdentity (DEV) — mesmo OperatorIdentityPort', () => {
 
   it('10. verifica PIN da fixture e devolve autorização; PIN errado rejeita', async () => {
     const identity = new FixtureOperatorIdentity(deps);
-    // Elber (emp-0004) tem PIN 1234 nas fixtures DEV
+    // Elber (emp-0004) tem PIN DEV de 6 dígitos (= comprimento do Baseline)
     const ok = await identity.verify({
       storeId: STORE,
       employeeId: 'emp-0004',
-      pin: '1234',
+      pin: '123456',
       deviceId: DEVICE,
     });
     expect(ok.kind).toBe('verified');
@@ -223,7 +223,7 @@ describe('FixtureOperatorIdentity (DEV) — mesmo OperatorIdentityPort', () => {
     const bad = await identity.verify({
       storeId: STORE,
       employeeId: 'emp-0004',
-      pin: '9999',
+      pin: '999999',
       deviceId: DEVICE,
     });
     expect(bad).toMatchObject({ kind: 'rejected', code: 'INVALID_PIN' });

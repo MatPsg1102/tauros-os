@@ -14,12 +14,14 @@ import {
   Button,
   Card,
   DatePicker,
+  Divider,
   Drawer,
   EmptyState,
   Field,
   Flex,
   Heading,
   Input,
+  PinInput,
   Section,
   SegmentedControl,
   Select,
@@ -60,6 +62,10 @@ function RegisterEmployeeDrawer({
   // jornada default = primeira cadastrada (dado da loja, nunca hardcode)
   const defaultShiftDefinitionId = view.definitionOptions[0]?.id ?? '';
   const [shiftDefinitionId, setShiftDefinitionId] = useState(defaultShiftDefinitionId);
+  // credencial de PIN: campos temporários do formulário (ADR-021). Descartados
+  // ao fechar o drawer — o PIN NUNCA vive além do necessário e nunca persiste.
+  const [pin, setPin] = useState('');
+  const [pinConfirmation, setPinConfirmation] = useState('');
   const open = view.registration.status !== 'idle';
   const submitting = view.registration.status === 'submitting';
 
@@ -72,10 +78,20 @@ function RegisterEmployeeDrawer({
     setPositionId('');
     setTeamId('');
     setShiftDefinitionId(defaultShiftDefinitionId);
+    setPin('');
+    setPinConfirmation('');
   }, [defaultShiftDefinitionId, open, view.today]);
 
   function submit(): void {
-    void actions.register({ fullName, startDate, positionId, teamId, shiftDefinitionId });
+    void actions.register({
+      fullName,
+      startDate,
+      positionId,
+      teamId,
+      shiftDefinitionId,
+      pin,
+      pinConfirmation,
+    });
   }
 
   return (
@@ -140,6 +156,34 @@ function RegisterEmployeeDrawer({
               </option>
             ))}
           </Select>
+        </Field>
+
+        {/* Identidade operacional (ADR-021): credencial SEPARADA do cadastro.
+            Opcional — o colaborador existe sem PIN; configure para que ele
+            possa se identificar e executar ações. Comprimento vem da política. */}
+        <Divider />
+        <Heading level={3}>Identidade operacional</Heading>
+        <Text tone="secondary">
+          Configure um PIN de {view.pinLength} dígitos para que o colaborador possa se identificar.
+          Disponível neste dispositivo e sincronizado depois.
+        </Text>
+        <Field label="PIN">
+          <PinInput
+            key={`pin:${open ? 'open' : 'closed'}`}
+            length={view.pinLength}
+            label="PIN do colaborador"
+            mask
+            onValueChange={setPin}
+          />
+        </Field>
+        <Field label="Confirmar PIN">
+          <PinInput
+            key={`pin-confirm:${open ? 'open' : 'closed'}`}
+            length={view.pinLength}
+            label="Confirmar PIN"
+            mask
+            onValueChange={setPinConfirmation}
+          />
         </Field>
 
         {view.registration.status === 'error' && (

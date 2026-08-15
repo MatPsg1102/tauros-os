@@ -89,21 +89,37 @@ function IdentifyStep({
   readonly view: SupervisorDashboardView;
   readonly actions: SupervisorDashboardActions;
 }): ReactElement {
+  const [employeeId, setEmployeeId] = useState('');
   const [pin, setPin] = useState('');
+  const pinLength = view.pinLength;
   return (
     <Section
       title="Identificação do encarregado"
-      description="Confirme quem está assumindo a gestão do dia"
+      description="Selecione quem está assumindo a gestão do dia e confirme o PIN"
     >
       <Card>
         <Stack gap={200}>
-          <Text>{view.supervisorName ?? 'Encarregado'}</Text>
+          {/* employeeId IDENTIFICA; o painel de gestão só abre se a AUTORIZAÇÃO
+              trouxer a capacidade — ninguém é encarregado por nome (ADR-021). */}
+          <Field label="Quem está assumindo a gestão?">
+            <Select value={employeeId} onChange={(event) => setEmployeeId(event.target.value)}>
+              <option value="" disabled>
+                Selecione o colaborador
+              </option>
+              {view.operators.map((candidate) => (
+                <option key={candidate.employeeId} value={candidate.employeeId}>
+                  {candidate.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
           <Stack gap={100}>
             <Text role="label">Digite seu PIN</Text>
             <PinInput
-              key={view.identifyError ?? 'pin'}
-              length={4}
+              key={`${employeeId}:${view.identifyError ?? 'pin'}`}
+              length={pinLength}
               label="PIN do encarregado"
+              mask
               onValueChange={setPin}
             />
           </Stack>
@@ -114,10 +130,13 @@ function IdentifyStep({
           )}
           <Button
             fullWidth
-            disabled={pin.length < 4}
+            disabled={employeeId === '' || pin.length < pinLength}
             onClick={() => {
-              void actions.identify(pin);
+              const selected = employeeId;
+              const value = pin;
+              setEmployeeId('');
               setPin('');
+              void actions.identify(selected, value);
             }}
           >
             Entrar

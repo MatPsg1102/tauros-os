@@ -63,7 +63,7 @@ async function identifyAs(name: string, pin: readonly string[]): Promise<void> {
   const select = await screen.findByRole('combobox');
   const option = (screen.getByText(name) as HTMLOptionElement).value;
   fireEvent.change(select, { target: { value: option } });
-  const cells = screen.getAllByLabelText(/Dígito \d de 4/);
+  const cells = screen.getAllByLabelText(/Dígito \d de 6/);
   pin.forEach((digit, index) => {
     fireEvent.keyDown(cells[index] as HTMLElement, { key: digit });
   });
@@ -78,7 +78,7 @@ beforeEach(() => {
 describe('jornada de abertura de turno', () => {
   it('boot → identificação → pronto → abertura ONLINE sincronizada', async () => {
     const { container } = render(page());
-    await identifyAs('Marina Álvares', ['2', '4', '6', '8']);
+    await identifyAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
     await screen.findByRole('button', { name: 'Abrir turno' });
     expect(screen.getByText(/Conectado/)).toBeTruthy();
 
@@ -94,7 +94,7 @@ describe('jornada de abertura de turno', () => {
     world.online = false;
     world.transport.available = false;
     render(page());
-    await identifyAs('Marina Álvares', ['2', '4', '6', '8']);
+    await identifyAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
     expect(await screen.findByText(/Sem conexão com o servidor/)).toBeTruthy();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Abrir turno' }));
@@ -111,7 +111,7 @@ describe('jornada de abertura de turno', () => {
 
   it('duplo clique não duplica (uma submissão, um turno)', async () => {
     render(page());
-    await identifyAs('Marina Álvares', ['2', '4', '6', '8']);
+    await identifyAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
     const open = await screen.findByRole('button', { name: 'Abrir turno' });
     fireEvent.click(open);
     fireEvent.click(open);
@@ -122,14 +122,14 @@ describe('jornada de abertura de turno', () => {
 
   it('SEM PERMISSÃO: estado seguro e orientativo, sem ação de abrir', async () => {
     render(page());
-    await identifyAs('Carlos Nunes', ['1', '3', '5', '7']);
+    await identifyAs('Carlos Nunes', ['1', '1', '3', '3', '5', '5']);
     await screen.findByText('Sem permissão para abrir turno');
     expect(screen.queryByRole('button', { name: 'Abrir turno' })).toBeNull();
   });
 
   it('ENCARREGADO: entrada "Área do Encarregado" aparece pela DECISÃO do view model e navega', async () => {
     render(page());
-    await identifyAs('Elber', ['1', '2', '3', '4']);
+    await identifyAs('Elber', ['1', '2', '3', '4', '5', '6']);
     // visível já na identificação, antes mesmo de abrir o turno
     const entry = await screen.findByRole('button', { name: 'Ir para a Área do Encarregado' });
     expect(screen.getByText('Gestão da equipe')).toBeTruthy();
@@ -151,7 +151,7 @@ describe('jornada de abertura de turno', () => {
 
   it('OPERADOR COMUM: sem config.write não vê a entrada da Área do Encarregado', async () => {
     render(page());
-    await identifyAs('Marina Álvares', ['2', '4', '6', '8']);
+    await identifyAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
     await screen.findByRole('button', { name: 'Abrir turno' });
     expect(screen.queryByRole('button', { name: 'Ir para a Área do Encarregado' })).toBeNull();
     expect(screen.queryByText('Gestão da equipe')).toBeNull();
@@ -159,14 +159,14 @@ describe('jornada de abertura de turno', () => {
 
   it('SEM ABERTURA: negado para abrir também não ganha a entrada de gestão', async () => {
     render(page());
-    await identifyAs('Carlos Nunes', ['1', '3', '5', '7']);
+    await identifyAs('Carlos Nunes', ['1', '1', '3', '3', '5', '5']);
     await screen.findByText('Sem permissão para abrir turno');
     expect(screen.queryByRole('button', { name: 'Ir para a Área do Encarregado' })).toBeNull();
   });
 
   it('ENCARREGADO: Elber (session.open efetiva) abre o próprio turno na tela genérica', async () => {
     render(page());
-    await identifyAs('Elber', ['1', '2', '3', '4']);
+    await identifyAs('Elber', ['1', '2', '3', '4', '5', '6']);
     fireEvent.click(await screen.findByRole('button', { name: 'Abrir turno' }));
     await screen.findByRole('heading', { name: 'Turno aberto' });
     expect(screen.queryByText('Sem permissão para abrir turno')).toBeNull();
@@ -177,23 +177,23 @@ describe('jornada de abertura de turno', () => {
 
   it('PIN incorreto: mensagem neutra (não revela existência) e PIN limpo', async () => {
     render(page());
-    await identifyAs('Marina Álvares', ['9', '9', '9', '9']);
+    await identifyAs('Marina Álvares', ['9', '9', '9', '9', '9', '9']);
     await screen.findByText(/Não foi possível confirmar a identificação/);
     expect(screen.queryByText(/Marina/)).not.toBeNull(); // segue na identificação
-    const cells = screen.getAllByLabelText(/Dígito \d de 4/) as HTMLInputElement[];
+    const cells = screen.getAllByLabelText(/Dígito \d de 6/) as HTMLInputElement[];
     for (const cell of cells) expect(cell.value).toBe('');
   });
 
   it('JÁ ABERTO: reload restaura o estado aberto após nova identificação', async () => {
     const first = render(page());
-    await identifyAs('Marina Álvares', ['2', '4', '6', '8']);
+    await identifyAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
     fireEvent.click(await screen.findByRole('button', { name: 'Abrir turno' }));
     await screen.findByRole('heading', { name: 'Turno aberto' });
     first.unmount();
 
     // "reload": nova árvore sobre os MESMOS stores
     render(page());
-    await identifyAs('Marina Álvares', ['2', '4', '6', '8']);
+    await identifyAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
     await screen.findByRole('heading', { name: 'Turno aberto' });
     expect(screen.queryByRole('button', { name: 'Abrir turno' })).toBeNull();
   });
@@ -208,7 +208,7 @@ describe('jornada de abertura de turno', () => {
       sessionId: 'sess-device-B',
     });
     render(page());
-    await identifyAs('Marina Álvares', ['2', '4', '6', '8']);
+    await identifyAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
     fireEvent.click(await screen.findByRole('button', { name: 'Abrir turno' }));
     await screen.findByRole('heading', { name: 'Turno aberto' });
 
@@ -231,7 +231,7 @@ describe('jornada de abertura de turno', () => {
 describe('segurança da identificação (§8/§43)', () => {
   it('PIN não aparece em storage, fila ou auditoria', async () => {
     render(page());
-    await identifyAs('Marina Álvares', ['2', '4', '6', '8']);
+    await identifyAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
     fireEvent.click(await screen.findByRole('button', { name: 'Abrir turno' }));
     await screen.findByRole('heading', { name: 'Turno aberto' });
     await act(async () => {
@@ -247,7 +247,7 @@ describe('segurança da identificação (§8/§43)', () => {
         ),
       );
       for (const blob of [queue, outbox, sessions]) {
-        expect(blob).not.toContain('2468');
+        expect(blob).not.toContain('224466');
         expect(blob).not.toMatch(/"pin"/i);
       }
     });

@@ -298,7 +298,7 @@ describe('segurança da fixture de desenvolvimento', () => {
       }
     }
     const serialized = JSON.stringify(dump);
-    expect(serialized.includes('1234')).toBe(false);
+    expect(serialized.includes('123456')).toBe(false);
     expect(serialized.includes('"pin"')).toBe(false);
   });
 });

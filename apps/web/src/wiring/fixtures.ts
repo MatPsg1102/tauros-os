@@ -78,7 +78,9 @@ export const FIXTURE_OPERATORS: readonly FixtureOperator[] = [
     profileId: 'prof-0001',
     membershipId: 'memb-0001',
     name: 'Marina Álvares',
-    pin: '2468',
+    // PINs DEV de 6 dígitos = comprimento do Baseline (auth.pin.length). DEV:
+    // comparados em memória, nunca persistidos, bloqueados em produção.
+    pin: '224466',
     permissions: [CAPABILITY_SESSION_OPEN, CAPABILITY_SESSION_CLOSE, 'audit.read'],
   },
   {
@@ -86,7 +88,7 @@ export const FIXTURE_OPERATORS: readonly FixtureOperator[] = [
     profileId: 'prof-0002',
     membershipId: 'memb-0002',
     name: 'Carlos Nunes',
-    pin: '1357',
+    pin: '113355',
     permissions: ['audit.read'],
   },
   {
@@ -94,7 +96,7 @@ export const FIXTURE_OPERATORS: readonly FixtureOperator[] = [
     profileId: 'prof-0003',
     membershipId: 'memb-0003',
     name: 'Rita Belmonte',
-    pin: '9753',
+    pin: '997755',
     permissions: [CAPABILITY_SESSION_OPEN, 'audit.read'],
   },
   {
@@ -102,7 +104,7 @@ export const FIXTURE_OPERATORS: readonly FixtureOperator[] = [
     profileId: 'prof-0004',
     membershipId: 'memb-0004',
     name: 'Elber',
-    pin: '1234',
+    pin: '123456',
     permissions: [
       CAPABILITY_SESSION_OPEN,
       CAPABILITY_SESSION_CLOSE,
@@ -225,37 +227,22 @@ export interface FixtureTaskTemplate {
   readonly dueOffsetMinutes: number;
 }
 
-export interface IdentifiedOperator {
-  readonly operator: FixtureOperator;
-}
+// A identificação DEV agora acontece SOMENTE via FixtureOperatorIdentity (o
+// mesmo OperatorIdentityPort dos adapters reais). As antigas funções
+// identifyOperator/identifyByPin — importadas direto pelos controllers — foram
+// removidas na Fase 4B: nenhum controller conhece mais a origem da identidade.
 
 /**
- * Identificação de demonstração: compara o PIN em memória e o DESCARTA.
- * Mensagem não revela se o operador existe (enumeração — §8).
+ * Roster de identidades DEV para a lista de seleção (nome + employeeId), sem
+ * expor PIN nem permissões. Vazio quando as fixtures estão desabilitadas —
+ * em produção a seleção mostra apenas colaboradores reais cadastrados.
  */
-export function identifyOperator(
-  operatorEmployeeId: string,
-  pin: string,
-): IdentifiedOperator | null {
-  if (!fixturesEnabled()) throw new FixturesDisabledError();
-  const operator = FIXTURE_OPERATORS.find(
-    (candidate) => candidate.employeeId === operatorEmployeeId,
-  );
-  if (operator === undefined || operator.pin !== pin) return null;
-  return { operator };
-}
-
-/**
- * Identificação JUST-IN-TIME por PIN (Operação Compartilhada): o tablet da
- * loja não sabe QUEM vai agir — o PIN resolve a identidade no momento da
- * ação e é descartado. Fixture de desenvolvimento: o backend real valida
- * PIN→identidade no servidor; a mensagem de falha segue neutra.
- */
-export function identifyByPin(pin: string): IdentifiedOperator | null {
-  if (!fixturesEnabled()) throw new FixturesDisabledError();
-  const operator = FIXTURE_OPERATORS.find((candidate) => candidate.pin === pin);
-  if (operator === undefined) return null;
-  return { operator };
+export function fixtureOperatorRoster(): readonly { employeeId: string; name: string }[] {
+  if (!fixturesEnabled()) return [];
+  return FIXTURE_OPERATORS.map((operator) => ({
+    employeeId: operator.employeeId,
+    name: operator.name,
+  }));
 }
 
 /** Dependências do adapter de identidade DEV (relógio + janela + conectividade). */

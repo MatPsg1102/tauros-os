@@ -15,8 +15,9 @@ import type { EffectiveAuthorization } from '@tauros/contracts';
 
 export interface IdentifiedOperatorView {
   readonly employeeId: string;
-  readonly profileId: string;
-  readonly membershipId: string;
+  /** Identidade de plataforma — null até provisionamento server-side (ADR-021). */
+  readonly profileId: string | null;
+  readonly membershipId: string | null;
   readonly name: string;
   readonly permissions: readonly string[];
 }

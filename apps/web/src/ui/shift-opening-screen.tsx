@@ -55,6 +55,9 @@ function IdentifyStep({
         <Stack gap={200}>
           <Field label="Operador">
             <Select value={employeeId} onChange={(event) => setEmployeeId(event.target.value)}>
+              <option value="" disabled>
+                Selecione o operador
+              </option>
               {view.operators.map((candidate) => (
                 <option key={candidate.employeeId} value={candidate.employeeId}>
                   {candidate.name}
@@ -65,9 +68,10 @@ function IdentifyStep({
           <Stack gap={100}>
             <Text role="label">PIN de operação</Text>
             <PinInput
-              key={view.identifyError ?? 'pin'}
-              length={4}
+              key={`${employeeId}:${view.identifyError ?? 'pin'}`}
+              length={view.pinLength}
               label="PIN de operação"
+              mask
               onValueChange={setPin}
             />
           </Stack>
@@ -78,7 +82,7 @@ function IdentifyStep({
           )}
           <Button
             fullWidth
-            disabled={pin.length < 4}
+            disabled={employeeId === '' || pin.length < view.pinLength}
             onClick={() => {
               void actions.identify(employeeId, pin);
               setPin('');

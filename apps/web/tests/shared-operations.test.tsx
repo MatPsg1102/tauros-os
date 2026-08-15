@@ -160,15 +160,32 @@ async function seedTemplate(input: {
 async function openDay(): Promise<void> {
   // sem templates de fixture: o dia abre com as definições reais criadas
   fireEvent.click(await screen.findByRole('button', { name: 'Abrir o dia' }));
-  await enterPinAndConfirm('1234'); // Elber abre o dia
+  await enterPinAndConfirm('123456'); // Elber abre o dia
   await waitFor(() => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 }
 
+// Mapa DEV pin→colaborador: na Operação Compartilhada o ator SELECIONA quem é
+// e prova o PIN daquele employeeId (ADR-021: employeeId identifica, PIN verifica).
+const OPERATOR_BY_PIN: Readonly<Record<string, string>> = {
+  '123456': 'Elber',
+  '224466': 'Marina Álvares',
+  '997755': 'Rita Belmonte',
+  '113355': 'Carlos Nunes',
+};
+
 async function enterPinAndConfirm(pin: string): Promise<void> {
   const dialog = await screen.findByRole('dialog');
-  const cells = within(dialog).getAllByLabelText(/Dígito \d de 4/);
+  const name = OPERATOR_BY_PIN[pin];
+  if (name !== undefined) {
+    fireEvent.change(within(dialog).getByRole('combobox'), {
+      target: {
+        value: (within(dialog).getByRole('option', { name }) as HTMLOptionElement).value,
+      },
+    });
+  }
+  const cells = within(dialog).getAllByLabelText(/Dígito \d de 6/);
   pin.split('').forEach((digit, index) => {
     fireEvent.keyDown(cells[index] as HTMLElement, { key: digit });
   });
@@ -215,17 +232,17 @@ describe('FLUXO A — tarefa simples no quadro compartilhado', () => {
 
     // sem responsável → ASSUMIR com PIN da Marina (escalada hoje)
     await screen.findByText('Sem responsável');
-    await actOnCard('Reposição da ilha', 'Assumir', '2468');
+    await actOnCard('Reposição da ilha', 'Assumir', '224466');
     await screen.findByText('Tarefa assumida.');
     expect(screen.getAllByText(/Açougueiro 1/).length).toBeGreaterThan(0);
 
-    await actOnCard('Reposição da ilha', 'Iniciar', '2468');
+    await actOnCard('Reposição da ilha', 'Iniciar', '224466');
     await screen.findByText('Tarefa iniciada.');
     expect(screen.getAllByText('Em execução').length).toBeGreaterThan(0);
     expect(screen.getByText(/Iniciada 11:00/)).toBeTruthy();
 
     // finalizar SEM review → concluída direto (sem gargalo de encarregado)
-    await actOnCard('Reposição da ilha', 'Finalizar', '2468');
+    await actOnCard('Reposição da ilha', 'Finalizar', '224466');
     const drawer = await findTaskDialog('Reposição da ilha');
     fireEvent.click(within(drawer).getByRole('button', { name: 'Concluir tarefa' }));
     await screen.findByText('Tarefa concluída.');
@@ -282,15 +299,15 @@ describe('FLUXO A — tarefa simples no quadro compartilhado', () => {
     expect(serialized.includes('"2468"')).toBe(false);
     expect(serialized.includes('"1234"')).toBe(false);
     expect(serialized.toLowerCase().includes('pin')).toBe(false);
-    expect(JSON.stringify({ ...window.localStorage })).not.toContain('2468');
+    expect(JSON.stringify({ ...window.localStorage })).not.toContain('224466');
   });
 });
 
 describe('FLUXO B — foto obrigatória + conferência', () => {
   async function submitSerraWithPhoto(): Promise<void> {
-    await actOnCard('Limpeza da serra', 'Iniciar', '2468');
+    await actOnCard('Limpeza da serra', 'Iniciar', '224466');
     await screen.findByText('Tarefa iniciada.');
-    await actOnCard('Limpeza da serra', 'Finalizar', '2468');
+    await actOnCard('Limpeza da serra', 'Finalizar', '224466');
     const drawer = await findTaskDialog('Limpeza da serra');
     // tenta enviar SEM foto → bloqueado com mensagem operacional
     fireEvent.click(within(drawer).getByRole('button', { name: 'Enviar para conferência' }));
@@ -331,7 +348,7 @@ describe('FLUXO B — foto obrigatória + conferência', () => {
     expect(screen.getByText(/📷 1 evidência/)).toBeTruthy();
 
     // conferência do encarregado (PIN Elber) com evidência visível
-    await actOnCard('Limpeza da serra', 'Conferir', '1234');
+    await actOnCard('Limpeza da serra', 'Conferir', '123456');
     const review = await findTaskDialog('Limpeza da serra');
     expect(within(review).getByText(/Executor: Marina Álvares/)).toBeTruthy();
     expect(within(review).getByAltText('Evidência da execução')).toBeTruthy();
@@ -363,7 +380,7 @@ describe('FLUXO B — foto obrigatória + conferência', () => {
     await submitSerraWithPhoto();
 
     // encarregado devolve com motivo obrigatório
-    await actOnCard('Limpeza da serra', 'Conferir', '1234');
+    await actOnCard('Limpeza da serra', 'Conferir', '123456');
     const review = await findTaskDialog('Limpeza da serra');
     fireEvent.click(within(review).getByRole('button', { name: 'Devolver para correção' }));
     await within(review).findByText('Informe o motivo da devolução.');
@@ -379,9 +396,9 @@ describe('FLUXO B — foto obrigatória + conferência', () => {
     expect(screen.getByText('Limpar novamente a parte inferior do equipamento.')).toBeTruthy();
 
     // operador corrige: retomar → nova foto → reenviar
-    await actOnCard('Limpeza da serra', 'Corrigir', '2468');
+    await actOnCard('Limpeza da serra', 'Corrigir', '224466');
     await screen.findByText('Tarefa iniciada.');
-    await actOnCard('Limpeza da serra', 'Finalizar', '2468');
+    await actOnCard('Limpeza da serra', 'Finalizar', '224466');
     const resubmit = await findTaskDialog('Limpeza da serra');
     attachPhoto();
     await waitFor(() => {
@@ -403,7 +420,7 @@ describe('FLUXO B — foto obrigatória + conferência', () => {
     expect(evidence.length).toBe(2);
 
     // aprovação final — e o MOTIVO da devolução anterior NÃO vazou p/ cá
-    await actOnCard('Limpeza da serra', 'Conferir', '1234');
+    await actOnCard('Limpeza da serra', 'Conferir', '123456');
     const finalReview = await findTaskDialog('Limpeza da serra');
     expect(
       (
@@ -428,15 +445,15 @@ describe('FLUXO D — segurança da conferência', () => {
     });
     const { container } = render(app());
     await openDay();
-    await actOnCard('Limpeza da serra', 'Iniciar', '2468');
+    await actOnCard('Limpeza da serra', 'Iniciar', '224466');
     await screen.findByText('Tarefa iniciada.');
-    await actOnCard('Limpeza da serra', 'Finalizar', '2468');
+    await actOnCard('Limpeza da serra', 'Finalizar', '224466');
     const drawer = await findTaskDialog('Limpeza da serra');
     fireEvent.click(within(drawer).getByRole('button', { name: 'Enviar para conferência' }));
     await screen.findByText('Execução enviada para conferência.');
 
     // Marina (executora, SEM task.review) tenta conferir → negada no PIN JIT
-    await actOnCard('Limpeza da serra', 'Conferir', '2468');
+    await actOnCard('Limpeza da serra', 'Conferir', '224466');
     const detail = await findTaskDialog('Limpeza da serra');
     fireEvent.click(within(detail).getByRole('button', { name: 'Aprovar' }));
     await within(detail).findByText('Seu perfil não permite conferir execuções.');
