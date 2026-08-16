@@ -251,12 +251,23 @@ function CreatePositionDrawer({
   );
 }
 
-function MemberItem({ member }: { readonly member: TeamMemberItemView }): ReactElement {
+function MemberItem({
+  member,
+  onSetPin,
+}: {
+  readonly member: TeamMemberItemView;
+  readonly onSetPin: (employeeId: string) => void;
+}): ReactElement {
   const sync = syncLine(member.syncStatus);
   return (
     <Card>
       <Stack gap={100}>
         <Heading level={3}>{member.fullName}</Heading>
+        <Flex gap={100} wrap>
+          {/* sem credencial a pessoa NÃO consegue se identificar no quadro —
+              o encarregado precisa VER isso, não descobrir pelo erro alheio */}
+          {!member.hasCredential && <Badge status="warn">Sem PIN</Badge>}
+        </Flex>
         <Text role="data" tone="secondary">
           {member.positionName} · {member.teamName}
           {member.workPeriodLabel !== null ? ` · ${member.workPeriodLabel}` : ''}
@@ -267,8 +278,75 @@ function MemberItem({ member }: { readonly member: TeamMemberItemView }): ReactE
             {sync}
           </Text>
         )}
+        <Button variant="secondary" onClick={() => onSetPin(member.employeeId)}>
+          {member.hasCredential ? 'Redefinir PIN' : 'Definir PIN'}
+        </Button>
       </Stack>
     </Card>
+  );
+}
+
+/** Definir/redefinir PIN de colaborador existente (credencial separada, ADR-021). */
+function SetPinDrawer({
+  view,
+  actions,
+}: {
+  readonly view: TeamManagementView;
+  readonly actions: TeamManagementActions;
+}): ReactElement {
+  const [pin, setPin] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const open = view.pinTarget !== null;
+  const submitting = view.pinUpdate.status === 'submitting';
+  useEffect(() => {
+    if (open) return;
+    setPin('');
+    setConfirmation('');
+  }, [open]);
+  return (
+    <Drawer
+      open={open}
+      side="right"
+      title={`PIN de ${view.pinTarget?.fullName ?? 'colaborador'}`}
+      description="O PIN vale neste aparelho e é sincronizado depois. Redefinir também zera o bloqueio por tentativas."
+      closeLabel="Fechar"
+      onOpenChange={(isOpen) => {
+        if (!isOpen) actions.closeSetPin();
+      }}
+    >
+      <Stack gap={200}>
+        <Field label="Novo PIN">
+          <PinInput
+            key={`set-pin:${view.pinTarget?.employeeId ?? ''}`}
+            length={view.pinLength}
+            label="Novo PIN do colaborador"
+            mask
+            onValueChange={setPin}
+          />
+        </Field>
+        <Field label="Confirmar novo PIN">
+          <PinInput
+            key={`set-pin-confirm:${view.pinTarget?.employeeId ?? ''}`}
+            length={view.pinLength}
+            label="Confirmar novo PIN"
+            mask
+            onValueChange={setConfirmation}
+          />
+        </Field>
+        {view.pinUpdate.status === 'error' && (
+          <Alert status="error" live="polite" title="PIN não salvo">
+            {view.pinUpdate.message}
+          </Alert>
+        )}
+        <Button
+          fullWidth
+          disabled={submitting || pin.length < view.pinLength}
+          onClick={() => void actions.updatePin(pin, confirmation)}
+        >
+          {submitting ? 'Salvando…' : 'Salvar PIN'}
+        </Button>
+      </Stack>
+    </Drawer>
   );
 }
 
@@ -454,7 +532,11 @@ export function TeamManagementSection({
             ) : (
               <Stack gap={200}>
                 {view.members.map((member) => (
-                  <MemberItem key={member.employeeId} member={member} />
+                  <MemberItem
+                    key={member.employeeId}
+                    member={member}
+                    onSetPin={actions.openSetPin}
+                  />
                 ))}
               </Stack>
             )}
@@ -537,6 +619,7 @@ export function TeamManagementSection({
       <RegisterEmployeeDrawer view={view} actions={actions} />
       <CreatePositionDrawer view={view} actions={actions} />
       <CreateShiftDefinitionDrawer view={view} actions={actions} />
+      <SetPinDrawer view={view} actions={actions} />
     </Section>
   );
 }

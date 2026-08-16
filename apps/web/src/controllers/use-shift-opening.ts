@@ -12,6 +12,7 @@ import { CAPABILITY_CONFIG_WRITE, CAPABILITY_SESSION_OPEN } from '@tauros/contra
 import type { AppContainer } from '../wiring/container.js';
 import { FIXTURE_STORE } from '../wiring/fixtures.js';
 import { useOperatorSession, type IdentifiedOperatorView } from './operator-session-context.js';
+import { identityRejectionMessage } from './identity-messages.js';
 
 export type ShiftOpeningPhase =
   | 'bootstrapping'
@@ -147,11 +148,7 @@ export function useShiftOpening(container: AppContainer): [ShiftOpeningView, Shi
         deviceId: container.deviceId,
       });
       if (outcome.kind === 'rejected') {
-        setIdentifyError(
-          outcome.code === 'LOCKED_OUT'
-            ? 'Muitas tentativas. Aguarde alguns minutos e tente novamente.'
-            : 'Não foi possível confirmar a identificação. Confira e tente novamente.',
-        );
+        setIdentifyError(identityRejectionMessage(outcome.code));
         return;
       }
       const authorization = outcome.authorization;

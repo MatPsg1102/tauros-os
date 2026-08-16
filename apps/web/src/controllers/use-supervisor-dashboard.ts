@@ -25,6 +25,7 @@ import {
 import type { AppContainer } from '../wiring/container.js';
 import { FIXTURE_STORE } from '../wiring/fixtures.js';
 import { useOperatorSession, type IdentifiedOperatorView } from './operator-session-context.js';
+import { identityRejectionMessage } from './identity-messages.js';
 import { useShiftClosing, type ShiftClosingView } from './use-shift-closing.js';
 
 export type SupervisorPhase =
@@ -432,11 +433,7 @@ export function useSupervisorDashboard(
         deviceId: container.deviceId,
       });
       if (outcome.kind === 'rejected') {
-        setIdentifyError(
-          outcome.code === 'LOCKED_OUT'
-            ? 'Muitas tentativas. Aguarde alguns minutos e tente novamente.'
-            : 'Não foi possível confirmar a identificação. Confira e tente novamente.',
-        );
+        setIdentifyError(identityRejectionMessage(outcome.code));
         return;
       }
       const auth = outcome.authorization;

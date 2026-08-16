@@ -23,6 +23,7 @@ import type {
 
 import type { AppContainer } from '../wiring/container.js';
 import { FIXTURE_STORE } from '../wiring/fixtures.js';
+import { identityRejectionMessage } from './identity-messages.js';
 
 /** Ações críticas que exigem identificação just-in-time. */
 export type SharedAction = 'materialize' | 'claim' | 'start' | 'submit' | 'review';
@@ -537,14 +538,11 @@ export function useSharedOperations(
           deviceId: container.deviceId,
         });
         if (outcome.kind === 'rejected') {
-          // mensagem neutra (não revela existência); lockout não expõe detalhes
+          // catálogo único: condição permanente nunca vira "tente novamente"
           setPinRequest({
             ...request,
             busy: false,
-            error:
-              outcome.code === 'LOCKED_OUT'
-                ? 'Muitas tentativas. Aguarde alguns minutos e tente novamente.'
-                : 'Não foi possível confirmar a identificação. Confira e tente novamente.',
+            error: identityRejectionMessage(outcome.code),
           });
           return;
         }
