@@ -236,13 +236,20 @@ describe('quadro de tarefas do dia', () => {
     await waitFor(() => expect(screen.getByText('Concluída')).toBeTruthy());
   });
 
-  it('adia uma tarefa (desfecho previsto no modelo oficial)', async () => {
+  it('adia uma tarefa com MOTIVO obrigatório (sem motivo o domínio rejeita)', async () => {
     const { rerender } = render(app('turno'));
     await openShiftAs('Marina Álvares', ['2', '2', '4', '4', '6', '6']);
     rerender(app('tarefas'));
     await screen.findByRole('heading', { name: 'Conferir reposição da vitrine' });
 
+    // abrir o fluxo de adiamento exige informar o motivo antes de confirmar
     fireEvent.click(screen.getAllByRole('button', { name: 'Adiar tarefa' })[1] as HTMLElement);
+    const confirm = screen.getByRole('button', { name: 'Confirmar adiamento' });
+    expect((confirm as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Motivo do adiamento (obrigatório)'), {
+      target: { value: 'Faltou matéria-prima' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar adiamento' }));
     await waitFor(() => expect(screen.getByText('Adiada')).toBeTruthy());
   });
 

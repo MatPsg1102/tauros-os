@@ -1027,3 +1027,68 @@ identidade, autorização, offline, recorrência e regras de prazo intactos.
   sem overflow; 390 — Drawer da tela sem regressão.
 - **Limitação registrada**: `Emulation.setEmulatedMedia` não emula
   hover/pointer — usar `Emulation.setTouchEmulationEnabled` na validação CDP.
+
+## Overnight Hardening — auditoria adversarial pré-piloto (MODO ULTRA)
+
+Auditoria profunda em 10 dimensões (operador, encarregado, domínio, offline,
+evidência, segurança, mensagens, performance, glove/a11y, identidade,
+histórico) com verificação adversarial. 102 achados (1 P0, 17 P1, 49 P2,
+35 P3). Corrigidos: o P0, todos os P1 únicos e os P2 de alto impacto.
+
+**P0 corrigido — contenção de autoria**: unmount do quadro com drawer aberto
+descartava... NÃO descartava o ator; a autorização retida carimbava autoria
+ERRADA em enqueues posteriores de outras telas. Cleanup de unmount + boot do
+/encarregado reidrata a autorização do contexto (ações JIT do quadro zeram o
+snapshot global).
+
+**P1 corrigidos**: exceção não congela mais Dialog/Drawer em busy (catch
+devolve erro cancelável); reconcile aplica intenções em ordem de CRIAÇÃO
+(ordem de chave UUID podia regredir estado no reload); dependência de fila em
+PERMANENT_FAILURE resolve como morta (dependente vai a NEEDS_REVIEW em vez de
+esperar para sempre); rótulo de falha terminal honesto ('avise o encarregado'
+— nunca 'aguardando nova tentativa'); evento 'online' drena a fila + botão
+'Sincronizar agora' (a promessa do banner virou verdade); identidades DEV sob
+a MESMA escada de lockout (o encarregado do piloto era força-brutável);
+mensagens de credencial permanentes acionáveis (sem PIN/janela vencida/reauth
+— fim do loop 'confira e tente novamente'); 'Definir/Redefinir PIN' por
+colaborador na gestão (upsert reabre a janela offline de 72h e zera o lockout
+do aparelho — recuperação do 'muro dos 3 dias'); conferência mostra SÓ as
+evidências da execução conferida (aprovação nunca decide por foto órfã/de
+rodada devolvida) e o envio mostra só as fotos pendentes do ator; virada do
+dia operacional: sessão ACTIVE de outro dia vira 'stale-session' explícito
+com 'Fechar turno de <data>' (sem materialização corrompida, sem fechamento
+silencioso); PinInput aceita teclados virtuais Android (onChange primário —
+o PIN era indigitável no tablet-alvo); reatribuição exposta na UI
+(Atribuir/Reatribuir para pending/overdue/needs-correction) com domínio
+rejeitando TASK_IN_EXECUTION (trabalho vivo não se redistribui).
+
+**Candidatas Fase 23** — implementadas: A (reatribuir — expor UI + guarda de
+domínio), B/C parcial (adiar exige MOTIVO com autoria e não anula devolução —
+novo prazo continuaria exigindo evolução formal de domínio: adiado), E
+(resumo do turno + aviso de pendências no fechar — avisar ≠ impedir), G
+(Definir/Redefinir PIN), H (filtros rápidos — devolvidas na triagem: chip ↩,
+aba, sidebar e rail). Rejeitadas nesta noite: C-completo (novo prazo = nova
+ocorrência/mutação de dueAt — pede desenho formal), D (nota operacional sem
+desfecho = nova entidade), F (histórico por data — leitura viável, adiada por
+escopo). Mensagens: catálogo operacional cobre condições permanentes de
+claim/start/submit/review/assign; falha de abertura de sessão não acusa mais
+o perfil da pessoa.
+
+**Perf (100 tarefas reais no browser)**: render inicial ~0,6s, filtro ~60ms,
+hover da sidebar ~60ms, sem overflow — leituras por tarefa paralelizadas
+(era N+1 sequencial) e formatter de hora cacheado. Sem otimização prematura
+adicional.
+
+**Testes**: +6 regressões dedicadas (contenção de autoria no unmount, catch
+anti-congelamento, drain no 'online', redefinição de PIN pós-lockout, lockout
+das identidades DEV, ordem do reconcile) + atualizações de contrato (skip com
+motivo, evidência escopada). Browser real: jornada completa encarregado+
+operador com ciclo devolução→correção→aprovação, tablet 834 touch e 390.
+
+**Dívida consciente registrada** (não implementado): superfície de
+intervenção da fila (requeue/discard para NEEDS_REVIEW/CONFLICT); hard reauth
+no caminho de sucesso (ADR-021 §6.4 — bloquearia para sempre sem backend);
+auditoria de falhas de PIN/lockout; upload server-side de evidência + GC de
+blobs órfãos; compressão de foto (limite 8MB); idle lock
+(session.idleLockMs); histórico por data; fila sem GC (removeCompleted nunca
+acionado); 'upgrade blocked' do IndexedDB com duas abas em versões diferentes.

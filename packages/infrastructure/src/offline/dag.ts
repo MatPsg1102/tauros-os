@@ -37,6 +37,8 @@ export type DependencyResolution =
   | 'completed-removed'
   /** Presente, ainda não concluída. */
   | 'pending'
+  /** Presente, mas MORTA: PERMANENT_FAILURE não tem transição de saída. */
+  | 'dead'
   /** Ausente SEM evidência — corrupção/remoção indevida/referência inválida. */
   | 'missing';
 
@@ -46,7 +48,15 @@ export function resolveDependency(
   tombstones: ReadonlySet<string>,
 ): DependencyResolution {
   const dep = byId.get(depId);
-  if (dep !== undefined) return dep.state === 'SYNCED' ? 'completed' : 'pending';
+  if (dep !== undefined) {
+    if (dep.state === 'SYNCED') return 'completed';
+    // PERMANENT_FAILURE é terminal absoluto (a máquina não tem saída dele):
+    // o dependente NUNCA destravaria — 'pending' aqui seria espera eterna.
+    // NEEDS_REVIEW/CONFLICT seguem 'pending': intervenção pode requeue e o
+    // dependente destrava sozinho quando a dependência sincronizar.
+    if (dep.state === 'PERMANENT_FAILURE') return 'dead';
+    return 'pending';
+  }
   return tombstones.has(depId) ? 'completed-removed' : 'missing';
 }
 
@@ -54,6 +64,13 @@ export interface DependencyStatus {
   readonly satisfied: boolean;
   readonly pending: readonly string[];
   readonly missing: readonly string[];
+  /**
+   * Dependências PRESENTES porém mortas (PERMANENT_FAILURE). Distintas de
+   * `missing`: o ENQUEUE aceita o item (nasce BLOCKED — a ação do operador
+   * não pode falhar por causa de um item antigo morto); o SCHEDULER promove
+   * o dependente a NEEDS_REVIEW (visível) em vez de espera eterna.
+   */
+  readonly dead: readonly string[];
 }
 
 /** Estado agregado das dependências: satisfeito só com evidência para todas. */
@@ -64,12 +81,19 @@ export function dependencyStatus(
 ): DependencyStatus {
   const pending: string[] = [];
   const missing: string[] = [];
+  const dead: string[] = [];
   for (const depId of item.dependsOn) {
     const resolution = resolveDependency(depId, byId, tombstones);
     if (resolution === 'pending') pending.push(depId);
     else if (resolution === 'missing') missing.push(depId);
+    else if (resolution === 'dead') dead.push(depId);
   }
-  return { satisfied: pending.length === 0 && missing.length === 0, pending, missing };
+  return {
+    satisfied: pending.length === 0 && missing.length === 0 && dead.length === 0,
+    pending,
+    missing,
+    dead,
+  };
 }
 
 /**

@@ -3,7 +3,7 @@
 
 'use client';
 
-import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from 'react';
 
 import { ThemeProvider } from '@tauros/theme';
 import { injectUiStyles } from '@tauros/ui-primitives';
@@ -30,6 +30,28 @@ export function AppProviders({
   useEffect(() => {
     injectUiStyles(document);
   }, []);
+
+  // A PROMESSA do banner offline ("será enviado quando a conexão voltar")
+  // precisa ser verdade: ao reconectar, drena a fila — os payloads carregam
+  // a própria autoria, nenhuma identidade é necessária aqui. Guarda de
+  // reentrância evita drenos sobrepostos.
+  const drainingRef = useRef(false);
+  useEffect(() => {
+    const drain = (): void => {
+      if (drainingRef.current) return;
+      drainingRef.current = true;
+      void value
+        .drainAndReflect()
+        .catch(() => undefined)
+        .finally(() => {
+          drainingRef.current = false;
+        });
+    };
+    window.addEventListener('online', drain);
+    return () => {
+      window.removeEventListener('online', drain);
+    };
+  }, [value]);
   return (
     <ThemeProvider>
       <ContainerContext.Provider value={value}>

@@ -161,7 +161,11 @@ describe('decideTaskOutcome — envio para conferência (concluir ≠ aprovar)',
   });
 
   it('adiar (skip) nunca passa por conferência', () => {
-    const decision = decideTaskOutcome({ ...command, kind: 'skip' }, task, null);
+    const decision = decideTaskOutcome(
+      { ...command, kind: 'skip', notes: 'faltou matéria-prima' },
+      task,
+      null,
+    );
     if (decision.kind === 'record') expect(decision.execution.resultingStatus).toBe('SKIPPED');
     expect(decision.kind).toBe('record');
   });
@@ -170,13 +174,15 @@ describe('decideTaskOutcome — envio para conferência (concluir ≠ aprovar)',
     const inProgress = { ...task, requiresReview: false, startedByEmployeeId: 'emp-1' };
     expect(
       decideTaskOutcome(
-        { ...command, kind: 'skip', performedByEmployeeId: 'emp-2' },
+        { ...command, kind: 'skip', notes: 'motivo', performedByEmployeeId: 'emp-2' },
         inProgress,
         null,
       ),
     ).toMatchObject({ kind: 'rejected', code: 'TASK_IN_EXECUTION_BY_OTHER' });
     // o próprio ator pode adiar o que iniciou
-    expect(decideTaskOutcome({ ...command, kind: 'skip' }, inProgress, null)).toMatchObject({
+    expect(
+      decideTaskOutcome({ ...command, kind: 'skip', notes: 'motivo' }, inProgress, null),
+    ).toMatchObject({
       kind: 'record',
     });
     // colega pode CONCLUIR — autoria real registrada

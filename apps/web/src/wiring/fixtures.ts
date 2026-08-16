@@ -14,6 +14,8 @@ import {
   type IdentityResult,
   type IdentityVerificationInput,
   type OperatorIdentityPort,
+  type PinLockoutStorePort,
+  type PinPolicyPort,
 } from '@tauros/contracts';
 
 export class FixturesDisabledError extends Error {
@@ -250,6 +252,14 @@ export interface FixtureIdentityDeps {
   readonly now: () => Date;
   readonly offlineValidityMs: () => Promise<number>;
   readonly online: () => Promise<boolean>;
+  /**
+   * Lockout OBRIGATÓRIO também para identidades DEV: o encarregado do piloto
+   * usa uma fixture com capacidades de gestão — sem escada, o PIN dela seria
+   * força-brutável no tablet compartilhado. Mesmos stores/política do adapter
+   * real (employee×device).
+   */
+  readonly lockouts: PinLockoutStorePort;
+  readonly policy: PinPolicyPort;
 }
 
 /**
@@ -264,13 +274,40 @@ export class FixtureOperatorIdentity implements OperatorIdentityPort {
 
   async verify(input: IdentityVerificationInput): Promise<IdentityResult> {
     if (!fixturesEnabled()) throw new FixturesDisabledError();
+    const policy = await this.deps.policy.resolve(input.storeId);
+    const nowMs = this.deps.now().getTime();
+
+    // mesma escada de lockout do adapter real (Baseline §3)
+    const lock = await this.deps.lockouts.get(input.storeId, input.employeeId, input.deviceId);
+    if (lock?.lockedUntil != null) {
+      const until = new Date(lock.lockedUntil).getTime();
+      if (until > nowMs) {
+        return { kind: 'rejected', code: 'LOCKED_OUT', retryAfterMs: until - nowMs };
+      }
+    }
+
     const operator = FIXTURE_OPERATORS.find(
       (candidate) => candidate.employeeId === input.employeeId,
     );
     // mensagem neutra: não revela se o funcionário/credencial existe (§8)
     if (operator === undefined || operator.pin !== input.pin) {
+      const state = await this.deps.lockouts.registerFailure(
+        input.storeId,
+        input.employeeId,
+        input.deviceId,
+        policy,
+      );
+      // MESMA escada do adapter real, degrau a degrau (inclusive hard reauth)
+      if (state.totalFailures >= policy.hardReauthAfter) {
+        return { kind: 'rejected', code: 'REAUTH_REQUIRED' };
+      }
+      if (state.lockedUntil != null) {
+        const retry = new Date(state.lockedUntil).getTime() - nowMs;
+        return { kind: 'rejected', code: 'LOCKED_OUT', retryAfterMs: Math.max(0, retry) };
+      }
       return { kind: 'rejected', code: 'INVALID_PIN' };
     }
+    await this.deps.lockouts.reset(input.storeId, input.employeeId, input.deviceId);
     const online = await this.deps.online();
     const validityMs = await this.deps.offlineValidityMs();
     const now = this.deps.now();

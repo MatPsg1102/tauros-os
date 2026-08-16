@@ -25,6 +25,7 @@ import {
 import type { AppContainer } from '../wiring/container.js';
 import { FIXTURE_STORE } from '../wiring/fixtures.js';
 import { useOperatorSession, type IdentifiedOperatorView } from './operator-session-context.js';
+import { identityRejectionMessage } from './identity-messages.js';
 import { useShiftClosing, type ShiftClosingView } from './use-shift-closing.js';
 
 export type SupervisorPhase =
@@ -82,6 +83,11 @@ export interface SupervisorCounts {
   readonly done: number;
   readonly skipped: number;
   readonly unassigned: number;
+  /** Fila do ENCARREGADO: entregues aguardando a conferência dele. */
+  readonly awaitingReview: number;
+  /** Devolvidas aguardando correção do executor — cobrança visível. */
+  readonly needsCorrection: number;
+  readonly inProgress: number;
 }
 
 export interface PositionOption {
@@ -141,6 +147,8 @@ export interface SupervisorDashboardView {
   readonly readyToSync: boolean;
   readonly pendingSyncCount: number;
   readonly identifyError: string | null;
+  /** Falha da última atribuição — nunca silenciosa (linguagem operacional). */
+  readonly assignError: string | null;
 }
 
 export interface CreateTaskFormInput {
@@ -233,6 +241,7 @@ export function useSupervisorDashboard(
   const [filter, setFilter] = useState<SupervisorFilter>('all');
   const [positionFilter, setPositionFilter] = useState<string | null>(null);
   const [identifyError, setIdentifyError] = useState<string | null>(null);
+  const [assignError, setAssignError] = useState<string | null>(null);
   const [operators, setOperators] = useState<
     readonly { readonly employeeId: string; readonly name: string }[]
   >([]);
@@ -404,6 +413,11 @@ export function useSupervisorDashboard(
         setPhase('identify');
         return;
       }
+      // reidrata a autorização do container: as ações JIT do quadro
+      // compartilhado zeram o snapshot global ao descartar o ator — sem isso,
+      // todo enqueue do encarregado falharia com ENQUEUE_FAILED (autoria).
+      // Mesmo contrato de use-shift-opening.
+      container.setAuthorization(identity.authorization);
       await load();
     })();
     return () => {
@@ -424,11 +438,7 @@ export function useSupervisorDashboard(
         deviceId: container.deviceId,
       });
       if (outcome.kind === 'rejected') {
-        setIdentifyError(
-          outcome.code === 'LOCKED_OUT'
-            ? 'Muitas tentativas. Aguarde alguns minutos e tente novamente.'
-            : 'Não foi possível confirmar a identificação. Confira e tente novamente.',
-        );
+        setIdentifyError(identityRejectionMessage(outcome.code));
         return;
       }
       const auth = outcome.authorization;
@@ -543,6 +553,7 @@ export function useSupervisorDashboard(
   const assignTask = useCallback(
     async (dailyTaskId: string, positionId: string) => {
       if (authorization === null || positionId === '') return;
+      setAssignError(null);
       const readiness = await container.connectivity.assess();
       const result = await container.assignDailyTask.execute({
         authorization,
@@ -552,8 +563,24 @@ export function useSupervisorDashboard(
         assignedOffline: !readiness.readyToSync,
       });
       if (result.kind === 'failed') {
-        if (result.code === 'PERMISSION_DENIED') setPhase('denied');
-        if (result.code === 'SNAPSHOT_EXPIRED') setPhase('expired');
+        if (result.code === 'PERMISSION_DENIED') {
+          setPhase('denied');
+          return;
+        }
+        if (result.code === 'SNAPSHOT_EXPIRED') {
+          setPhase('expired');
+          return;
+        }
+        // nunca falhar em silêncio: o botão "não fazer nada" é o pior erro
+        setAssignError(
+          result.code === 'NOT_ASSIGNABLE' || result.code === 'TASK_IN_EXECUTION'
+            ? 'Esta tarefa já está em andamento ou concluída e não pode ser redistribuída.'
+            : result.code === 'UNKNOWN_POSITION'
+              ? 'Posição não encontrada nesta loja. Recarregue e tente novamente.'
+              : result.code === 'TASK_NOT_FOUND'
+                ? 'Tarefa não encontrada neste aparelho. Recarregue o quadro.'
+                : 'Não foi possível atribuir agora. Tente novamente.',
+        );
         return;
       }
       // atribuição reflete imediatamente; sincroniza quando houver conexão
@@ -660,6 +687,9 @@ export function useSupervisorDashboard(
       done: tasks.filter((task) => task.state === 'done').length,
       skipped: tasks.filter((task) => task.state === 'skipped').length,
       unassigned: tasks.filter((task) => task.isUnassigned).length,
+      awaitingReview: tasks.filter((task) => task.state === 'awaiting-review').length,
+      needsCorrection: tasks.filter((task) => task.state === 'needs-correction').length,
+      inProgress: tasks.filter((task) => task.state === 'in-progress').length,
     },
     filter,
     positionFilter,
@@ -669,6 +699,7 @@ export function useSupervisorDashboard(
     readyToSync: connectivity.readyToSync,
     pendingSyncCount,
     identifyError,
+    assignError,
   };
 
   return [

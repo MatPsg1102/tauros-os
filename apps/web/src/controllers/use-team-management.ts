@@ -41,6 +41,11 @@ export interface TeamMemberItemView {
   /** dd/mm/aaaa (fuso da loja) — início do vínculo cadastrado. */
   readonly startDateLabel: string;
   readonly syncStatus: WorkforceSyncStatus;
+  /**
+   * Credencial de PIN existe neste aparelho (ADR-021). false = a pessoa NÃO
+   * consegue se identificar — a gestão mostra "Sem PIN" e oferece definir.
+   */
+  readonly hasCredential: boolean;
 }
 
 export interface TeamPositionItemView {
@@ -89,6 +94,9 @@ export interface TeamManagementView {
   readonly groups: readonly TeamGroupView[];
   readonly registration: TeamFormState;
   readonly positionCreation: TeamFormState;
+  /** Drawer "Definir/alterar PIN" — alvo atual e estado do formulário. */
+  readonly pinTarget: { readonly employeeId: string; readonly fullName: string } | null;
+  readonly pinUpdate: TeamFormState;
   /** Data operacional corrente YYYY-MM-DD (default do formulário). */
   readonly today: string;
   // ===== Escala Operacional =====
@@ -137,6 +145,10 @@ export interface TeamManagementActions {
   readonly openCreateShiftDefinition: () => void;
   readonly closeCreateShiftDefinition: () => void;
   readonly createShiftDefinition: (input: CreateShiftDefinitionFormInput) => Promise<void>;
+  /** Definir/alterar o PIN de um colaborador existente (credencial separada). */
+  readonly openSetPin: (employeeId: string) => void;
+  readonly closeSetPin: () => void;
+  readonly updatePin: (pin: string, confirmation: string) => Promise<void>;
   readonly reload: () => Promise<void>;
 }
 
@@ -173,6 +185,12 @@ export function useTeamManagement(
   const [groups, setGroups] = useState<readonly TeamGroupView[]>([]);
   const [registration, setRegistration] = useState<TeamFormState>({ status: 'idle' });
   const [positionCreation, setPositionCreation] = useState<TeamFormState>({ status: 'idle' });
+  const [pinTarget, setPinTarget] = useState<{
+    readonly employeeId: string;
+    readonly fullName: string;
+  } | null>(null);
+  const [pinUpdate, setPinUpdate] = useState<TeamFormState>({ status: 'idle' });
+  const updatingPinRef = useRef(false);
   const [shiftDefinitionCreation, setShiftDefinitionCreation] = useState<TeamFormState>({
     status: 'idle',
   });
@@ -218,8 +236,18 @@ export function useTeamManagement(
       }
     }
 
-    const memberViews = employees
-      .filter((employee) => employee.active)
+    const activeEmployees = employees.filter((employee) => employee.active);
+    // credencial por colaborador (ADR-021): a gestão mostra quem NÃO tem PIN
+    // — sem isso, a pessoa cai em identificação impossível no quadro
+    const credentialEntries = await Promise.all(
+      activeEmployees.map(
+        async (employee) =>
+          [employee.id, await container.credentials.get(storeId, employee.id)] as const,
+      ),
+    );
+    const credentialByEmployee = new Map(credentialEntries);
+
+    const memberViews = activeEmployees
       .map((employee) => {
         const assignment = assignmentByEmployee.get(employee.id);
         const team = assignment?.teamId != null ? teamById.get(assignment.teamId) : undefined;
@@ -239,6 +267,7 @@ export function useTeamManagement(
             definition !== undefined ? `${definition.startTime}–${definition.endTime}` : null,
           startDateLabel: assignment !== undefined ? startDateLabelFor(assignment.validFrom) : '—',
           syncStatus: employee.syncStatus,
+          hasCredential: (credentialByEmployee.get(employee.id) ?? null) !== null,
         };
       })
       .sort((a, b) => a.fullName.localeCompare(b.fullName, 'pt-BR'));
@@ -402,6 +431,75 @@ export function useTeamManagement(
     [authorization, container, load, pinLength],
   );
 
+  const openSetPin = useCallback(
+    (employeeId: string) => {
+      const member = members.find((candidate) => candidate.employeeId === employeeId);
+      if (member === undefined) return;
+      setPinUpdate({ status: 'open' });
+      setPinTarget({ employeeId: member.employeeId, fullName: member.fullName });
+    },
+    [members],
+  );
+
+  const closeSetPin = useCallback(() => {
+    if (updatingPinRef.current) return;
+    setPinUpdate({ status: 'idle' });
+    setPinTarget(null);
+  }, []);
+
+  /**
+   * Define/redefine a credencial de PIN de um colaborador EXISTENTE
+   * (ADR-021: credencial separada; upsert deriva o verifier e descarta o
+   * PIN). Redefinir também: (a) reabre a janela offline (updatedAt vira a
+   * âncora — sem backend não há confirmação online que a renove); (b) zera o
+   * lockout DESTE aparelho (quem esqueceu o PIN acumulou falhas).
+   */
+  const updatePin = useCallback(
+    async (pin: string, confirmation: string) => {
+      const target = pinTarget;
+      if (target === null || authorization === null) return;
+      // gate REVALIDADO na ação (ocultação visual não é controle — ADR-018):
+      // só quem gere a equipe redefine credencial
+      if (!enabled) {
+        setPinUpdate({ status: 'error', message: 'Seu perfil não permite redefinir PIN.' });
+        return;
+      }
+      if (updatingPinRef.current) return;
+      if (pin.length !== pinLength) {
+        setPinUpdate({ status: 'error', message: `O PIN deve ter ${pinLength} dígitos.` });
+        return;
+      }
+      if (pin !== confirmation) {
+        setPinUpdate({ status: 'error', message: 'Os PINs digitados não conferem.' });
+        return;
+      }
+      updatingPinRef.current = true;
+      setPinUpdate({ status: 'submitting' });
+      try {
+        await container.credentials.upsert({
+          storeId: FIXTURE_STORE.id,
+          employeeId: target.employeeId,
+          pin,
+          status: 'LOCAL_PENDING_PROVISIONING',
+        });
+        // redefinição gerenciada: apaga o lockout INTEIRO (inclusive a base do
+        // hard reauth) — nova credencial, nova base
+        await container.lockouts.clear(FIXTURE_STORE.id, target.employeeId, container.deviceId);
+        setPinUpdate({ status: 'idle' });
+        setPinTarget(null);
+        await load();
+      } catch {
+        setPinUpdate({
+          status: 'error',
+          message: 'Não foi possível salvar o PIN agora. Tente novamente.',
+        });
+      } finally {
+        updatingPinRef.current = false;
+      }
+    },
+    [authorization, container, enabled, load, pinLength, pinTarget],
+  );
+
   const createPosition = useCallback(
     async (name: string) => {
       if (authorization === null) return;
@@ -551,6 +649,8 @@ export function useTeamManagement(
     groups,
     registration,
     positionCreation,
+    pinTarget,
+    pinUpdate,
     today: operationalDateFor(container.clock(), FIXTURE_STORE.timeZone),
     canCreateShiftDefinition: canCreatePosition,
     definitionItems,
@@ -579,6 +679,9 @@ export function useTeamManagement(
       openCreateShiftDefinition,
       closeCreateShiftDefinition,
       createShiftDefinition,
+      openSetPin,
+      closeSetPin,
+      updatePin,
       reload: load,
     },
   ];

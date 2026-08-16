@@ -23,11 +23,12 @@ import type {
 
 import type { AppContainer } from '../wiring/container.js';
 import { FIXTURE_STORE } from '../wiring/fixtures.js';
+import { identityRejectionMessage } from './identity-messages.js';
 
 /** Ações críticas que exigem identificação just-in-time. */
 export type SharedAction = 'materialize' | 'claim' | 'start' | 'submit' | 'review';
 
-export type SharedFilter = 'all' | 'pending' | 'in-progress' | 'review' | 'done';
+export type SharedFilter = 'all' | 'pending' | 'in-progress' | 'review' | 'returned' | 'done';
 
 /**
  * Estado de PRAZO derivado de apresentação (UI Operacional V1.1) — nunca
@@ -108,6 +109,8 @@ export interface SharedCounts {
   readonly open: number;
   /** Próximas do prazo (DUE_SOON) — alimenta o alerta do topo. */
   readonly dueSoon: number;
+  /** Devolvidas para correção (NEEDS_CORRECTION) — cobrança visível. */
+  readonly needsCorrection: number;
 }
 
 /** Colaborador selecionável na identificação (nome + employeeId; sem PIN). */
@@ -178,6 +181,8 @@ export interface SharedOperationsView {
   readonly scheduleStatus: 'resolved' | 'unconfigured';
   readonly deviceOnline: boolean;
   readonly readyToSync: boolean;
+  /** Registros deste quadro ainda aguardando envio (syncStatus 'queued'). */
+  readonly pendingSyncCount: number;
   /** Nenhuma ocorrência materializada: o dia precisa ser aberto por alguém. */
   readonly dayNotMaterialized: boolean;
   readonly pinRequest: PinRequest | null;
@@ -208,6 +213,8 @@ export interface SharedOperationsActions {
   readonly sendBack: (reason: string) => Promise<void>;
   readonly cancelReview: () => void;
   readonly reload: () => Promise<void>;
+  /** Drena a fila agora e recarrega o quadro (leitura + envio; sem PIN). */
+  readonly syncNow: () => Promise<void>;
 }
 
 const STATUS_LABEL: Readonly<Record<DailyTaskStatus, string>> = {
@@ -228,22 +235,37 @@ const ACTION_PROMPT: Readonly<Record<SharedAction, string>> = {
   review: 'Identificação do encarregado',
 };
 
+// formatter CACHEADO por fuso: construir Intl.DateTimeFormat é caro e este
+// caminho roda por tarefa a cada render (com 100 tarefas + tick de minuto,
+// seriam centenas de construções por minuto)
+const TIME_FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+function timeFormatterFor(timeZone: string): Intl.DateTimeFormat {
+  let formatter = TIME_FORMATTERS.get(timeZone);
+  if (formatter === undefined) {
+    formatter = new Intl.DateTimeFormat('pt-BR', {
+      timeZone,
+      hourCycle: 'h23',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    TIME_FORMATTERS.set(timeZone, formatter);
+  }
+  return formatter;
+}
+
 function timeOfDay(iso: string | null | undefined, timeZone: string): string | null {
   if (iso == null || iso === '') return null;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat('pt-BR', {
-    timeZone,
-    hourCycle: 'h23',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
+  return timeFormatterFor(timeZone).format(date);
 }
 
 function syncLabelFor(status: DailyTaskRecord['syncStatus']): string | null {
   if (status === 'queued') return 'Salvo neste aparelho — aguardando sincronização';
   if (status === 'conflict') return 'Precisa de revisão (conflito entre aparelhos)';
-  if (status === 'failed') return 'Aguardando nova tentativa de envio';
+  // 'failed' local = estado TERMINAL da fila (sem nova tentativa automática):
+  // rótulo honesto — prometer retry aqui esconderia um registro parado
+  if (status === 'failed') return 'Não foi possível enviar este registro — avise o encarregado';
   return null;
 }
 
@@ -391,15 +413,22 @@ export function useSharedOperations(
       }
       setScheduledByPosition(scheduled);
 
+      // leituras POR TAREFA em paralelo: sequenciais seriam 100–200
+      // transações IndexedDB encadeadas com 100 tarefas (tablet fraco)
       const evidence = new Map<string, readonly EvidenceRecord[]>();
       const executions = new Map<string, TaskExecutionRecord>();
-      for (const task of tasks) {
-        evidence.set(task.id, await container.evidence.byDailyTask(FIXTURE_STORE.id, task.id));
-        if (task.lastExecutionId !== null) {
-          const execution = await container.tasks.executionById(task.lastExecutionId);
+      await Promise.all(
+        tasks.map(async (task) => {
+          const [taskEvidence, execution] = await Promise.all([
+            container.evidence.byDailyTask(FIXTURE_STORE.id, task.id),
+            task.lastExecutionId !== null
+              ? container.tasks.executionById(task.lastExecutionId)
+              : Promise.resolve(null),
+          ]);
+          evidence.set(task.id, taskEvidence);
           if (execution !== null) executions.set(task.id, execution);
-        }
-      }
+        }),
+      );
       setEvidenceByTask(evidence);
       setExecutionsById(executions);
       setPhase('ready');
@@ -455,12 +484,24 @@ export function useSharedOperations(
 
   /** Sessão operacional do ator (ADR-014): reusa a ativa ou abre agora. */
   const resolveActorSession = useCallback(
-    async (authorization: EffectiveAuthorization, online: boolean): Promise<string | null> => {
+    async (
+      authorization: EffectiveAuthorization,
+      online: boolean,
+    ): Promise<string | 'stale-session' | null> => {
       const active = await container.sessions.findActive(
         FIXTURE_STORE.id,
         authorization.operatorEmployeeId,
       );
-      if (active !== null) return active.id;
+      if (active !== null) {
+        // virada do dia: sessão ACTIVE de OUTRO dia operacional não recebe a
+        // execução de hoje — mesmo contrato das guardas de /turno
+        if (
+          active.operationalDate !== operationalDateFor(container.clock(), FIXTURE_STORE.timeZone)
+        ) {
+          return 'stale-session';
+        }
+        return active.id;
+      }
       const opened = await container.openSession.execute({
         authorization,
         // membership de plataforma opcional (ADR-021): null até provisionamento
@@ -490,9 +531,16 @@ export function useSharedOperations(
   }, []);
 
   const evidenceViews = useCallback(
-    async (taskId: string): Promise<readonly { id: string; url: string | null }[]> => {
+    async (
+      taskId: string,
+      relevant?: (record: EvidenceRecord) => boolean,
+    ): Promise<readonly { id: string; url: string | null }[]> => {
       revokeEvidenceUrls();
-      const records = await container.evidence.byDailyTask(FIXTURE_STORE.id, taskId);
+      const all = await container.evidence.byDailyTask(FIXTURE_STORE.id, taskId);
+      // ESCOPO honesto: cada drawer vê SÓ o que conta para ele — a conferência
+      // nunca decide com foto de outra execução; o envio nunca exibe foto que
+      // não satisfaz requiresPhoto (órfã de tentativa abandonada de terceiro)
+      const records = relevant === undefined ? all : all.filter(relevant);
       const views: { id: string; url: string | null }[] = [];
       for (const record of records) {
         const blob = await container.evidenceBlobs.get(record.localBlobKey);
@@ -521,6 +569,13 @@ export function useSharedOperations(
       // só os fluxos com drawer (finalizar/conferir) retêm o ator até o
       // fechamento; qualquer outro desfecho descarta a credencial no finally
       let retainActor = false;
+      // o diálogo foi fechado programaticamente neste fluxo? decide, de forma
+      // DETERMINÍSTICA, para onde vai um erro inesperado (diálogo vs notice)
+      let dialogDismissed = false;
+      const dismissDialog = (): void => {
+        dialogDismissed = true;
+        setPinRequest(null);
+      };
       try {
         // employeeId identifica, PIN verifica (ADR-021). O port resolve a
         // origem (credencial local real OU fixture DEV) — o controller não sabe.
@@ -531,14 +586,11 @@ export function useSharedOperations(
           deviceId: container.deviceId,
         });
         if (outcome.kind === 'rejected') {
-          // mensagem neutra (não revela existência); lockout não expõe detalhes
+          // catálogo único: condição permanente nunca vira "tente novamente"
           setPinRequest({
             ...request,
             busy: false,
-            error:
-              outcome.code === 'LOCKED_OUT'
-                ? 'Muitas tentativas. Aguarde alguns minutos e tente novamente.'
-                : 'Não foi possível confirmar a identificação. Confira e tente novamente.',
+            error: identityRejectionMessage(outcome.code),
           });
           return;
         }
@@ -566,7 +618,7 @@ export function useSharedOperations(
               fail('Não foi possível abrir o dia agora. Tente novamente.');
               return;
             }
-            setPinRequest(null);
+            dismissDialog();
             await load();
             return;
           }
@@ -581,17 +633,19 @@ export function useSharedOperations(
             if (claimed.kind === 'failed') {
               fail(
                 claimed.code === 'ACTOR_NOT_SCHEDULED'
-                  ? 'Você não está escalado hoje para assumir tarefas.'
+                  ? 'Você não aparece na escala de hoje. Se a escala do dia não estiver configurada, avise o encarregado.'
                   : claimed.code === 'ACTOR_WITHOUT_POSITION'
-                    ? 'Você não possui posição vigente para assumir tarefas.'
+                    ? 'Você ainda não tem posição cadastrada. Peça ao encarregado para configurar seu vínculo.'
                     : claimed.code === 'ALREADY_ASSIGNED'
                       ? 'Esta tarefa já tem responsável definido.'
-                      : 'Não foi possível assumir a tarefa agora.',
+                      : claimed.code === 'SNAPSHOT_EXPIRED'
+                        ? 'Sua identificação expirou. Feche e identifique-se novamente.'
+                        : 'Não foi possível assumir a tarefa agora.',
               );
               return;
             }
             if (readiness.readyToSync) await container.drainAndReflect();
-            setPinRequest(null);
+            dismissDialog();
             setNotice('Tarefa assumida.');
             await load();
             return;
@@ -612,12 +666,16 @@ export function useSharedOperations(
                     ? 'Outra pessoa já está executando esta tarefa.'
                     : started.code === 'TASK_UNASSIGNED'
                       ? 'Assuma a tarefa antes de iniciar.'
-                      : 'Não foi possível iniciar a tarefa agora.',
+                      : started.code === 'TASK_NOT_STARTABLE'
+                        ? 'Esta tarefa não está mais disponível para iniciar — pode já ter sido resolvida em outro aparelho.'
+                        : started.code === 'SNAPSHOT_EXPIRED'
+                          ? 'Sua identificação expirou. Feche e identifique-se novamente.'
+                          : 'Não foi possível iniciar a tarefa agora.',
               );
               return;
             }
             if (readiness.readyToSync) await container.drainAndReflect();
-            setPinRequest(null);
+            dismissDialog();
             setNotice('Tarefa iniciada.');
             await load();
             return;
@@ -631,7 +689,7 @@ export function useSharedOperations(
               fail('Tarefa não encontrada neste aparelho.');
               return;
             }
-            setPinRequest(null);
+            dismissDialog();
             retainActor = true;
             setSubmitForm({
               taskId: task.id,
@@ -642,7 +700,14 @@ export function useSharedOperations(
                 task.expectedMinSnapshot !== null || task.expectedMaxSnapshot !== null
                   ? { min: task.expectedMinSnapshot, max: task.expectedMaxSnapshot }
                   : null,
-              evidence: await evidenceViews(task.id),
+              // só o que CONTA para este envio: pendentes capturadas pelo
+              // PRÓPRIO ator (mesmo critério do submitExecution)
+              evidence: await evidenceViews(
+                task.id,
+                (record) =>
+                  record.executionId === null &&
+                  record.capturedByEmployeeId === authorization.operatorEmployeeId,
+              ),
               error: null,
               busy: false,
             });
@@ -655,7 +720,7 @@ export function useSharedOperations(
               fail('Execução não encontrada neste aparelho.');
               return;
             }
-            setPinRequest(null);
+            dismissDialog();
             retainActor = true;
             setReviewDetail({
               taskId: task.id,
@@ -673,13 +738,43 @@ export function useSharedOperations(
               startedAtTime: timeOfDay(execution.startedAt, FIXTURE_STORE.timeZone),
               finishedAtTime: timeOfDay(execution.eventTime, FIXTURE_STORE.timeZone) ?? '—',
               notes: execution.notes,
-              evidence: await evidenceViews(task.id),
+              // P1: a conferência decide SOBRE ESTA execução — nunca com foto
+              // órfã de terceiros nem de rodada devolvida anterior
+              evidence: await evidenceViews(
+                task.id,
+                (record) => record.executionId === execution.id,
+              ),
               error: null,
               busy: false,
             });
             return;
           }
         }
+      } catch {
+        // exceção inesperada (ex.: IndexedDB) NUNCA congela o diálogo em
+        // busy — cancelar recusa fechar enquanto busy e o tablet ficaria
+        // preso até reload. Mesmo canal de erro dos caminhos 'failed'.
+        // Se o diálogo JÁ fechou (falha ao montar o drawer), o erro vai ao
+        // notice do quadro — nunca silêncio.
+        if (dialogDismissed) {
+          // diálogo já fechado neste fluxo (falha após montar um drawer ou
+          // no pós-processamento): o erro vai ao notice do quadro — nunca
+          // silêncio, nunca duplicado
+          setSubmitForm(null);
+          setReviewDetail(null);
+          setNotice('Algo deu errado neste aparelho. Tente novamente.');
+        } else {
+          setPinRequest((current) =>
+            current === null
+              ? null
+              : {
+                  ...current,
+                  busy: false,
+                  error: 'Algo deu errado neste aparelho. Tente novamente.',
+                },
+          );
+        }
+        retainActor = false;
       } finally {
         busyRef.current = false;
         // credencial fora da memória: o PIN nunca sai deste callback e a
@@ -707,6 +802,18 @@ export function useSharedOperations(
     actorRef.current = null;
     container.setAuthorization(null);
     revokeEvidenceUrls();
+  }, [container, revokeEvidenceUrls]);
+
+  // CONTENÇÃO DE AUTORIA (P0): se a tela desmontar com um drawer aberto
+  // (navegação, back gesture), a autorização retida do ator NÃO pode
+  // sobreviver no container — itens de fila de outra tela sairiam com a
+  // autoria de quem abandonou o drawer. Mesmo destino das object URLs.
+  useEffect(() => {
+    return () => {
+      actorRef.current = null;
+      container.setAuthorization(null);
+      revokeEvidenceUrls();
+    };
   }, [container, revokeEvidenceUrls]);
 
   const addEvidence = useCallback(
@@ -739,7 +846,21 @@ export function useSharedOperations(
           });
           return;
         }
-        setSubmitForm({ ...form, busy: false, evidence: await evidenceViews(form.taskId) });
+        setSubmitForm({
+          ...form,
+          busy: false,
+          evidence: await evidenceViews(
+            form.taskId,
+            (record) =>
+              record.executionId === null && record.capturedByEmployeeId === actor.employeeId,
+          ),
+        });
+      } catch {
+        setSubmitForm((current) =>
+          current === null
+            ? null
+            : { ...current, busy: false, error: 'Não foi possível anexar a foto agora.' },
+        );
       } finally {
         busyRef.current = false;
       }
@@ -757,11 +878,23 @@ export function useSharedOperations(
       try {
         const readiness = await container.connectivity.assess();
         const sessionId = await resolveActorSession(actor.authorization, readiness.readyToSync);
-        if (sessionId === null) {
+        if (sessionId === 'stale-session') {
           setSubmitForm({
             ...form,
             busy: false,
-            error: 'Seu perfil não permite abrir turno para registrar a execução.',
+            error:
+              'Você tem um turno de outro dia ainda aberto. Feche-o na tela de turno antes de registrar.',
+          });
+          return;
+        }
+        if (sessionId === null) {
+          // pode ser permissão OU falha técnica na abertura — não acusar o
+          // perfil da pessoa sem certeza
+          setSubmitForm({
+            ...form,
+            busy: false,
+            error:
+              'Não foi possível abrir seu turno para registrar a execução. Tente novamente; se persistir, avise o encarregado.',
           });
           return;
         }
@@ -795,7 +928,11 @@ export function useSharedOperations(
                 ? 'Adicione a foto solicitada antes de enviar para conferência.'
                 : recorded.code === 'VALUE_REQUIRED'
                   ? 'Informe a medição registrada.'
-                  : 'Não foi possível finalizar agora. Tente novamente.',
+                  : recorded.code === 'TASK_ALREADY_RESOLVED'
+                    ? 'Esta tarefa já foi resolvida — possivelmente em outro aparelho. Nada foi perdido.'
+                    : recorded.code === 'SNAPSHOT_EXPIRED'
+                      ? 'Sua identificação expirou. Feche este painel e identifique-se novamente.'
+                      : 'Não foi possível finalizar agora. Tente novamente.',
           });
           return;
         }
@@ -808,6 +945,16 @@ export function useSharedOperations(
             : 'Tarefa concluída.',
         );
         await load();
+      } catch {
+        setSubmitForm((current) =>
+          current === null
+            ? null
+            : {
+                ...current,
+                busy: false,
+                error: 'Não foi possível finalizar agora. Tente novamente.',
+              },
+        );
       } finally {
         busyRef.current = false;
       }
@@ -851,7 +998,12 @@ export function useSharedOperations(
                   ? 'Quem executou não pode conferir a própria tarefa.'
                   : reviewed.code === 'REASON_REQUIRED'
                     ? 'Informe o motivo da devolução.'
-                    : 'Não foi possível registrar a conferência agora.',
+                    : reviewed.code === 'TASK_NOT_IN_REVIEW' ||
+                        reviewed.code === 'ALREADY_REVIEWED_DIFFERENTLY'
+                      ? 'Esta execução já foi conferida — possivelmente em outro aparelho.'
+                      : reviewed.code === 'SNAPSHOT_EXPIRED'
+                        ? 'Sua identificação expirou. Feche este painel e identifique-se novamente.'
+                        : 'Não foi possível registrar a conferência agora.',
           });
           return;
         }
@@ -860,12 +1012,31 @@ export function useSharedOperations(
         endActorContext();
         setNotice(outcome === 'APPROVED' ? 'Execução aprovada.' : 'Devolvida para correção.');
         await load();
+      } catch {
+        setReviewDetail((current) =>
+          current === null
+            ? null
+            : {
+                ...current,
+                busy: false,
+                error: 'Não foi possível registrar a conferência agora.',
+              },
+        );
       } finally {
         busyRef.current = false;
       }
     },
     [container, endActorContext, load, reviewDetail],
   );
+
+  const syncNow = useCallback(async () => {
+    try {
+      await container.drainAndReflect();
+    } catch {
+      /* transporte indisponível — o quadro segue com os rótulos por registro */
+    }
+    await load();
+  }, [container, load]);
 
   const approve = useCallback(async () => finishReview('APPROVED', null), [finishReview]);
   const sendBack = useCallback(
@@ -926,6 +1097,8 @@ export function useSharedOperations(
         return view.status === 'IN_PROGRESS' || view.status === 'NEEDS_CORRECTION';
       case 'review':
         return view.status === 'AWAITING_REVIEW';
+      case 'returned':
+        return view.status === 'NEEDS_CORRECTION';
       case 'done':
         return view.status === 'DONE' || view.status === 'SKIPPED';
       default:
@@ -1017,6 +1190,7 @@ export function useSharedOperations(
       late: views.filter((task) => task.isLate).length,
       open: openViews.length,
       dueSoon: views.filter((task) => task.dueState === 'DUE_SOON').length,
+      needsCorrection: views.filter((task) => task.status === 'NEEDS_CORRECTION').length,
     },
     positionSummaries,
     unassignedCount: openViews.filter((task) => task.positionId === null).length,
@@ -1024,6 +1198,7 @@ export function useSharedOperations(
     scheduleStatus: plannedDay?.status === 'unconfigured' ? 'unconfigured' : 'resolved',
     deviceOnline: connectivity.deviceOnline,
     readyToSync: connectivity.readyToSync,
+    pendingSyncCount: records.filter((record) => record.syncStatus === 'queued').length,
     dayNotMaterialized: phase === 'ready' && records.length === 0,
     pinRequest,
     submitForm,
@@ -1056,6 +1231,7 @@ export function useSharedOperations(
       sendBack,
       cancelReview,
       reload: load,
+      syncNow,
     },
   ];
 }

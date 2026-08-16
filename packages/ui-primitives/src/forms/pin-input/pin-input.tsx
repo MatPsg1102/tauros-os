@@ -9,6 +9,7 @@ import {
   forwardRef,
   useRef,
   useState,
+  type ChangeEvent,
   type ClipboardEvent,
   type HTMLAttributes,
   type KeyboardEvent,
@@ -110,6 +111,24 @@ export const PinInput = forwardRef<HTMLDivElement, PinInputProps>(function PinIn
     }
   }
 
+  /**
+   * Caminho PRIMÁRIO dos teclados VIRTUAIS: IMEs Android emitem keydown com
+   * key 'Unidentified' (não interceptado acima) e entregam o texto pelo
+   * evento de input — sem este handler o PIN é indigitável no tablet-alvo.
+   * Teclado físico não chega aqui (o keydown intercepta e faz preventDefault).
+   */
+  function handleChange(index: number, event: ChangeEvent<HTMLInputElement>): void {
+    const raw = event.target.value;
+    if (raw === '') {
+      if (digits[index] !== '') setDigit(index, '');
+      return;
+    }
+    const ch = [...raw].reverse().find(acceptChar);
+    if (ch === undefined) return;
+    setDigit(index, ch);
+    cells.current[Math.min(index + 1, length - 1)]?.focus();
+  }
+
   function handlePaste(index: number, event: ClipboardEvent<HTMLInputElement>): void {
     event.preventDefault();
     const pasted = event.clipboardData.getData('text').split('').filter(acceptChar);
@@ -150,7 +169,7 @@ export const PinInput = forwardRef<HTMLDivElement, PinInputProps>(function PinIn
           disabled={wiring.disabled}
           aria-label={digitLabel(index, length)}
           aria-invalid={wiring.invalid ? true : undefined}
-          onChange={() => undefined}
+          onChange={(event) => handleChange(index, event)}
           onKeyDown={(event) => handleKeyDown(index, event)}
           onPaste={(event) => handlePaste(index, event)}
         />

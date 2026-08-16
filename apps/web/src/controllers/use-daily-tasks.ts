@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { storeDayStartFor } from '@tauros/application';
+import { operationalDateFor, storeDayStartFor } from '@tauros/application';
 import type { DailyTaskRecord, OperatorSessionRecord, TaskSyncStatus } from '@tauros/contracts';
 
 import type { AppContainer } from '../wiring/container.js';
@@ -14,7 +14,14 @@ import { FIXTURE_STORE } from '../wiring/fixtures.js';
 import { useOperatorSession } from './operator-session-context.js';
 
 export type DailyTasksPhase =
-  'loading' | 'ready' | 'no-session' | 'unavailable' | 'error' | 'expired';
+  | 'loading'
+  | 'ready'
+  | 'no-session'
+  /** Turno ainda ABERTO de outro dia operacional — fechar antes de operar. */
+  | 'stale-session'
+  | 'unavailable'
+  | 'error'
+  | 'expired';
 
 /**
  * Estado apresentável de uma tarefa — já resolvido, sem booleanos soltos.
@@ -70,7 +77,8 @@ export interface CompleteTaskInput {
 export interface DailyTasksActions {
   readonly reload: () => Promise<void>;
   readonly complete: (taskId: string, input: CompleteTaskInput) => Promise<void>;
-  readonly skip: (taskId: string) => Promise<void>;
+  /** Adiar exige motivo (o domínio rejeita sem) — registrado com autoria. */
+  readonly skip: (taskId: string, reason: string) => Promise<void>;
   readonly retrySync: () => Promise<void>;
 }
 
@@ -130,6 +138,18 @@ export function useDailyTasks(
       setTasks([]);
       return;
     }
+    // VIRADA DO DIA: sessão ainda ACTIVE de outro dia operacional não pode
+    // materializar — workDate de ontem + dayStart de hoje corromperia os
+    // horários das ocorrências. Estado explícito; fechar o turno antigo é
+    // ação humana (nunca transição silenciosa).
+    if (
+      activeSession.operationalDate !==
+      operationalDateFor(container.clock(), FIXTURE_STORE.timeZone)
+    ) {
+      setPhase('stale-session');
+      setTasks([]);
+      return;
+    }
     const readiness = await container.connectivity.assess();
     setConnectivity({
       deviceOnline: readiness.deviceOnline,
@@ -164,15 +184,25 @@ export function useDailyTasks(
     let cancelled = false;
     void (async () => {
       await container.reconcileFromQueue();
+      // reidrata o snapshot de autoria do container: a contenção de autoria
+      // do quadro compartilhado zera o snapshot ao desmontar — sem isto,
+      // concluir/adiar aqui falharia com ENQUEUE_FAILED (mesmo contrato de
+      // use-shift-opening e use-supervisor-dashboard)
+      if (identity.authorization !== null) container.setAuthorization(identity.authorization);
       if (!cancelled) await load();
     })();
     return () => {
       cancelled = true;
     };
-  }, [container, load]);
+  }, [container, identity.authorization, load]);
 
   const runOutcome = useCallback(
-    async (taskId: string, kind: 'complete' | 'skip', input: CompleteTaskInput) => {
+    async (
+      taskId: string,
+      kind: 'complete' | 'skip',
+      input: CompleteTaskInput,
+      notes: string | null = null,
+    ) => {
       if (authorization === null || activeSession === null) return;
       if (busyRef.current) return;
       busyRef.current = true;
@@ -187,7 +217,7 @@ export function useDailyTasks(
           deviceId: container.deviceId,
           kind,
           numericValue: input.numericValue,
-          notes: null,
+          notes,
           hasEvidence: input.hasEvidence,
           performedOffline: !readiness.readyToSync,
         });
@@ -198,6 +228,14 @@ export function useDailyTasks(
               break;
             case 'VALUE_REQUIRED':
               setActionError('Informe a medição registrada para concluir esta tarefa.');
+              break;
+            case 'SKIP_REASON_REQUIRED':
+              setActionError('Informe o motivo do adiamento.');
+              break;
+            case 'RETURNED_TASK_CANNOT_SKIP':
+              setActionError(
+                'Tarefa devolvida para correção não pode ser adiada — corrija e reenvie.',
+              );
               break;
             case 'TASK_ALREADY_RESOLVED':
               setActionError('Esta tarefa já foi resolvida. Nada foi perdido.');
@@ -226,7 +264,10 @@ export function useDailyTasks(
     [runOutcome],
   );
   const skip = useCallback(
-    (taskId: string) => runOutcome(taskId, 'skip', { numericValue: null, hasEvidence: false }),
+    // adiar carrega MOTIVO obrigatório (o domínio rejeita sem) — autoria +
+    // explicação ficam na execução, nunca um "sumiço" sem história
+    (taskId: string, reason: string) =>
+      runOutcome(taskId, 'skip', { numericValue: null, hasEvidence: false }, reason),
     [runOutcome],
   );
   const retrySync = useCallback(async () => {

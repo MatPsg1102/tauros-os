@@ -54,7 +54,11 @@ describe('decideTaskOutcome — transições oficiais', () => {
   });
 
   it('adia uma tarefa (SKIPPED — desfecho previsto no modelo)', () => {
-    const decision = decideTaskOutcome({ ...command, kind: 'skip' }, task, null);
+    const decision = decideTaskOutcome(
+      { ...command, kind: 'skip', notes: 'faltou matéria-prima' },
+      task,
+      null,
+    );
     expect(decision.kind).toBe('record');
     if (decision.kind !== 'record') return;
     expect(decision.execution.resultingStatus).toBe('SKIPPED');
@@ -99,7 +103,7 @@ describe('decideTaskOutcome — obrigatoriedades do template congelado', () => {
 
   it('adiar não exige evidência', () => {
     const decision = decideTaskOutcome(
-      { ...command, kind: 'skip' },
+      { ...command, kind: 'skip', notes: 'motivo operacional' },
       { ...task, requiresPhoto: true },
       null,
     );

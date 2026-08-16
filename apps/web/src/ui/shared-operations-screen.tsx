@@ -165,9 +165,21 @@ function ActionPinDialog({
 }): ReactElement {
   const [employeeId, setEmployeeId] = useState('');
   const [pin, setPin] = useState('');
+  // remonta as células a cada ABERTURA (dígitos de ação anterior nunca ficam
+  // visíveis — fechamento programático não dispara onOpenChange) e a cada
+  // TENTATIVA (dois erros idênticos seguidos também limpam as células). A
+  // SELEÇÃO persiste — a mesma pessoa em ações seguidas só redigita o PIN.
+  const [openSeq, setOpenSeq] = useState(0);
+  const [attemptSeq, setAttemptSeq] = useState(0);
   const request = view.pinRequest;
   const open = request !== null;
   const pinLength = request?.pinLength ?? 6;
+  useEffect(() => {
+    if (open) {
+      setOpenSeq((sequence) => sequence + 1);
+      setPin('');
+    }
+  }, [open]);
   const reset = (): void => {
     setEmployeeId('');
     setPin('');
@@ -191,7 +203,12 @@ function ActionPinDialog({
         <Field label="Quem está executando?">
           <Select
             value={employeeId}
-            onChange={(event) => setEmployeeId(event.target.value)}
+            onChange={(event) => {
+              setEmployeeId(event.target.value);
+              // trocar de pessoa NUNCA reaproveita dígitos ocultos do PIN
+              // anterior (as células remontam vazias pela key abaixo)
+              setPin('');
+            }}
             disabled={request?.busy === true}
           >
             <option value="" disabled>
@@ -205,7 +222,7 @@ function ActionPinDialog({
           </Select>
         </Field>
         <PinInput
-          key={`${request?.action ?? 'pin'}:${employeeId}:${request?.error ?? ''}`}
+          key={`${String(openSeq)}:${String(attemptSeq)}:${employeeId}`}
           length={pinLength}
           label="PIN"
           mask
@@ -220,10 +237,12 @@ function ActionPinDialog({
           fullWidth
           disabled={employeeId === '' || pin.length < pinLength || request?.busy === true}
           onClick={() => {
-            const selected = employeeId;
-            const value = pin;
-            reset();
-            void actions.confirmPin(selected, value);
+            // erro de PIN NÃO apaga a seleção do colaborador (com luva, cada
+            // reseleção custa caro); as células remontam a cada tentativa e
+            // tudo é limpo quando o diálogo fecha
+            setPin('');
+            setAttemptSeq((sequence) => sequence + 1);
+            void actions.confirmPin(employeeId, pin);
           }}
         >
           {request?.busy === true ? 'Confirmando…' : 'Confirmar'}
@@ -467,7 +486,8 @@ function DueAlerts({
   readonly view: SharedOperationsView;
   readonly actions: SharedOperationsActions;
 }): ReactElement | null {
-  if (view.counts.late === 0 && view.counts.dueSoon === 0) return null;
+  if (view.counts.late === 0 && view.counts.dueSoon === 0 && view.counts.needsCorrection === 0)
+    return null;
   return (
     <Flex gap={100} wrap role="group" aria-label="Alertas de prazo">
       {view.counts.late > 0 && (
@@ -484,6 +504,14 @@ function DueAlerts({
           onClick={() => actions.setDueFilter(view.dueFilter === 'due-soon' ? null : 'due-soon')}
         >
           {`⚠ ${String(view.counts.dueSoon)} ${view.counts.dueSoon === 1 ? 'próxima do prazo' : 'próximas do prazo'}`}
+        </Chip>
+      )}
+      {view.counts.needsCorrection > 0 && (
+        <Chip
+          selected={view.filter === 'returned'}
+          onClick={() => actions.setFilter(view.filter === 'returned' ? 'all' : 'returned')}
+        >
+          {`↩ ${String(view.counts.needsCorrection)} ${view.counts.needsCorrection === 1 ? 'devolvida' : 'devolvidas'}`}
         </Chip>
       )}
     </Flex>
@@ -627,6 +655,13 @@ export function SharedOperationsScreen({
               ? `Tarefas de ${view.employeeFilterName}`
               : 'Tarefas da loja'
           }
+          actions={
+            view.readyToSync && view.pendingSyncCount > 0 ? (
+              <Button variant="secondary" onClick={() => void actions.syncNow()}>
+                Sincronizar agora
+              </Button>
+            ) : undefined
+          }
         >
           <Stack gap={200}>
             {/* mobile: sidebar de triagem vira Drawer (§16) */}
@@ -655,6 +690,7 @@ export function SharedOperationsScreen({
                 { value: 'pending', label: 'Pendentes' },
                 { value: 'in-progress', label: 'Em execução' },
                 { value: 'review', label: 'Conferir' },
+                { value: 'returned', label: 'Devolvidas' },
                 { value: 'done', label: 'Concluídas' },
               ]}
             />

@@ -83,6 +83,7 @@ import type {
   CredentialProvisioningPort,
   OperationalCredentialPort,
   OperatorIdentityPort,
+  PinLockoutStorePort,
   PinPolicyPort,
   SessionSyncStatus,
 } from '@tauros/contracts';
@@ -165,6 +166,8 @@ export interface AppContainer {
   readonly identity: OperatorIdentityPort;
   /** Credencial de PIN local (criação no cadastro; verifier nunca é o PIN). */
   readonly credentials: OperationalCredentialPort;
+  /** Lockout por employee×device — a gestão zera ao redefinir um PIN. */
+  readonly lockouts: PinLockoutStorePort;
   /** Política de PIN materializada do Configuration Engine (Baseline §3). */
   readonly pinPolicy: PinPolicyPort;
   /** Fronteira futura de provisionamento server-side (sem backend hoje). */
@@ -289,11 +292,16 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     now: clock,
     offlineValidityMs: () => config.resolve('auth.pin.offlineValidityMs', FIXTURE_STORE.id),
     online: async () => (await connectivity.assess()).readyToSync,
+    // identidades DEV sob a MESMA escada de lockout do adapter real: o
+    // encarregado do piloto é uma fixture com capacidades de gestão
+    lockouts,
+    policy: pinPolicy,
   });
   const identity: OperatorIdentityPort = new CompositeOperatorIdentity(
     credentials,
     localIdentity,
     fixtureIdentity,
+    new Set(fixtureOperatorRoster().map((operator) => operator.employeeId)),
   );
   const credentialProvisioning: CredentialProvisioningPort = new NullCredentialProvisioning();
 
@@ -618,7 +626,13 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     // catálogo inicial da loja (equipes/posições/jornadas/padrão) ANTES de
     // qualquer leitura
     await ensureWorkforceBaseline(workforce, scheduleData, FIXTURE_STORE.id);
-    const items = await queue.all();
+    // ORDEM DE CRIAÇÃO obrigatória: queue.all() devolve ordem de CHAVE
+    // (UUID aleatório no IndexedDB) — aplicar intenções fora de ordem
+    // REGREDIRIA o estado local para uma intenção mais antiga (ex.: duas
+    // atribuições da mesma tarefa no mesmo boot).
+    const items = [...(await queue.all())].sort(
+      (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+    );
     for (const item of items) {
       if (!RECONCILABLE_STATES.has(item.state)) continue;
       // 1) abertura enfileirada sem registro local (falha entre enqueue e save)
@@ -799,6 +813,7 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     scheduleData,
     identity,
     credentials,
+    lockouts,
     pinPolicy,
     credentialProvisioning,
     identityRoster,

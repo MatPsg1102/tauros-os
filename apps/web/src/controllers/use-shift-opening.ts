@@ -9,9 +9,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EffectiveAuthorization, OperatorSessionRecord } from '@tauros/contracts';
 import { CAPABILITY_CONFIG_WRITE, CAPABILITY_SESSION_OPEN } from '@tauros/contracts';
 
+import { operationalDateFor } from '@tauros/application';
 import type { AppContainer } from '../wiring/container.js';
 import { FIXTURE_STORE } from '../wiring/fixtures.js';
 import { useOperatorSession, type IdentifiedOperatorView } from './operator-session-context.js';
+import { identityRejectionMessage } from './identity-messages.js';
 
 export type ShiftOpeningPhase =
   | 'bootstrapping'
@@ -19,6 +21,8 @@ export type ShiftOpeningPhase =
   | 'ready'
   | 'submitting'
   | 'opened'
+  /** Turno ainda ABERTO de outro dia operacional — fechar antes de reabrir. */
+  | 'stale-session'
   | 'denied'
   | 'config-error'
   | 'conflict'
@@ -48,11 +52,15 @@ export interface ShiftOpeningView {
   readonly canManageTeam: boolean;
   readonly identifyError: string | null;
   readonly actionError: string | null;
+  /** Data operacional do turno VELHO ainda aberto (fase 'stale-session'). */
+  readonly staleSessionDate: string | null;
 }
 
 export interface ShiftOpeningActions {
   readonly identify: (employeeId: string, pin: string) => Promise<void>;
   readonly openShift: () => Promise<void>;
+  /** Fecha explicitamente o turno de outro dia (nunca fechamento silencioso). */
+  readonly closeStaleShift: () => Promise<void>;
   readonly retrySync: () => Promise<void>;
   readonly reset: () => void;
 }
@@ -121,6 +129,14 @@ export function useShiftOpening(container: AppContainer): [ShiftOpeningView, Shi
         const active = await refreshSession(shared.operator.employeeId);
         if (cancelled) return;
         if (active !== null) {
+          // virada do dia: turno de OUTRO dia operacional não é "aberto" —
+          // exige fechamento explícito antes de operar hoje
+          if (
+            active.operationalDate !== operationalDateFor(container.clock(), FIXTURE_STORE.timeZone)
+          ) {
+            setPhase('stale-session');
+            return;
+          }
           setPhase(active.syncStatus === 'conflict' ? 'conflict' : 'opened');
           return;
         }
@@ -147,11 +163,7 @@ export function useShiftOpening(container: AppContainer): [ShiftOpeningView, Shi
         deviceId: container.deviceId,
       });
       if (outcome.kind === 'rejected') {
-        setIdentifyError(
-          outcome.code === 'LOCKED_OUT'
-            ? 'Muitas tentativas. Aguarde alguns minutos e tente novamente.'
-            : 'Não foi possível confirmar a identificação. Confira e tente novamente.',
-        );
+        setIdentifyError(identityRejectionMessage(outcome.code));
         return;
       }
       const authorization = outcome.authorization;
@@ -173,6 +185,12 @@ export function useShiftOpening(container: AppContainer): [ShiftOpeningView, Shi
 
       const active = await refreshSession(view.employeeId);
       if (active !== null) {
+        if (
+          active.operationalDate !== operationalDateFor(container.clock(), FIXTURE_STORE.timeZone)
+        ) {
+          setPhase('stale-session');
+          return;
+        }
         setPhase(active.syncStatus === 'conflict' ? 'conflict' : 'opened');
         return;
       }
@@ -249,6 +267,54 @@ export function useShiftOpening(container: AppContainer): [ShiftOpeningView, Shi
     if (active?.syncStatus === 'conflict') setPhase('conflict');
   }, [container, operator, refreshConnectivity, refreshSession]);
 
+  /**
+   * Fecha o turno VENCIDO (de outro dia operacional) — ação EXPLÍCITA do
+   * próprio operador identificado, com a autoria dele; nunca fechamento
+   * silencioso na virada. Depois libera a abertura do turno de hoje.
+   */
+  const closeStaleShift = useCallback(async () => {
+    const authorization = authRef.current;
+    const current = operator;
+    if (authorization === null || current === null || session === null) return;
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setActionError(null);
+    setPhase('submitting');
+    try {
+      const readiness = await refreshConnectivity();
+      const result = await container.closeSession.execute({
+        authorization,
+        sessionId: session.id,
+        deviceId: container.deviceId,
+        storeTimeZone: FIXTURE_STORE.timeZone,
+        closedOffline: !readiness.readyToSync,
+        endReason: 'LOGOUT',
+      });
+      if (result.kind === 'closed' || result.kind === 'already-closed') {
+        if (readiness.readyToSync) await container.drainAndReflect();
+        setSession(null);
+        setPhase(current.permissions.includes(CAPABILITY_SESSION_OPEN) ? 'ready' : 'denied');
+        return;
+      }
+      if (result.code === 'SESSION_NOT_ACTIVE') {
+        setSession(null);
+        setPhase(current.permissions.includes(CAPABILITY_SESSION_OPEN) ? 'ready' : 'denied');
+        return;
+      }
+      // condições PERMANENTES nunca viram "tente novamente"
+      setActionError(
+        result.code === 'PERMISSION_DENIED'
+          ? 'Seu perfil não permite fechar turno. Peça ao encarregado para fechar o turno anterior.'
+          : result.code === 'SNAPSHOT_EXPIRED'
+            ? 'Sua identificação expirou. Identifique-se novamente para fechar o turno anterior.'
+            : 'Não foi possível fechar o turno anterior agora. Tente novamente.',
+      );
+      setPhase('stale-session');
+    } finally {
+      submittingRef.current = false;
+    }
+  }, [container, operator, refreshConnectivity, session]);
+
   const reset = useCallback(() => {
     setOperator(null);
     setSession(null);
@@ -273,7 +339,8 @@ export function useShiftOpening(container: AppContainer): [ShiftOpeningView, Shi
     canManageTeam: operator?.permissions.includes(CAPABILITY_CONFIG_WRITE) ?? false,
     identifyError,
     actionError,
+    staleSessionDate: phase === 'stale-session' ? (session?.operationalDate ?? null) : null,
   };
 
-  return [view, { identify, openShift, retrySync, reset }];
+  return [view, { identify, openShift, closeStaleShift, retrySync, reset }];
 }

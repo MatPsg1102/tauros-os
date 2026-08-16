@@ -32,6 +32,12 @@ import {
 import type { ShiftClosingActions, ShiftClosingView } from '../controllers/use-shift-closing.js';
 import type { ShiftOpeningActions, ShiftOpeningView } from '../controllers/use-shift-opening.js';
 
+/** dd/mm a partir de YYYY-MM-DD — apresentação (nunca cálculo de fuso). */
+function staleDateLabel(operationalDate: string | null): string {
+  if (operationalDate === null) return 'outro dia';
+  return `${operationalDate.slice(8, 10)}/${operationalDate.slice(5, 7)}`;
+}
+
 function syncBadge(view: ShiftOpeningView): ReactElement {
   const status = view.session?.syncStatus;
   if (status === 'synced') return <Badge status="success">Turno sincronizado</Badge>;
@@ -279,7 +285,27 @@ export function ShiftOpeningScreen({
         </Section>
       )}
 
-      {view.phase === 'submitting' && <LoadingState label="Abrindo o turno" />}
+      {view.phase === 'submitting' && <LoadingState label="Processando o turno" />}
+
+      {view.phase === 'stale-session' && (
+        <Section title="Turno de outro dia ainda aberto">
+          <Card>
+            <Stack gap={200}>
+              <Alert status="warning" title="O dia operacional virou">
+                {`Seu turno de ${staleDateLabel(view.staleSessionDate)} continua aberto. Feche-o para começar o dia de hoje — o fechamento fica registrado com a sua identificação.`}
+              </Alert>
+              {view.actionError !== null && (
+                <Alert status="error" live="polite" title="Fechamento não realizado">
+                  {view.actionError}
+                </Alert>
+              )}
+              <Button fullWidth onClick={() => void actions.closeStaleShift()}>
+                Fechar turno de {staleDateLabel(view.staleSessionDate)}
+              </Button>
+            </Stack>
+          </Card>
+        </Section>
+      )}
 
       {view.phase === 'opened' && view.session !== null && (
         <Section title="Turno aberto" actions={syncBadge(view)}>

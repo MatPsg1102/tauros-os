@@ -8,7 +8,8 @@ export interface AssignDailyTaskCommand {
   readonly positionId: string;
 }
 
-export type AssignDailyTaskRejectionCode = 'POSITION_REQUIRED' | 'NOT_ASSIGNABLE';
+export type AssignDailyTaskRejectionCode =
+  'POSITION_REQUIRED' | 'NOT_ASSIGNABLE' | 'TASK_IN_EXECUTION';
 
 export type AssignDailyTaskDecision =
   | { readonly kind: 'assign'; readonly positionId: string }
@@ -24,6 +25,14 @@ export interface AssignableDailyTask {
   readonly currentAssignedPositionId: string | null;
   /** DONE/SKIPPED já têm desfecho — não faz sentido (re)distribuir. */
   readonly isResolved: boolean;
+  /**
+   * Execução VIVA (IN_PROGRESS) ou trabalho já entregue à conferência
+   * (AWAITING_REVIEW): reatribuir aqui destruiria/confundiria a execução
+   * de quem já colocou a mão na tarefa. Opcional por compatibilidade
+   * (default: false — comportamento anterior preservado nos chamadores
+   * que ainda não informam).
+   */
+  readonly isInExecution?: boolean;
 }
 
 export function decideAssignDailyTask(
@@ -45,8 +54,16 @@ export function decideAssignDailyTask(
       detail: 'a tarefa já tem desfecho e não pode ser redistribuída',
     };
   }
+  // reatribuir à MESMA posição converge mesmo em execução (idempotência)
   if (task.currentAssignedPositionId === positionId) {
     return { kind: 'already-assigned', positionId };
+  }
+  if (task.isInExecution === true) {
+    return {
+      kind: 'rejected',
+      code: 'TASK_IN_EXECUTION',
+      detail: 'a tarefa está em execução ou aguardando conferência — não redistribua trabalho vivo',
+    };
   }
   return { kind: 'assign', positionId };
 }

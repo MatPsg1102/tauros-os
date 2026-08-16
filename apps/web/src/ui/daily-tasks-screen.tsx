@@ -16,6 +16,7 @@ import {
   EmptyState,
   ErrorState,
   Field,
+  Flex,
   Heading,
   Input,
   LoadingState,
@@ -24,6 +25,7 @@ import {
   Section,
   Stack,
   Text,
+  TextArea,
   type NavigationLinkAdapter,
 } from '@tauros/ui-primitives';
 
@@ -47,7 +49,7 @@ function syncLabel(task: DailyTaskItemView): string | null {
   if (task.syncStatus === 'queued') return 'Salvo neste aparelho';
   if (task.syncStatus === 'synced') return 'Confirmado pelo servidor';
   if (task.syncStatus === 'conflict') return 'Tarefa já concluída em outro aparelho';
-  if (task.syncStatus === 'failed') return 'Aguardando nova tentativa';
+  if (task.syncStatus === 'failed') return 'Não foi possível enviar — avise o encarregado';
   return null;
 }
 
@@ -62,6 +64,8 @@ function TaskCard({
 }): ReactElement {
   const [measurement, setMeasurement] = useState('');
   const [evidence, setEvidence] = useState(false);
+  const [skipOpen, setSkipOpen] = useState(false);
+  const [skipReason, setSkipReason] = useState('');
   // resolvida OU em conferência: o operador não age aqui (o encarregado
   // confere na Operação de Hoje — o domínio também rejeita, isto é só UX)
   const resolved =
@@ -113,23 +117,59 @@ function TaskCard({
               fullWidth
               disabled={busy}
               onClick={() => {
-                const parsed = measurement.trim() === '' ? null : Number(measurement);
+                // vírgula decimal pt-BR aceita ("4,5") — mesmo contrato do
+                // drawer da Operação de Hoje
+                const raw = measurement.trim();
+                const parsed = raw === '' ? null : Number(raw.replace(',', '.'));
                 void actions.complete(task.id, {
-                  numericValue: Number.isNaN(parsed) ? null : parsed,
+                  numericValue: parsed !== null && Number.isFinite(parsed) ? parsed : null,
                   hasEvidence: evidence,
                 });
               }}
             >
               Concluir tarefa
             </Button>
-            <Button
-              fullWidth
-              variant="secondary"
-              disabled={busy}
-              onClick={() => void actions.skip(task.id)}
-            >
-              Adiar tarefa
-            </Button>
+            {task.state === 'needs-correction' ? null : !skipOpen ? (
+              // devolvida NÃO oferece adiamento (o domínio rejeitaria):
+              // corrija e reenvie — a devolução do encarregado não se anula
+              <Button
+                fullWidth
+                variant="secondary"
+                disabled={busy}
+                onClick={() => setSkipOpen(true)}
+              >
+                Adiar tarefa
+              </Button>
+            ) : (
+              <Stack gap={100}>
+                <Field label="Motivo do adiamento (obrigatório)">
+                  <TextArea
+                    value={skipReason}
+                    onChange={(event) => setSkipReason(event.target.value)}
+                    disabled={busy}
+                    rows={2}
+                  />
+                </Field>
+                <Flex gap={100} wrap>
+                  <Button
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => {
+                      setSkipOpen(false);
+                      setSkipReason('');
+                    }}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    disabled={busy || skipReason.trim() === ''}
+                    onClick={() => void actions.skip(task.id, skipReason.trim())}
+                  >
+                    Confirmar adiamento
+                  </Button>
+                </Flex>
+              </Stack>
+            )}
           </Stack>
         )}
       </Stack>
@@ -203,6 +243,22 @@ export function DailyTasksScreen({
         <EmptyState
           title="Nenhum turno aberto"
           description="Abra o turno para ver e registrar as tarefas do dia."
+          action={
+            <Button
+              onClick={() => {
+                shiftLink.navigate?.();
+              }}
+            >
+              Ir para o turno
+            </Button>
+          }
+        />
+      )}
+
+      {view.phase === 'stale-session' && (
+        <EmptyState
+          title="O turno aberto é de outro dia"
+          description="O dia operacional virou. Feche o turno anterior na tela de turno antes de registrar tarefas de hoje."
           action={
             <Button
               onClick={() => {

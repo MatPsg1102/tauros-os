@@ -130,6 +130,19 @@ export function OperationsSidebarSections({
             done();
           }}
         />
+        <NavigationItem
+          label="Devolvidas"
+          active={view.filter === 'returned'}
+          badge={
+            view.counts.needsCorrection > 0 ? (
+              <Badge status="warn">{view.counts.needsCorrection}</Badge>
+            ) : undefined
+          }
+          onSelect={() => {
+            actions.setFilter(view.filter === 'returned' ? 'all' : 'returned');
+            done();
+          }}
+        />
       </NavigationGroup>
 
       <NavigationGroup title="Posições">
@@ -361,6 +374,11 @@ export function OperationsSidebar({ view, actions }: OperationsSidebarProps): Re
       <NavigationItem
         label={`Conferir (${String(view.counts.awaitingReview)})`}
         icon={railGlyph(view.counts.awaitingReview, 'info', '✓')}
+        onSelect={openPanel}
+      />
+      <NavigationItem
+        label={`Devolvidas (${String(view.counts.needsCorrection)})`}
+        icon={railGlyph(view.counts.needsCorrection, 'warn', '↩')}
         onSelect={openPanel}
       />
       <NavigationItem
