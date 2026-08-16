@@ -141,6 +141,8 @@ export interface SupervisorDashboardView {
   readonly readyToSync: boolean;
   readonly pendingSyncCount: number;
   readonly identifyError: string | null;
+  /** Falha da última atribuição — nunca silenciosa (linguagem operacional). */
+  readonly assignError: string | null;
 }
 
 export interface CreateTaskFormInput {
@@ -233,6 +235,7 @@ export function useSupervisorDashboard(
   const [filter, setFilter] = useState<SupervisorFilter>('all');
   const [positionFilter, setPositionFilter] = useState<string | null>(null);
   const [identifyError, setIdentifyError] = useState<string | null>(null);
+  const [assignError, setAssignError] = useState<string | null>(null);
   const [operators, setOperators] = useState<
     readonly { readonly employeeId: string; readonly name: string }[]
   >([]);
@@ -404,6 +407,11 @@ export function useSupervisorDashboard(
         setPhase('identify');
         return;
       }
+      // reidrata a autorização do container: as ações JIT do quadro
+      // compartilhado zeram o snapshot global ao descartar o ator — sem isso,
+      // todo enqueue do encarregado falharia com ENQUEUE_FAILED (autoria).
+      // Mesmo contrato de use-shift-opening.
+      container.setAuthorization(identity.authorization);
       await load();
     })();
     return () => {
@@ -543,6 +551,7 @@ export function useSupervisorDashboard(
   const assignTask = useCallback(
     async (dailyTaskId: string, positionId: string) => {
       if (authorization === null || positionId === '') return;
+      setAssignError(null);
       const readiness = await container.connectivity.assess();
       const result = await container.assignDailyTask.execute({
         authorization,
@@ -552,8 +561,24 @@ export function useSupervisorDashboard(
         assignedOffline: !readiness.readyToSync,
       });
       if (result.kind === 'failed') {
-        if (result.code === 'PERMISSION_DENIED') setPhase('denied');
-        if (result.code === 'SNAPSHOT_EXPIRED') setPhase('expired');
+        if (result.code === 'PERMISSION_DENIED') {
+          setPhase('denied');
+          return;
+        }
+        if (result.code === 'SNAPSHOT_EXPIRED') {
+          setPhase('expired');
+          return;
+        }
+        // nunca falhar em silêncio: o botão "não fazer nada" é o pior erro
+        setAssignError(
+          result.code === 'NOT_ASSIGNABLE' || result.code === 'TASK_IN_EXECUTION'
+            ? 'Esta tarefa já está em andamento ou concluída e não pode ser redistribuída.'
+            : result.code === 'UNKNOWN_POSITION'
+              ? 'Posição não encontrada nesta loja. Recarregue e tente novamente.'
+              : result.code === 'TASK_NOT_FOUND'
+                ? 'Tarefa não encontrada neste aparelho. Recarregue o quadro.'
+                : 'Não foi possível atribuir agora. Tente novamente.',
+        );
         return;
       }
       // atribuição reflete imediatamente; sincroniza quando houver conexão
@@ -669,6 +694,7 @@ export function useSupervisorDashboard(
     readyToSync: connectivity.readyToSync,
     pendingSyncCount,
     identifyError,
+    assignError,
   };
 
   return [

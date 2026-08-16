@@ -680,6 +680,20 @@ export function useSharedOperations(
             return;
           }
         }
+      } catch {
+        // exceção inesperada (ex.: IndexedDB) NUNCA congela o diálogo em
+        // busy — cancelar recusa fechar enquanto busy e o tablet ficaria
+        // preso até reload. Mesmo canal de erro dos caminhos 'failed'.
+        setPinRequest((current) =>
+          current === null
+            ? null
+            : {
+                ...current,
+                busy: false,
+                error: 'Algo deu errado neste aparelho. Tente novamente.',
+              },
+        );
+        retainActor = false;
       } finally {
         busyRef.current = false;
         // credencial fora da memória: o PIN nunca sai deste callback e a
@@ -707,6 +721,18 @@ export function useSharedOperations(
     actorRef.current = null;
     container.setAuthorization(null);
     revokeEvidenceUrls();
+  }, [container, revokeEvidenceUrls]);
+
+  // CONTENÇÃO DE AUTORIA (P0): se a tela desmontar com um drawer aberto
+  // (navegação, back gesture), a autorização retida do ator NÃO pode
+  // sobreviver no container — itens de fila de outra tela sairiam com a
+  // autoria de quem abandonou o drawer. Mesmo destino das object URLs.
+  useEffect(() => {
+    return () => {
+      actorRef.current = null;
+      container.setAuthorization(null);
+      revokeEvidenceUrls();
+    };
   }, [container, revokeEvidenceUrls]);
 
   const addEvidence = useCallback(
@@ -740,6 +766,12 @@ export function useSharedOperations(
           return;
         }
         setSubmitForm({ ...form, busy: false, evidence: await evidenceViews(form.taskId) });
+      } catch {
+        setSubmitForm((current) =>
+          current === null
+            ? null
+            : { ...current, busy: false, error: 'Não foi possível anexar a foto agora.' },
+        );
       } finally {
         busyRef.current = false;
       }
@@ -808,6 +840,16 @@ export function useSharedOperations(
             : 'Tarefa concluída.',
         );
         await load();
+      } catch {
+        setSubmitForm((current) =>
+          current === null
+            ? null
+            : {
+                ...current,
+                busy: false,
+                error: 'Não foi possível finalizar agora. Tente novamente.',
+              },
+        );
       } finally {
         busyRef.current = false;
       }
@@ -860,6 +902,16 @@ export function useSharedOperations(
         endActorContext();
         setNotice(outcome === 'APPROVED' ? 'Execução aprovada.' : 'Devolvida para correção.');
         await load();
+      } catch {
+        setReviewDetail((current) =>
+          current === null
+            ? null
+            : {
+                ...current,
+                busy: false,
+                error: 'Não foi possível registrar a conferência agora.',
+              },
+        );
       } finally {
         busyRef.current = false;
       }

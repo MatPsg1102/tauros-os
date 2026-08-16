@@ -39,6 +39,7 @@ export type AssignDailyTaskFailureCode =
   | 'TASK_NOT_FOUND'
   | 'POSITION_REQUIRED'
   | 'NOT_ASSIGNABLE'
+  | 'TASK_IN_EXECUTION'
   | 'ENQUEUE_FAILED'
   | 'PERSISTENCE_FAILED';
 
@@ -117,6 +118,9 @@ export class AssignDailyTaskUseCase {
       {
         currentAssignedPositionId: task.assignedPositionId,
         isResolved: task.status === 'DONE' || task.status === 'SKIPPED',
+        // trabalho vivo não se redistribui: execução em andamento ou já
+        // entregue à conferência pertence a quem a iniciou
+        isInExecution: task.status === 'IN_PROGRESS' || task.status === 'AWAITING_REVIEW',
       },
     );
     if (decision.kind === 'rejected') {

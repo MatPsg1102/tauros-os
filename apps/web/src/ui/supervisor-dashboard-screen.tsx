@@ -493,9 +493,10 @@ function AssignControl({
       </Text>
     );
   }
+  const reassigning = !task.isUnassigned;
   return (
     <Stack gap={100}>
-      <Field label="Atribuir a">
+      <Field label={reassigning ? 'Passar para' : 'Atribuir a'}>
         <Select value={positionId} onChange={(event) => setPositionId(event.target.value)}>
           <option value="">Escolha quem está escalado hoje</option>
           {positions.map((position) => (
@@ -511,7 +512,7 @@ function AssignControl({
         disabled={positionId === ''}
         onClick={() => void onAssign(task.id, positionId)}
       >
-        Atribuir
+        {reassigning ? 'Reatribuir' : 'Atribuir'}
       </Button>
     </Stack>
   );
@@ -550,7 +551,12 @@ function TaskItem({
             {sync}
           </Text>
         )}
-        {task.isUnassigned && (
+        {/* distribuição/REdistribuição: só enquanto ninguém pôs a mão —
+            execução viva e trabalho entregue não se redistribuem (domínio
+            rejeita TASK_IN_EXECUTION; a UI nem oferece) */}
+        {(task.state === 'pending' ||
+          task.state === 'overdue' ||
+          task.state === 'needs-correction') && (
           <AssignControl task={task} positions={positions} onAssign={onAssign} />
         )}
       </Stack>
@@ -694,6 +700,11 @@ export function SupervisorDashboardScreen({
           </Section>
 
           <Section title="Tarefas da equipe">
+            {view.assignError !== null && (
+              <Alert status="error" live="polite" title="Atribuição não realizada">
+                {view.assignError}
+              </Alert>
+            )}
             <Panel>
               <PanelHeader>
                 <Stack gap={200}>
