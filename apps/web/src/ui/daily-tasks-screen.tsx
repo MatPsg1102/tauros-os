@@ -215,6 +215,22 @@ export function DailyTasksScreen({
         />
       )}
 
+      {view.phase === 'stale-session' && (
+        <EmptyState
+          title="O turno aberto é de outro dia"
+          description="O dia operacional virou. Feche o turno anterior na tela de turno antes de registrar tarefas de hoje."
+          action={
+            <Button
+              onClick={() => {
+                shiftLink.navigate?.();
+              }}
+            >
+              Ir para o turno
+            </Button>
+          }
+        />
+      )}
+
       {view.phase === 'expired' && (
         <Alert status="warning" title="Identificação expirada">
           Sua identificação expirou. Volte ao turno e identifique-se novamente para continuar.

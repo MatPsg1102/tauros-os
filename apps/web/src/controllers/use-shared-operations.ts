@@ -497,9 +497,16 @@ export function useSharedOperations(
   }, []);
 
   const evidenceViews = useCallback(
-    async (taskId: string): Promise<readonly { id: string; url: string | null }[]> => {
+    async (
+      taskId: string,
+      relevant?: (record: EvidenceRecord) => boolean,
+    ): Promise<readonly { id: string; url: string | null }[]> => {
       revokeEvidenceUrls();
-      const records = await container.evidence.byDailyTask(FIXTURE_STORE.id, taskId);
+      const all = await container.evidence.byDailyTask(FIXTURE_STORE.id, taskId);
+      // ESCOPO honesto: cada drawer vê SÓ o que conta para ele — a conferência
+      // nunca decide com foto de outra execução; o envio nunca exibe foto que
+      // não satisfaz requiresPhoto (órfã de tentativa abandonada de terceiro)
+      const records = relevant === undefined ? all : all.filter(relevant);
       const views: { id: string; url: string | null }[] = [];
       for (const record of records) {
         const blob = await container.evidenceBlobs.get(record.localBlobKey);
@@ -646,7 +653,14 @@ export function useSharedOperations(
                 task.expectedMinSnapshot !== null || task.expectedMaxSnapshot !== null
                   ? { min: task.expectedMinSnapshot, max: task.expectedMaxSnapshot }
                   : null,
-              evidence: await evidenceViews(task.id),
+              // só o que CONTA para este envio: pendentes capturadas pelo
+              // PRÓPRIO ator (mesmo critério do submitExecution)
+              evidence: await evidenceViews(
+                task.id,
+                (record) =>
+                  record.executionId === null &&
+                  record.capturedByEmployeeId === authorization.operatorEmployeeId,
+              ),
               error: null,
               busy: false,
             });
@@ -677,7 +691,12 @@ export function useSharedOperations(
               startedAtTime: timeOfDay(execution.startedAt, FIXTURE_STORE.timeZone),
               finishedAtTime: timeOfDay(execution.eventTime, FIXTURE_STORE.timeZone) ?? '—',
               notes: execution.notes,
-              evidence: await evidenceViews(task.id),
+              // P1: a conferência decide SOBRE ESTA execução — nunca com foto
+              // órfã de terceiros nem de rodada devolvida anterior
+              evidence: await evidenceViews(
+                task.id,
+                (record) => record.executionId === execution.id,
+              ),
               error: null,
               busy: false,
             });
@@ -769,7 +788,15 @@ export function useSharedOperations(
           });
           return;
         }
-        setSubmitForm({ ...form, busy: false, evidence: await evidenceViews(form.taskId) });
+        setSubmitForm({
+          ...form,
+          busy: false,
+          evidence: await evidenceViews(
+            form.taskId,
+            (record) =>
+              record.executionId === null && record.capturedByEmployeeId === actor.employeeId,
+          ),
+        });
       } catch {
         setSubmitForm((current) =>
           current === null

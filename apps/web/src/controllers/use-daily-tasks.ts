@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { storeDayStartFor } from '@tauros/application';
+import { operationalDateFor, storeDayStartFor } from '@tauros/application';
 import type { DailyTaskRecord, OperatorSessionRecord, TaskSyncStatus } from '@tauros/contracts';
 
 import type { AppContainer } from '../wiring/container.js';
@@ -14,7 +14,14 @@ import { FIXTURE_STORE } from '../wiring/fixtures.js';
 import { useOperatorSession } from './operator-session-context.js';
 
 export type DailyTasksPhase =
-  'loading' | 'ready' | 'no-session' | 'unavailable' | 'error' | 'expired';
+  | 'loading'
+  | 'ready'
+  | 'no-session'
+  /** Turno ainda ABERTO de outro dia operacional — fechar antes de operar. */
+  | 'stale-session'
+  | 'unavailable'
+  | 'error'
+  | 'expired';
 
 /**
  * Estado apresentável de uma tarefa — já resolvido, sem booleanos soltos.
@@ -127,6 +134,18 @@ export function useDailyTasks(
   const load = useCallback(async () => {
     if (authorization === null || activeSession === null) {
       setPhase('no-session');
+      setTasks([]);
+      return;
+    }
+    // VIRADA DO DIA: sessão ainda ACTIVE de outro dia operacional não pode
+    // materializar — workDate de ontem + dayStart de hoje corromperia os
+    // horários das ocorrências. Estado explícito; fechar o turno antigo é
+    // ação humana (nunca transição silenciosa).
+    if (
+      activeSession.operationalDate !==
+      operationalDateFor(container.clock(), FIXTURE_STORE.timeZone)
+    ) {
+      setPhase('stale-session');
       setTasks([]);
       return;
     }

@@ -281,6 +281,26 @@ export function ShiftOpeningScreen({
 
       {view.phase === 'submitting' && <LoadingState label="Abrindo o turno" />}
 
+      {view.phase === 'stale-session' && (
+        <Section title="Turno de outro dia ainda aberto">
+          <Card>
+            <Stack gap={200}>
+              <Alert status="warning" title="O dia operacional virou">
+                {`Seu turno de ${view.staleSessionDate ?? 'outro dia'} continua aberto. Feche-o para começar o dia de hoje — o fechamento fica registrado com a sua identificação.`}
+              </Alert>
+              {view.actionError !== null && (
+                <Alert status="error" live="polite" title="Fechamento não realizado">
+                  {view.actionError}
+                </Alert>
+              )}
+              <Button fullWidth onClick={() => void actions.closeStaleShift()}>
+                Fechar turno de {view.staleSessionDate ?? 'outro dia'}
+              </Button>
+            </Stack>
+          </Card>
+        </Section>
+      )}
+
       {view.phase === 'opened' && view.session !== null && (
         <Section title="Turno aberto" actions={syncBadge(view)}>
           <Card>
