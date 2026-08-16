@@ -178,6 +178,8 @@ export interface SharedOperationsView {
   readonly scheduleStatus: 'resolved' | 'unconfigured';
   readonly deviceOnline: boolean;
   readonly readyToSync: boolean;
+  /** Registros deste quadro ainda aguardando envio (syncStatus 'queued'). */
+  readonly pendingSyncCount: number;
   /** Nenhuma ocorrência materializada: o dia precisa ser aberto por alguém. */
   readonly dayNotMaterialized: boolean;
   readonly pinRequest: PinRequest | null;
@@ -208,6 +210,8 @@ export interface SharedOperationsActions {
   readonly sendBack: (reason: string) => Promise<void>;
   readonly cancelReview: () => void;
   readonly reload: () => Promise<void>;
+  /** Drena a fila agora e recarrega o quadro (leitura + envio; sem PIN). */
+  readonly syncNow: () => Promise<void>;
 }
 
 const STATUS_LABEL: Readonly<Record<DailyTaskStatus, string>> = {
@@ -243,7 +247,9 @@ function timeOfDay(iso: string | null | undefined, timeZone: string): string | n
 function syncLabelFor(status: DailyTaskRecord['syncStatus']): string | null {
   if (status === 'queued') return 'Salvo neste aparelho — aguardando sincronização';
   if (status === 'conflict') return 'Precisa de revisão (conflito entre aparelhos)';
-  if (status === 'failed') return 'Aguardando nova tentativa de envio';
+  // 'failed' local = estado TERMINAL da fila (sem nova tentativa automática):
+  // rótulo honesto — prometer retry aqui esconderia um registro parado
+  if (status === 'failed') return 'Não foi possível enviar este registro — avise o encarregado';
   return null;
 }
 
@@ -919,6 +925,15 @@ export function useSharedOperations(
     [container, endActorContext, load, reviewDetail],
   );
 
+  const syncNow = useCallback(async () => {
+    try {
+      await container.drainAndReflect();
+    } catch {
+      /* transporte indisponível — o quadro segue com os rótulos por registro */
+    }
+    await load();
+  }, [container, load]);
+
   const approve = useCallback(async () => finishReview('APPROVED', null), [finishReview]);
   const sendBack = useCallback(
     async (reason: string) => finishReview('RETURNED', reason),
@@ -1076,6 +1091,7 @@ export function useSharedOperations(
     scheduleStatus: plannedDay?.status === 'unconfigured' ? 'unconfigured' : 'resolved',
     deviceOnline: connectivity.deviceOnline,
     readyToSync: connectivity.readyToSync,
+    pendingSyncCount: records.filter((record) => record.syncStatus === 'queued').length,
     dayNotMaterialized: phase === 'ready' && records.length === 0,
     pinRequest,
     submitForm,
@@ -1108,6 +1124,7 @@ export function useSharedOperations(
       sendBack,
       cancelReview,
       reload: load,
+      syncNow,
     },
   ];
 }

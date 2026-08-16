@@ -47,7 +47,7 @@ function syncLabel(task: DailyTaskItemView): string | null {
   if (task.syncStatus === 'queued') return 'Salvo neste aparelho';
   if (task.syncStatus === 'synced') return 'Confirmado pelo servidor';
   if (task.syncStatus === 'conflict') return 'Tarefa já concluída em outro aparelho';
-  if (task.syncStatus === 'failed') return 'Aguardando nova tentativa';
+  if (task.syncStatus === 'failed') return 'Não foi possível enviar — avise o encarregado';
   return null;
 }
 

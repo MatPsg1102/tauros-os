@@ -627,6 +627,13 @@ export function SharedOperationsScreen({
               ? `Tarefas de ${view.employeeFilterName}`
               : 'Tarefas da loja'
           }
+          actions={
+            view.readyToSync && view.pendingSyncCount > 0 ? (
+              <Button variant="secondary" onClick={() => void actions.syncNow()}>
+                Sincronizar agora
+              </Button>
+            ) : undefined
+          }
         >
           <Stack gap={200}>
             {/* mobile: sidebar de triagem vira Drawer (§16) */}

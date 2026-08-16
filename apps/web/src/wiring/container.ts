@@ -618,7 +618,13 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     // catálogo inicial da loja (equipes/posições/jornadas/padrão) ANTES de
     // qualquer leitura
     await ensureWorkforceBaseline(workforce, scheduleData, FIXTURE_STORE.id);
-    const items = await queue.all();
+    // ORDEM DE CRIAÇÃO obrigatória: queue.all() devolve ordem de CHAVE
+    // (UUID aleatório no IndexedDB) — aplicar intenções fora de ordem
+    // REGREDIRIA o estado local para uma intenção mais antiga (ex.: duas
+    // atribuições da mesma tarefa no mesmo boot).
+    const items = [...(await queue.all())].sort(
+      (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+    );
     for (const item of items) {
       if (!RECONCILABLE_STATES.has(item.state)) continue;
       // 1) abertura enfileirada sem registro local (falha entre enqueue e save)

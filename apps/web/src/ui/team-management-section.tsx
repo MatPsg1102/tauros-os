@@ -44,7 +44,7 @@ function syncLine(status: TeamMemberItemView['syncStatus']): string | null {
   if (status === 'queued') return 'Salvo neste aparelho — aguardando sincronização';
   if (status === 'synced') return 'Confirmado pelo servidor';
   if (status === 'conflict') return 'Precisa de revisão';
-  if (status === 'failed') return 'Aguardando nova tentativa';
+  if (status === 'failed') return 'Não foi possível enviar — avise o encarregado';
   return null;
 }
 
@@ -391,7 +391,7 @@ function PositionItem({ position }: { readonly position: TeamPositionItemView })
       <Flex gap={100} wrap align="center" justify="between">
         <Heading level={3}>{position.name}</Heading>
         {position.syncStatus === 'queued' && <Badge status="info">Aguardando sincronização</Badge>}
-        {position.syncStatus === 'failed' && <Badge status="warn">Aguardando nova tentativa</Badge>}
+        {position.syncStatus === 'failed' && <Badge status="warn">Não foi possível enviar</Badge>}
       </Flex>
     </Card>
   );

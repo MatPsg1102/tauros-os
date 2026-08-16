@@ -78,7 +78,7 @@ function syncLine(task: SupervisorTaskView): string | null {
   if (task.syncStatus === 'queued') return 'Aguardando sincronização';
   if (task.syncStatus === 'synced' && task.createdLocally) return 'Confirmado pelo servidor';
   if (task.syncStatus === 'conflict') return 'Precisa de revisão do responsável';
-  if (task.syncStatus === 'failed') return 'Aguardando nova tentativa';
+  if (task.syncStatus === 'failed') return 'Não foi possível enviar — avise o encarregado';
   return null;
 }
 
