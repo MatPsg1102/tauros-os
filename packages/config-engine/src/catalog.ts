@@ -154,6 +154,18 @@ export const CONFIG_CATALOG = {
     defaultValue: 10,
   }),
 
+  // --- Tarefas — Operação de Hoje (UI Operacional V1.1) ---
+  // ADIÇÃO ao índice do Baseline (§5): parâmetro de negócio novo, aditivo —
+  // nenhum default existente alterado. Ratificação formal no documento do
+  // Baseline segue pendente (registrada na rastreabilidade).
+  'tasks.dueSoonWindowMs': def({
+    description: 'Janela de aviso "próxima do prazo" antes do vencimento da tarefa (ms)',
+    scope: 'store',
+    hotReload: true,
+    revalidation: 'none',
+    defaultValue: 1_800_000,
+  }),
+
   // --- KPIs (Baseline §4) ---
   'kpi.live.enabled': def({
     description: 'KPIs do período corrente via views live',

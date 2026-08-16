@@ -6,6 +6,7 @@
 import {
   AddTaskEvidenceUseCase,
   AssignDailyTaskUseCase,
+  buildPlannedScheduleDay,
   ChangeEmployeeWorkPeriodUseCase,
   ClaimDailyTaskUseCase,
   CloseOperatorSessionUseCase,
@@ -33,6 +34,7 @@ import type {
   EvidenceBlobStorePort,
   EvidenceQueuePayload,
   OperatorSessionRecord,
+  PlannedScheduleDay,
   RegisterEmployeeQueuePayload,
   ReviewTaskExecutionQueuePayload,
   ShiftSchedulePort,
@@ -171,6 +173,12 @@ export interface AppContainer {
   readonly identityRoster: (
     storeId: string,
   ) => Promise<readonly { employeeId: string; name: string }[]>;
+  /**
+   * Presença PLANEJADA de (loja, data) — leitura device-local do quadro
+   * compartilhado (visualizar não exige identidade). Mesma montagem do
+   * LoadPlannedScheduleUseCase; resolver único no domínio (Escala V1).
+   */
+  readonly plannedDay: (storeId: string, operationalDate: string) => Promise<PlannedScheduleDay>;
   readonly setAuthorization: (auth: EffectiveAuthorization | null) => void;
   readonly openSession: OpenOperatorSessionUseCase;
   readonly closeSession: CloseOperatorSessionUseCase;
@@ -310,6 +318,31 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
       roster.push(dev);
     }
     return roster;
+  };
+
+  // Presença planejada do dia para o QUADRO (leitura do dispositivo, sem
+  // identidade — mesmo contrato de leitura de employees/positions). A âncora
+  // é dado da LOJA (stores.shift_anchor_date), como no PlannedScheduleAdapter.
+  const plannedDay = async (
+    storeId: string,
+    operationalDate: string,
+  ): Promise<PlannedScheduleDay> => {
+    const [employees, assignments, teams, positions, definitions, patterns] = await Promise.all([
+      workforce.employees(storeId),
+      workforce.assignments(storeId),
+      workforce.teams(storeId),
+      workforce.positions(storeId),
+      scheduleData.definitions(storeId),
+      scheduleData.patterns(storeId),
+    ]);
+    return buildPlannedScheduleDay(storeId, operationalDate, FIXTURE_STORE.shiftAnchorDate, {
+      employees,
+      assignments,
+      teams,
+      positions,
+      definitions,
+      patterns,
+    });
   };
 
   let currentAuth: EffectiveAuthorization | null = null;
@@ -769,6 +802,7 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     pinPolicy,
     credentialProvisioning,
     identityRoster,
+    plannedDay,
     setAuthorization: (auth) => {
       currentAuth = auth;
     },

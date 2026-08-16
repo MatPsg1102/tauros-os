@@ -11,11 +11,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { operationalDateFor, storeDayStartFor } from '@tauros/application';
+import { isOverdue } from '@tauros/domain';
 import type {
   DailyTaskRecord,
   DailyTaskStatus,
   EffectiveAuthorization,
   EvidenceRecord,
+  PlannedScheduleDay,
   TaskExecutionRecord,
 } from '@tauros/contracts';
 
@@ -27,13 +29,56 @@ export type SharedAction = 'materialize' | 'claim' | 'start' | 'submit' | 'revie
 
 export type SharedFilter = 'all' | 'pending' | 'in-progress' | 'review' | 'done';
 
+/**
+ * Estado de PRAZO derivado de apresentação (UI Operacional V1.1) — nunca
+ * persistido: NORMAL → DUE_SOON (janela tasks.dueSoonWindowMs do Configuration
+ * Engine) → OVERDUE (regra oficial isOverdue do domínio). AWAITING_REVIEW e
+ * terminais nunca entram: trabalho entregue não conta atraso do operador.
+ */
+export type DueState = 'NORMAL' | 'DUE_SOON' | 'OVERDUE';
+
+/** Filtro de responsabilidade da sidebar: posição operacional OU sem responsável. */
+export type AssignmentFilter =
+  { readonly kind: 'position'; readonly positionId: string } | { readonly kind: 'unassigned' };
+
+/** Filtro de prazo acionado pelos alertas do topo. */
+export type DueFilter = 'due-soon' | 'overdue';
+
+/** Posição operacional com tarefas hoje (triagem "onde está o problema?"). */
+export interface PositionSummary {
+  readonly positionId: string;
+  readonly name: string;
+  /** Tarefas que ainda exigem ação operacional. */
+  readonly openCount: number;
+  readonly overdueCount: number;
+}
+
+/** Colaborador ESCALADO hoje (fonte: presença planejada — Escala V1). */
+export interface TeamMemberSummary {
+  readonly employeeId: string;
+  readonly name: string;
+  readonly positionName: string | null;
+  /** Jornada planejada "07:30–19:30" — null sem jornada declarada. */
+  readonly workPeriodLabel: string | null;
+  readonly openCount: number;
+  readonly overdueCount: number;
+  /** Entregues aguardando conferência (fila do encarregado, não atraso). */
+  readonly awaitingReviewCount: number;
+}
+
 export interface SharedTaskView {
   readonly id: string;
   readonly title: string;
   readonly status: DailyTaskStatus;
   /** Rótulo operacional pt-BR do estado (nunca jargão técnico). */
   readonly statusLabel: string;
+  /** Posição responsável EFETIVA (assignedPositionId ?? target) — filtros. */
+  readonly positionId: string | null;
   readonly positionName: string | null;
+  readonly startedByEmployeeId: string | null;
+  /** Estado derivado de prazo + rótulo pronto ("Vence em 18 min"). */
+  readonly dueState: DueState;
+  readonly dueLabel: string | null;
   /** Ocupantes escalados hoje na posição responsável. */
   readonly assigneeNames: readonly string[];
   /** Quem está executando (início real). */
@@ -59,6 +104,10 @@ export interface SharedCounts {
   readonly awaitingReview: number;
   readonly done: number;
   readonly late: number;
+  /** Tarefas ainda em aberto (exigem ação operacional). */
+  readonly open: number;
+  /** Próximas do prazo (DUE_SOON) — alimenta o alerta do topo. */
+  readonly dueSoon: number;
 }
 
 /** Colaborador selecionável na identificação (nome + employeeId; sem PIN). */
@@ -111,8 +160,22 @@ export interface SharedOperationsView {
   readonly phase: 'loading' | 'ready' | 'error';
   readonly operationalDate: string;
   readonly filter: SharedFilter;
+  /** Filtros combináveis da sidebar (interseção; leitura pura — sem fila/audit). */
+  readonly assignmentFilter: AssignmentFilter | null;
+  readonly employeeFilter: string | null;
+  /** Nome do colaborador filtrado (chip "Tarefas de João"). */
+  readonly employeeFilterName: string | null;
+  readonly dueFilter: DueFilter | null;
   readonly tasks: readonly SharedTaskView[];
   readonly counts: SharedCounts;
+  /** Posições com tarefas hoje + contadores (dimensão real de agrupamento). */
+  readonly positionSummaries: readonly PositionSummary[];
+  /** Tarefas abertas ainda sem responsável (aguardam distribuição). */
+  readonly unassignedCount: number;
+  /** Colaboradores PLANEJADOS na data operacional (nunca o cadastro inteiro). */
+  readonly teamToday: readonly TeamMemberSummary[];
+  /** 'unconfigured' = loja sem padrão de escala vigente para a data. */
+  readonly scheduleStatus: 'resolved' | 'unconfigured';
   readonly deviceOnline: boolean;
   readonly readyToSync: boolean;
   /** Nenhuma ocorrência materializada: o dia precisa ser aberto por alguém. */
@@ -125,6 +188,11 @@ export interface SharedOperationsView {
 
 export interface SharedOperationsActions {
   readonly setFilter: (filter: SharedFilter) => void;
+  readonly setAssignmentFilter: (filter: AssignmentFilter | null) => void;
+  readonly setEmployeeFilter: (employeeId: string | null) => void;
+  readonly setDueFilter: (filter: DueFilter | null) => void;
+  /** Limpa TODOS os filtros (situação, posição, colaborador e prazo). */
+  readonly clearFilters: () => void;
   /** Abre o pedido de PIN contextual para a ação crítica. */
   readonly requestAction: (action: SharedAction, taskId: string | null) => void;
   readonly cancelPin: () => void;
@@ -179,12 +247,80 @@ function syncLabelFor(status: DailyTaskRecord['syncStatus']): string | null {
   return null;
 }
 
+/**
+ * Estado de prazo DERIVADO (apresentação): a regra de VENCIDA é
+ * exclusivamente a oficial do domínio (isOverdue — trabalho entregue/terminal
+ * nunca atrasa). DUE_SOON reaproveita o MESMO conjunto de exclusões
+ * perguntando "esta tarefa ainda poderia vencer?" (isOverdue logo após o
+ * prazo) — nenhuma lista de status é duplicada aqui.
+ */
+export function dueStateFor(
+  status: DailyTaskStatus,
+  dueAt: Date,
+  now: Date,
+  dueSoonWindowMs: number,
+): DueState {
+  if (isOverdue(status, dueAt, now)) return 'OVERDUE';
+  const couldStillOverdue = isOverdue(status, dueAt, new Date(dueAt.getTime() + 1));
+  if (!couldStillOverdue) return 'NORMAL';
+  return dueAt.getTime() - now.getTime() <= dueSoonWindowMs ? 'DUE_SOON' : 'NORMAL';
+}
+
+/** Duração operacional legível — granularidade de minuto ("18 min", "1 h 24 min"). */
+function formatDurationMinutes(ms: number): string {
+  const totalMinutes = Math.max(1, Math.ceil(ms / 60_000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return `${String(minutes)} min`;
+  if (minutes === 0) return `${String(hours)} h`;
+  return `${String(hours)} h ${String(minutes)} min`;
+}
+
+function dueLabelFor(state: DueState, dueAt: Date, now: Date): string | null {
+  if (state === 'DUE_SOON')
+    return `Vence em ${formatDurationMinutes(dueAt.getTime() - now.getTime())}`;
+  if (state === 'OVERDUE')
+    return `Atrasada há ${formatDurationMinutes(now.getTime() - dueAt.getTime())}`;
+  return null;
+}
+
+/** A tarefa ainda exige ação operacional (aberta)? */
+function isOpenStatus(status: DailyTaskStatus): boolean {
+  return (
+    status === 'PENDING' ||
+    status === 'OVERDUE' ||
+    status === 'IN_PROGRESS' ||
+    status === 'NEEDS_CORRECTION'
+  );
+}
+
+/**
+ * Atribuição de leitura tarefa→colaborador: quem INICIOU responde pela
+ * tarefa; sem início, respondem os escalados na posição responsável. Regra
+ * de APRESENTAÇÃO da triagem — nunca autorização (ADR-018 intacto).
+ */
+function taskBelongsToEmployee(
+  task: SharedTaskView,
+  employee: { readonly employeeId: string; readonly positionId: string | null },
+): boolean {
+  if (task.startedByEmployeeId !== null) return task.startedByEmployeeId === employee.employeeId;
+  return task.positionId !== null && task.positionId === employee.positionId;
+}
+
 export function useSharedOperations(
   container: AppContainer,
 ): [SharedOperationsView, SharedOperationsActions] {
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
   const [filter, setFilter] = useState<SharedFilter>('all');
+  const [assignmentFilter, setAssignmentFilter] = useState<AssignmentFilter | null>(null);
+  const [employeeFilter, setEmployeeFilter] = useState<string | null>(null);
+  const [dueFilter, setDueFilter] = useState<DueFilter | null>(null);
   const [records, setRecords] = useState<readonly DailyTaskRecord[]>([]);
+  const [plannedDay, setPlannedDay] = useState<PlannedScheduleDay | null>(null);
+  const [dueSoonWindowMs, setDueSoonWindowMs] = useState(0);
+  // relógio de APRESENTAÇÃO: tick de minuto para NORMAL→DUE_SOON→OVERDUE sem
+  // refresh manual — nenhuma mutation/materialização; só re-render (§21)
+  const [nowMs, setNowMs] = useState(() => container.clock().getTime());
   const [evidenceByTask, setEvidenceByTask] = useState<
     ReadonlyMap<string, readonly EvidenceRecord[]>
   >(new Map());
@@ -220,17 +356,23 @@ export function useSharedOperations(
     try {
       const readiness = await container.connectivity.assess();
       setConnectivity({ deviceOnline: readiness.deviceOnline, readyToSync: readiness.readyToSync });
-      const [tasks, employees, positions, assignments, roster, policy] = await Promise.all([
-        container.tasks.byWorkDate(FIXTURE_STORE.id, today),
-        container.workforce.employees(FIXTURE_STORE.id),
-        container.workforce.positions(FIXTURE_STORE.id),
-        container.workforce.assignments(FIXTURE_STORE.id),
-        container.identityRoster(FIXTURE_STORE.id),
-        container.pinPolicy.resolve(FIXTURE_STORE.id),
-      ]);
-      void assignments;
+      const [tasks, employees, positions, planned, roster, policy, dueSoonWindow] =
+        await Promise.all([
+          container.tasks.byWorkDate(FIXTURE_STORE.id, today),
+          container.workforce.employees(FIXTURE_STORE.id),
+          // diretório COMPLETO de posições (base + criadas na loja): os cards e
+          // a triagem nomeiam qualquer posição responsável, nunca "Equipe"
+          container.team.positions(FIXTURE_STORE.id),
+          container.plannedDay(FIXTURE_STORE.id, today),
+          container.identityRoster(FIXTURE_STORE.id),
+          container.pinPolicy.resolve(FIXTURE_STORE.id),
+          container.config.resolve('tasks.dueSoonWindowMs', FIXTURE_STORE.id),
+        ]);
+      setPlannedDay(planned);
+      setDueSoonWindowMs(dueSoonWindow);
       setRoster(roster);
       setPinLength(policy.length);
+      setNowMs(container.clock().getTime());
       setRecords([...tasks].sort((a, b) => a.dueAt.localeCompare(b.dueAt)));
       setEmployeeNames(new Map(employees.map((employee) => [employee.id, employee.fullName])));
       setPositionNames(new Map(positions.map((position) => [position.id, position.name])));
@@ -276,6 +418,18 @@ export function useSharedOperations(
       cancelled = true;
     };
   }, [container, load]);
+
+  // tick de MINUTO (granularidade operacional): re-render leve; o Clock
+  // injetado continua sendo a única fonte de agora (testável). Sem leak:
+  // clearInterval no unmount.
+  useEffect(() => {
+    const id = setInterval(() => {
+      setNowMs(container.clock().getTime());
+    }, 60_000);
+    return () => {
+      clearInterval(id);
+    };
+  }, [container]);
 
   const requestAction = useCallback(
     (action: SharedAction, taskId: string | null) => {
@@ -726,29 +880,31 @@ export function useSharedOperations(
     });
   }, [endActorContext]);
 
-  const now = container.clock();
+  const now = new Date(nowMs);
   const views: readonly SharedTaskView[] = records.map((record) => {
     const positionId = record.assignedPositionId ?? record.template.targetPositionId;
     const startedBy = record.startedByEmployeeId ?? null;
     const lastExecution = executionsById.get(record.id);
-    const isLate =
-      (record.status === 'IN_PROGRESS' ||
-        record.status === 'NEEDS_CORRECTION' ||
-        record.status === 'OVERDUE') &&
-      new Date(record.dueAt).getTime() < now.getTime();
+    const dueAt = new Date(record.dueAt);
+    // regra oficial única (domínio): entregue/terminal nunca atrasa (§9)
+    const dueState = dueStateFor(record.status, dueAt, now, dueSoonWindowMs);
     return {
       id: record.id,
       title: record.template.title,
       status: record.status,
       statusLabel: STATUS_LABEL[record.status],
+      positionId,
       positionName: positionId === null ? null : (positionNames.get(positionId) ?? 'Equipe'),
       assigneeNames: positionId === null ? [] : (scheduledByPosition.get(positionId) ?? []),
+      startedByEmployeeId: startedBy,
       startedByName: startedBy === null ? null : (employeeNames.get(startedBy) ?? startedBy),
       startTime: timeOfDay(record.plannedStartAt, FIXTURE_STORE.timeZone),
       dueTime: timeOfDay(record.dueAt, FIXTURE_STORE.timeZone) ?? '—',
       startedAtTime: timeOfDay(record.startedAt ?? null, FIXTURE_STORE.timeZone),
       isUnassigned: positionId === null,
-      isLate,
+      isLate: dueState === 'OVERDUE',
+      dueState,
+      dueLabel: dueLabelFor(dueState, dueAt, now),
       requiresPhoto: record.template.requiresPhoto,
       requiresReview: record.template.requiresReview ?? false,
       evidenceCount: evidenceByTask.get(record.id)?.length ?? 0,
@@ -777,19 +933,95 @@ export function useSharedOperations(
     }
   };
 
+  // colaboradores PLANEJADOS hoje (Escala V1) — nunca o cadastro inteiro (§4)
+  const plannedEmployees = plannedDay?.status === 'resolved' ? plannedDay.employees : [];
+
+  const byAssignment = (view: SharedTaskView): boolean => {
+    if (assignmentFilter === null) return true;
+    if (assignmentFilter.kind === 'unassigned') return view.positionId === null;
+    return view.positionId === assignmentFilter.positionId;
+  };
+
+  const filteredEmployee =
+    employeeFilter === null
+      ? null
+      : (plannedEmployees.find((employee) => employee.employeeId === employeeFilter) ?? null);
+
+  const byEmployee = (view: SharedTaskView): boolean => {
+    if (employeeFilter === null) return true;
+    if (filteredEmployee === null) return false;
+    return taskBelongsToEmployee(view, filteredEmployee);
+  };
+
+  const byDue = (view: SharedTaskView): boolean => {
+    if (dueFilter === null) return true;
+    return dueFilter === 'overdue' ? view.dueState === 'OVERDUE' : view.dueState === 'DUE_SOON';
+  };
+
+  // triagem da sidebar: SEMPRE sobre o dia inteiro (não sobre o filtrado)
+  const openViews = views.filter((task) => isOpenStatus(task.status));
+  const positionSummaries: PositionSummary[] = [...positionNames.entries()]
+    .map(([positionId, name]) => {
+      const todays = views.filter((task) => task.positionId === positionId);
+      const open = todays.filter((task) => isOpenStatus(task.status));
+      return {
+        positionId,
+        name,
+        openCount: open.length,
+        overdueCount: open.filter((task) => task.dueState === 'OVERDUE').length,
+        hasTasks: todays.length > 0,
+      };
+    })
+    .filter((summary) => summary.hasTasks)
+    .map(({ positionId, name, openCount, overdueCount }) => ({
+      positionId,
+      name,
+      openCount,
+      overdueCount,
+    }));
+
+  const teamToday: TeamMemberSummary[] = plannedEmployees.map((employee) => {
+    const mine = views.filter((task) => taskBelongsToEmployee(task, employee));
+    const open = mine.filter((task) => isOpenStatus(task.status));
+    return {
+      employeeId: employee.employeeId,
+      name: employee.fullName,
+      positionName: employee.positionName,
+      workPeriodLabel:
+        employee.workPeriod === null
+          ? null
+          : `${employee.workPeriod.startTime}–${employee.workPeriod.endTime}`,
+      openCount: open.length,
+      overdueCount: open.filter((task) => task.dueState === 'OVERDUE').length,
+      awaitingReviewCount: mine.filter((task) => task.status === 'AWAITING_REVIEW').length,
+    };
+  });
+
   const view: SharedOperationsView = {
     phase,
     operationalDate: today,
     filter,
-    tasks: views.filter(byFilter),
+    assignmentFilter,
+    employeeFilter,
+    employeeFilterName: filteredEmployee?.fullName ?? null,
+    dueFilter,
+    tasks: views.filter(
+      (task) => byFilter(task) && byAssignment(task) && byEmployee(task) && byDue(task),
+    ),
     counts: {
       pending: views.filter((task) => task.status === 'PENDING' || task.status === 'OVERDUE')
         .length,
       inProgress: views.filter((task) => task.status === 'IN_PROGRESS').length,
       awaitingReview: views.filter((task) => task.status === 'AWAITING_REVIEW').length,
       done: views.filter((task) => task.status === 'DONE').length,
-      late: views.filter((task) => task.isLate || task.status === 'OVERDUE').length,
+      late: views.filter((task) => task.isLate).length,
+      open: openViews.length,
+      dueSoon: views.filter((task) => task.dueState === 'DUE_SOON').length,
     },
+    positionSummaries,
+    unassignedCount: openViews.filter((task) => task.positionId === null).length,
+    teamToday,
+    scheduleStatus: plannedDay?.status === 'unconfigured' ? 'unconfigured' : 'resolved',
     deviceOnline: connectivity.deviceOnline,
     readyToSync: connectivity.readyToSync,
     dayNotMaterialized: phase === 'ready' && records.length === 0,
@@ -799,10 +1031,21 @@ export function useSharedOperations(
     notice,
   };
 
+  const clearFilters = useCallback(() => {
+    setFilter('all');
+    setAssignmentFilter(null);
+    setEmployeeFilter(null);
+    setDueFilter(null);
+  }, []);
+
   return [
     view,
     {
       setFilter,
+      setAssignmentFilter,
+      setEmployeeFilter,
+      setDueFilter,
+      clearFilters,
       requestAction,
       cancelPin,
       confirmPin,

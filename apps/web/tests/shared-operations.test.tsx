@@ -230,8 +230,9 @@ describe('FLUXO A — tarefa simples no quadro compartilhado', () => {
     const first = render(app());
     await openDay();
 
-    // sem responsável → ASSUMIR com PIN da Marina (escalada hoje)
-    await screen.findByText('Sem responsável');
+    // sem responsável → ASSUMIR com PIN da Marina (escalada hoje). O texto
+    // existe no card E na sidebar de triagem (V1.1) — basta aguardar ambos.
+    await screen.findAllByText('Sem responsável');
     await actOnCard('Reposição da ilha', 'Assumir', '224466');
     await screen.findByText('Tarefa assumida.');
     expect(screen.getAllByText(/Açougueiro 1/).length).toBeGreaterThan(0);

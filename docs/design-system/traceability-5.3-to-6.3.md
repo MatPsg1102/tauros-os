@@ -922,3 +922,64 @@ Pipeline completo VERDE (format, lint, typecheck 16/16, boundaries,
 check:hardcoded, 908 testes, build, db:validate, audit). **Pronto para piloto
 controlado** com o encarregado usando identidade DEV provisionada (bridge
 documentado) até o backend de identidade real.
+
+## UI Operacional V1.1 — sidebar de triagem, filtros por posição/colaborador e alertas de prazo
+
+Evolução de READ MODEL + controller + UI da `/operacao` (nenhuma mudança em
+identidade, PIN, TaskExecution, recurrence, escala, RBAC, offline, auditoria,
+materialização ou review).
+
+- **"Área" — lacuna registrada**: NÃO existe conceito de área/setor/categoria em
+  domínio/contratos/schema. A dimensão real de agrupamento é a POSIÇÃO
+  operacional responsável (`assignedPositionId ?? template.targetPositionId`);
+  a sidebar agrupa por "Posições" (rótulo honesto — posição ≠ área) + "Sem
+  responsável". Se "área" virar conceito de negócio, exige modelagem própria
+  (novo ADR) — nenhuma entidade inventada para a UI.
+- **Equipe de hoje**: fonte EXCLUSIVA = presença planejada (Escala V1). O
+  enriquecimento (nomes/posição/jornada) foi extraído do
+  `LoadPlannedScheduleUseCase` para `buildPlannedScheduleDay` (função pura em
+  application) e reutilizado pela leitura device-local `container.plannedDay`
+  do quadro compartilhado — resolver único (`resolvePlannedDay`) intacto.
+  Sidebar segue a `operationalDate` da loja (não o "hoje do dispositivo").
+- **Prazo derivado (apresentação)**: `dueState NORMAL→DUE_SOON→OVERDUE` só no
+  view model — nada persistido, state machine intacta. VENCIDA reutiliza
+  `isOverdue` do domínio (DONE/SKIPPED/AWAITING_REVIEW nunca atrasam — decisão
+  preservada; entregue ≠ atrasado do operador). DUE_SOON usa o MESMO conjunto
+  de exclusões (pergunta "ainda poderia vencer?" ao próprio `isOverdue`).
+- **Business parameter novo — `tasks.dueSoonWindowMs`** (30 min default, scope
+  store, hotReload): ADIÇÃO ADITIVA ao catálogo do Configuration Engine
+  (ADR-019) — nenhum default existente alterado. ⚠️ Ratificação formal no
+  documento Baseline v1.0 §5 PENDENTE (o catálogo-como-código é a fonte
+  executável; registrar na próxima revisão do documento).
+- **UI**: Sidebar/NavigationGroup/NavigationItem/Chip/Drawer/Badge do DS
+  congelado (zero mudanças em `ui-*`; slot `sidebar` do AppShell que já
+  existia). Alertas do topo = Chips acionáveis (🔴 atrasadas / ⚠ próximas) que
+  FILTRAM — sem modal, sem interrupção. Cards: badge de prazo com ícone+texto+
+  forma/cor (P5, nunca só cor): "🔴 Atrasada há 1 h 24 min" / "⚠ Vence em 18
+  min". Filtros combináveis por interseção (situação × posição × colaborador ×
+  prazo) com chips removíveis + "Limpar filtros" — filtrar é leitura pura
+  (provado por teste: fila e audit_outbox inalterados). Mobile (<768px):
+  gatilho "Filtros e equipe" → Drawer com o MESMO componente Sidebar; tablet
+  ≥768px mantém sidebar persistente (CSS do DS já fazia o corte).
+- **Atualização temporal**: tick de MINUTO no controller (`setInterval` +
+  cleanup; Clock injetado segue única fonte de agora) — NORMAL→DUE_SOON→OVERDUE
+  sem refresh e SEM mutation (provado: status persistido continua PENDING).
+- **Testes**: +15 (`operations-sidebar.test.tsx` + `dueStateFor` puro): roster
+  só com escalados (Equipe B de folga não aparece), contadores, filtros
+  (colaborador/sem responsável/posição/combinados/limpar), alertas filtram,
+  overdue/dueSoon derivados, DONE e AWAITING_REVIEW não contam, relógio
+  avançando muda estado sem mutation, mobile Drawer, tablet sidebar, axe,
+  fila/auditoria intactas ao filtrar. 142 testes web verdes (127 preservados,
+  1 espera ajustada por texto duplicado legítimo).
+- **Validação Chromium real (CDP)**: cenários 1–7 — sidebar tablet/desktop com
+  contadores exatos; João filtra e chip remove; Produção filtra e tripla
+  combinação mostra interseção vazia honesta; "⚠ Vence em 24 min" + 4× "🔴
+  Atrasada há Xh" ao vivo; fluxo real João (PIN) inicia→envia p/ conferência →
+  card sem 🔴 + sidebar "1 aberta"/"Conferir 1"; 390px Drawer fecha ao
+  selecionar, chips legíveis, sem overflow; 834px sidebar+quadro (578px úteis).
+- **Achado (DEV)**: os 4 templates fixture (DAILY, posições Produção/
+  Atendimento/Apoio) materializam junto e suas posições NÃO são atribuíveis no
+  cadastro de colaborador (só posições reais do baseline) — no piloto o quadro
+  DEV mostra tarefas dessas posições sem colaborador correspondente na equipe.
+  Comportamento pré-existente, agora VISÍVEL pela triagem; some com o cadastro
+  real de definições (backend) ou limpando as fixtures de template.
