@@ -569,6 +569,13 @@ export function useSharedOperations(
       // só os fluxos com drawer (finalizar/conferir) retêm o ator até o
       // fechamento; qualquer outro desfecho descarta a credencial no finally
       let retainActor = false;
+      // o diálogo foi fechado programaticamente neste fluxo? decide, de forma
+      // DETERMINÍSTICA, para onde vai um erro inesperado (diálogo vs notice)
+      let dialogDismissed = false;
+      const dismissDialog = (): void => {
+        dialogDismissed = true;
+        setPinRequest(null);
+      };
       try {
         // employeeId identifica, PIN verifica (ADR-021). O port resolve a
         // origem (credencial local real OU fixture DEV) — o controller não sabe.
@@ -611,7 +618,7 @@ export function useSharedOperations(
               fail('Não foi possível abrir o dia agora. Tente novamente.');
               return;
             }
-            setPinRequest(null);
+            dismissDialog();
             await load();
             return;
           }
@@ -638,7 +645,7 @@ export function useSharedOperations(
               return;
             }
             if (readiness.readyToSync) await container.drainAndReflect();
-            setPinRequest(null);
+            dismissDialog();
             setNotice('Tarefa assumida.');
             await load();
             return;
@@ -668,7 +675,7 @@ export function useSharedOperations(
               return;
             }
             if (readiness.readyToSync) await container.drainAndReflect();
-            setPinRequest(null);
+            dismissDialog();
             setNotice('Tarefa iniciada.');
             await load();
             return;
@@ -682,7 +689,7 @@ export function useSharedOperations(
               fail('Tarefa não encontrada neste aparelho.');
               return;
             }
-            setPinRequest(null);
+            dismissDialog();
             retainActor = true;
             setSubmitForm({
               taskId: task.id,
@@ -713,7 +720,7 @@ export function useSharedOperations(
               fail('Execução não encontrada neste aparelho.');
               return;
             }
-            setPinRequest(null);
+            dismissDialog();
             retainActor = true;
             setReviewDetail({
               taskId: task.id,
@@ -749,21 +756,24 @@ export function useSharedOperations(
         // preso até reload. Mesmo canal de erro dos caminhos 'failed'.
         // Se o diálogo JÁ fechou (falha ao montar o drawer), o erro vai ao
         // notice do quadro — nunca silêncio.
-        let dialogStillOpen = false;
-        setPinRequest((current) => {
-          if (current === null) return null;
-          dialogStillOpen = true;
-          return {
-            ...current,
-            busy: false,
-            error: 'Algo deu errado neste aparelho. Tente novamente.',
-          };
-        });
-        // diálogo já fechado (falha ao montar um drawer): o erro vai ao
-        // notice do quadro — nunca silêncio
-        setTimeout(() => {
-          if (!dialogStillOpen) setNotice('Algo deu errado neste aparelho. Tente novamente.');
-        }, 0);
+        if (dialogDismissed) {
+          // diálogo já fechado neste fluxo (falha após montar um drawer ou
+          // no pós-processamento): o erro vai ao notice do quadro — nunca
+          // silêncio, nunca duplicado
+          setSubmitForm(null);
+          setReviewDetail(null);
+          setNotice('Algo deu errado neste aparelho. Tente novamente.');
+        } else {
+          setPinRequest((current) =>
+            current === null
+              ? null
+              : {
+                  ...current,
+                  busy: false,
+                  error: 'Algo deu errado neste aparelho. Tente novamente.',
+                },
+          );
+        }
         retainActor = false;
       } finally {
         busyRef.current = false;
