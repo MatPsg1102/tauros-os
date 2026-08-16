@@ -301,7 +301,14 @@ export function useShiftOpening(container: AppContainer): [ShiftOpeningView, Shi
         setPhase(current.permissions.includes(CAPABILITY_SESSION_OPEN) ? 'ready' : 'denied');
         return;
       }
-      setActionError('Não foi possível fechar o turno anterior agora. Tente novamente.');
+      // condições PERMANENTES nunca viram "tente novamente"
+      setActionError(
+        result.code === 'PERMISSION_DENIED'
+          ? 'Seu perfil não permite fechar turno. Peça ao encarregado para fechar o turno anterior.'
+          : result.code === 'SNAPSHOT_EXPIRED'
+            ? 'Sua identificação expirou. Identifique-se novamente para fechar o turno anterior.'
+            : 'Não foi possível fechar o turno anterior agora. Tente novamente.',
+      );
       setPhase('stale-session');
     } finally {
       submittingRef.current = false;

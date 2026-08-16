@@ -64,6 +64,13 @@ export interface DependencyStatus {
   readonly satisfied: boolean;
   readonly pending: readonly string[];
   readonly missing: readonly string[];
+  /**
+   * Dependências PRESENTES porém mortas (PERMANENT_FAILURE). Distintas de
+   * `missing`: o ENQUEUE aceita o item (nasce BLOCKED — a ação do operador
+   * não pode falhar por causa de um item antigo morto); o SCHEDULER promove
+   * o dependente a NEEDS_REVIEW (visível) em vez de espera eterna.
+   */
+  readonly dead: readonly string[];
 }
 
 /** Estado agregado das dependências: satisfeito só com evidência para todas. */
@@ -74,14 +81,19 @@ export function dependencyStatus(
 ): DependencyStatus {
   const pending: string[] = [];
   const missing: string[] = [];
+  const dead: string[] = [];
   for (const depId of item.dependsOn) {
     const resolution = resolveDependency(depId, byId, tombstones);
     if (resolution === 'pending') pending.push(depId);
-    // dependência morta recebe o MESMO destino da ausente: o dependente vai
-    // a NEEDS_REVIEW (visível como falha) em vez de esperar para sempre
-    else if (resolution === 'missing' || resolution === 'dead') missing.push(depId);
+    else if (resolution === 'missing') missing.push(depId);
+    else if (resolution === 'dead') dead.push(depId);
   }
-  return { satisfied: pending.length === 0 && missing.length === 0, pending, missing };
+  return {
+    satisfied: pending.length === 0 && missing.length === 0 && dead.length === 0,
+    pending,
+    missing,
+    dead,
+  };
 }
 
 /**

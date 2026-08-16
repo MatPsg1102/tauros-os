@@ -129,7 +129,9 @@ function TaskCard({
             >
               Concluir tarefa
             </Button>
-            {!skipOpen ? (
+            {task.state === 'needs-correction' ? null : !skipOpen ? (
+              // devolvida NÃO oferece adiamento (o domínio rejeitaria):
+              // corrija e reenvie — a devolução do encarregado não se anula
               <Button
                 fullWidth
                 variant="secondary"

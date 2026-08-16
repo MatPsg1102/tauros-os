@@ -226,6 +226,13 @@ export class LocalPinLockoutStore implements PinLockoutStorePort {
       });
     });
   }
+
+  /** Redefinição GERENCIADA: apaga o registro inteiro — nova credencial, nova base. */
+  async clear(storeId: string, employeeId: string, deviceId: string): Promise<void> {
+    await this.store.transaction([LOCKOUTS], 'write', async (tx) => {
+      await tx.delete(LOCKOUTS, lockKey(storeId, employeeId, deviceId));
+    });
+  }
 }
 
 /**
@@ -385,12 +392,20 @@ export class CompositeOperatorIdentity implements OperatorIdentityPort {
     private readonly credentials: OperationalCredentialPort,
     private readonly local: OperatorIdentityPort,
     private readonly fixture: OperatorIdentityPort,
+    /** employeeIds das identidades DEV — vazio quando fixtures desativadas. */
+    private readonly devIdentityIds: ReadonlySet<string> = new Set(),
   ) {}
 
   async verify(input: IdentityVerificationInput): Promise<IdentityResult> {
     const credential = await this.credentials.get(input.storeId, input.employeeId);
     // credencial real materializada vence a identidade DEV (§12)
     if (credential !== null) return this.local.verify(input);
+    // colaborador REAL sem credencial: NO_CREDENTIAL honesto ("procure o
+    // encarregado") — cair na fixture devolveria INVALID_PIN eterno E ainda
+    // acumularia lockout de um inocente
+    if (!this.devIdentityIds.has(input.employeeId)) {
+      return { kind: 'rejected', code: 'NO_CREDENTIAL' };
+    }
     return this.fixture.verify(input);
   }
 }

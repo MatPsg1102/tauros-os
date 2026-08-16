@@ -103,8 +103,13 @@ export interface PinLockoutStorePort {
     deviceId: string,
     policy: { readonly maxAttempts: number; readonly lockoutStepsMs: readonly number[] },
   ): Promise<PinLockoutState>;
-  /** Zera o estado após sucesso. */
+  /** Zera o estado após sucesso (preserva a base do hard reauth). */
   reset(storeId: string, employeeId: string, deviceId: string): Promise<void>;
+  /**
+   * Remove o registro INTEIRO (inclusive totalFailures): usado pela
+   * REDEFINIÇÃO GERENCIADA de credencial — nova credencial, nova base.
+   */
+  clear(storeId: string, employeeId: string, deviceId: string): Promise<void>;
 }
 
 export type ProvisioningResult =

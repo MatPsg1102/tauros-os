@@ -165,11 +165,12 @@ function ActionPinDialog({
 }): ReactElement {
   const [employeeId, setEmployeeId] = useState('');
   const [pin, setPin] = useState('');
-  // remonta as células a cada ABERTURA: dígitos mascarados de uma ação
-  // anterior nunca ficam visíveis (o fechamento programático não dispara
-  // onOpenChange). A SELEÇÃO persiste — a mesma pessoa em ações seguidas
-  // (assumir → iniciar) só redigita o PIN.
+  // remonta as células a cada ABERTURA (dígitos de ação anterior nunca ficam
+  // visíveis — fechamento programático não dispara onOpenChange) e a cada
+  // TENTATIVA (dois erros idênticos seguidos também limpam as células). A
+  // SELEÇÃO persiste — a mesma pessoa em ações seguidas só redigita o PIN.
   const [openSeq, setOpenSeq] = useState(0);
+  const [attemptSeq, setAttemptSeq] = useState(0);
   const request = view.pinRequest;
   const open = request !== null;
   const pinLength = request?.pinLength ?? 6;
@@ -221,7 +222,7 @@ function ActionPinDialog({
           </Select>
         </Field>
         <PinInput
-          key={`${String(openSeq)}:${employeeId}:${request?.error ?? ''}`}
+          key={`${String(openSeq)}:${String(attemptSeq)}:${employeeId}`}
           length={pinLength}
           label="PIN"
           mask
@@ -237,9 +238,10 @@ function ActionPinDialog({
           disabled={employeeId === '' || pin.length < pinLength || request?.busy === true}
           onClick={() => {
             // erro de PIN NÃO apaga a seleção do colaborador (com luva, cada
-            // reseleção custa caro); o PIN em si é limpo pelo remonte da key
-            // quando o erro chega, e tudo é limpo quando o diálogo fecha
+            // reseleção custa caro); as células remontam a cada tentativa e
+            // tudo é limpo quando o diálogo fecha
             setPin('');
+            setAttemptSeq((sequence) => sequence + 1);
             void actions.confirmPin(employeeId, pin);
           }}
         >

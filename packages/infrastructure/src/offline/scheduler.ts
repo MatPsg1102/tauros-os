@@ -33,7 +33,9 @@ export class QueueScheduler {
     for (const item of all) {
       if (item.state === 'BLOCKED_BY_DEPENDENCY') {
         const status = dependencyStatus(item, byId, tombstones);
-        if (status.missing.length > 0) {
+        // dependência morta (PERMANENT_FAILURE) tem o MESMO destino da
+        // ausente: NEEDS_REVIEW visível — nunca espera eterna
+        if (status.missing.length > 0 || status.dead.length > 0) {
           const def = transition(item.state, 'DEPENDENCY_MISSING');
           await this.repo.put({ ...item, state: def.to });
           this.events.emit(
@@ -46,7 +48,7 @@ export class QueueScheduler {
                 nextState: def.to,
                 error: {
                   name: 'MissingDependencyEvidence',
-                  message: `Dependências sem evidência de conclusão: ${status.missing.join(', ')}`,
+                  message: `Dependências sem evidência de conclusão: ${[...status.missing, ...status.dead].join(', ')}`,
                 },
               },
               now,

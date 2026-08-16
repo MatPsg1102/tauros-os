@@ -458,6 +458,12 @@ export function useTeamManagement(
     async (pin: string, confirmation: string) => {
       const target = pinTarget;
       if (target === null || authorization === null) return;
+      // gate REVALIDADO na ação (ocultação visual não é controle — ADR-018):
+      // só quem gere a equipe redefine credencial
+      if (!enabled) {
+        setPinUpdate({ status: 'error', message: 'Seu perfil não permite redefinir PIN.' });
+        return;
+      }
       if (updatingPinRef.current) return;
       if (pin.length !== pinLength) {
         setPinUpdate({ status: 'error', message: `O PIN deve ter ${pinLength} dígitos.` });
@@ -476,7 +482,9 @@ export function useTeamManagement(
           pin,
           status: 'LOCAL_PENDING_PROVISIONING',
         });
-        await container.lockouts.reset(FIXTURE_STORE.id, target.employeeId, container.deviceId);
+        // redefinição gerenciada: apaga o lockout INTEIRO (inclusive a base do
+        // hard reauth) — nova credencial, nova base
+        await container.lockouts.clear(FIXTURE_STORE.id, target.employeeId, container.deviceId);
         setPinUpdate({ status: 'idle' });
         setPinTarget(null);
         await load();
@@ -489,7 +497,7 @@ export function useTeamManagement(
         updatingPinRef.current = false;
       }
     },
-    [authorization, container, load, pinLength, pinTarget],
+    [authorization, container, enabled, load, pinLength, pinTarget],
   );
 
   const createPosition = useCallback(

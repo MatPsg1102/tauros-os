@@ -184,12 +184,17 @@ export function useDailyTasks(
     let cancelled = false;
     void (async () => {
       await container.reconcileFromQueue();
+      // reidrata o snapshot de autoria do container: a contenção de autoria
+      // do quadro compartilhado zera o snapshot ao desmontar — sem isto,
+      // concluir/adiar aqui falharia com ENQUEUE_FAILED (mesmo contrato de
+      // use-shift-opening e use-supervisor-dashboard)
+      if (identity.authorization !== null) container.setAuthorization(identity.authorization);
       if (!cancelled) await load();
     })();
     return () => {
       cancelled = true;
     };
-  }, [container, load]);
+  }, [container, identity.authorization, load]);
 
   const runOutcome = useCallback(
     async (

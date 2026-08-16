@@ -297,6 +297,10 @@ export class FixtureOperatorIdentity implements OperatorIdentityPort {
         input.deviceId,
         policy,
       );
+      // MESMA escada do adapter real, degrau a degrau (inclusive hard reauth)
+      if (state.totalFailures >= policy.hardReauthAfter) {
+        return { kind: 'rejected', code: 'REAUTH_REQUIRED' };
+      }
       if (state.lockedUntil != null) {
         const retry = new Date(state.lockedUntil).getTime() - nowMs;
         return { kind: 'rejected', code: 'LOCKED_OUT', retryAfterMs: Math.max(0, retry) };

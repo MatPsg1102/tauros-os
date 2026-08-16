@@ -301,6 +301,7 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     credentials,
     localIdentity,
     fixtureIdentity,
+    new Set(fixtureOperatorRoster().map((operator) => operator.employeeId)),
   );
   const credentialProvisioning: CredentialProvisioningPort = new NullCredentialProvisioning();
 

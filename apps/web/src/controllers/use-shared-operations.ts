@@ -484,12 +484,24 @@ export function useSharedOperations(
 
   /** Sessão operacional do ator (ADR-014): reusa a ativa ou abre agora. */
   const resolveActorSession = useCallback(
-    async (authorization: EffectiveAuthorization, online: boolean): Promise<string | null> => {
+    async (
+      authorization: EffectiveAuthorization,
+      online: boolean,
+    ): Promise<string | 'stale-session' | null> => {
       const active = await container.sessions.findActive(
         FIXTURE_STORE.id,
         authorization.operatorEmployeeId,
       );
-      if (active !== null) return active.id;
+      if (active !== null) {
+        // virada do dia: sessão ACTIVE de OUTRO dia operacional não recebe a
+        // execução de hoje — mesmo contrato das guardas de /turno
+        if (
+          active.operationalDate !== operationalDateFor(container.clock(), FIXTURE_STORE.timeZone)
+        ) {
+          return 'stale-session';
+        }
+        return active.id;
+      }
       const opened = await container.openSession.execute({
         authorization,
         // membership de plataforma opcional (ADR-021): null até provisionamento
@@ -735,15 +747,23 @@ export function useSharedOperations(
         // exceção inesperada (ex.: IndexedDB) NUNCA congela o diálogo em
         // busy — cancelar recusa fechar enquanto busy e o tablet ficaria
         // preso até reload. Mesmo canal de erro dos caminhos 'failed'.
-        setPinRequest((current) =>
-          current === null
-            ? null
-            : {
-                ...current,
-                busy: false,
-                error: 'Algo deu errado neste aparelho. Tente novamente.',
-              },
-        );
+        // Se o diálogo JÁ fechou (falha ao montar o drawer), o erro vai ao
+        // notice do quadro — nunca silêncio.
+        let dialogStillOpen = false;
+        setPinRequest((current) => {
+          if (current === null) return null;
+          dialogStillOpen = true;
+          return {
+            ...current,
+            busy: false,
+            error: 'Algo deu errado neste aparelho. Tente novamente.',
+          };
+        });
+        // diálogo já fechado (falha ao montar um drawer): o erro vai ao
+        // notice do quadro — nunca silêncio
+        setTimeout(() => {
+          if (!dialogStillOpen) setNotice('Algo deu errado neste aparelho. Tente novamente.');
+        }, 0);
         retainActor = false;
       } finally {
         busyRef.current = false;
@@ -848,6 +868,15 @@ export function useSharedOperations(
       try {
         const readiness = await container.connectivity.assess();
         const sessionId = await resolveActorSession(actor.authorization, readiness.readyToSync);
+        if (sessionId === 'stale-session') {
+          setSubmitForm({
+            ...form,
+            busy: false,
+            error:
+              'Você tem um turno de outro dia ainda aberto. Feche-o na tela de turno antes de registrar.',
+          });
+          return;
+        }
         if (sessionId === null) {
           // pode ser permissão OU falha técnica na abertura — não acusar o
           // perfil da pessoa sem certeza
