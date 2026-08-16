@@ -202,14 +202,19 @@ describe('LocalCredentialIdentity (orquestração offline)', () => {
 });
 
 describe('FixtureOperatorIdentity (DEV) — mesmo OperatorIdentityPort', () => {
-  const deps = {
-    now: fixedClock('2026-08-15T08:00:00.000Z'),
-    offlineValidityMs: () => Promise.resolve(259_200_000),
-    online: () => Promise.resolve(true),
-  };
+  function fixtureDeps() {
+    const { lockouts, pol } = build();
+    return {
+      now: fixedClock('2026-08-15T08:00:00.000Z'),
+      offlineValidityMs: () => Promise.resolve(259_200_000),
+      online: () => Promise.resolve(true),
+      lockouts,
+      policy: pol,
+    };
+  }
 
   it('10. verifica PIN da fixture e devolve autorização; PIN errado rejeita', async () => {
-    const identity = new FixtureOperatorIdentity(deps);
+    const identity = new FixtureOperatorIdentity(fixtureDeps());
     // Elber (emp-0004) tem PIN DEV de 6 dígitos (= comprimento do Baseline)
     const ok = await identity.verify({
       storeId: STORE,
@@ -227,6 +232,27 @@ describe('FixtureOperatorIdentity (DEV) — mesmo OperatorIdentityPort', () => {
       deviceId: DEVICE,
     });
     expect(bad).toMatchObject({ kind: 'rejected', code: 'INVALID_PIN' });
+  });
+
+  it('10b. REGRESSÃO: identidade DEV sofre a MESMA escada de lockout do adapter real', async () => {
+    const identity = new FixtureOperatorIdentity(fixtureDeps());
+    // TEST_POLICY: maxAttempts pequenos — erra até travar
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await identity.verify({
+        storeId: STORE,
+        employeeId: 'emp-0004',
+        pin: '000000',
+        deviceId: DEVICE,
+      });
+    }
+    // com lockout ativo, até o PIN CORRETO é rejeitado (força bruta inviável)
+    const locked = await identity.verify({
+      storeId: STORE,
+      employeeId: 'emp-0004',
+      pin: '123456',
+      deviceId: DEVICE,
+    });
+    expect(locked).toMatchObject({ kind: 'rejected', code: 'LOCKED_OUT' });
   });
 });
 

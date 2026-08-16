@@ -402,8 +402,11 @@ describe('FLUXO B — foto obrigatória + conferência', () => {
     await actOnCard('Limpeza da serra', 'Finalizar', '224466');
     const resubmit = await findTaskDialog('Limpeza da serra');
     attachPhoto();
+    // ESCOPO honesto (hardening): o drawer de reenvio mostra SÓ a foto NOVA
+    // pendente do ator — a da rodada devolvida pertence à execução anterior
+    // (não conta para requiresPhoto e não deve enganar quem envia)
     await waitFor(() => {
-      expect(within(resubmit).getAllByAltText('Evidência registrada').length).toBeGreaterThan(1);
+      expect(within(resubmit).getAllByAltText('Evidência registrada').length).toBe(1);
     });
     fireEvent.click(within(resubmit).getByRole('button', { name: 'Enviar para conferência' }));
     await screen.findByText('Execução enviada para conferência.');

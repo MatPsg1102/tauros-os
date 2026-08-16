@@ -466,7 +466,28 @@ function ShiftSection({
         confirmLabel="Fechar turno"
         cancelLabel="Continuar no turno"
         onConfirm={() => actions.confirmCloseShift()}
-      />
+      >
+        {/* RESUMO DO TURNO: o encarregado fecha SABENDO o que fica para trás.
+            Avisar ≠ impedir — nenhuma regra de bloqueio foi aprovada. */}
+        <Stack gap={100}>
+          <Text role="data">
+            Concluídas: {view.counts.done} · Pendentes: {view.counts.pending} · Atrasadas:{' '}
+            {view.counts.overdue} · Em conferência: {view.counts.awaitingReview} · Devolvidas:{' '}
+            {view.counts.needsCorrection} · Adiadas: {view.counts.skipped} · Sem responsável:{' '}
+            {view.counts.unassigned}
+          </Text>
+          {view.counts.pending +
+            view.counts.overdue +
+            view.counts.awaitingReview +
+            view.counts.needsCorrection >
+            0 && (
+            <Alert status="warning" title="Ainda há trabalho em aberto">
+              Existem tarefas pendentes, atrasadas, em conferência ou devolvidas. Você pode fechar
+              mesmo assim — elas continuam visíveis no quadro do dia.
+            </Alert>
+          )}
+        </Stack>
+      </ConfirmDialog>
     </Section>
   );
 }
@@ -693,8 +714,9 @@ export function SupervisorDashboardScreen({
             <Card>
               <Text role="data">
                 Pendentes: {view.counts.pending} · Atrasadas: {view.counts.overdue} · Sem
-                responsável: {view.counts.unassigned} · Concluídas: {view.counts.done} · Adiadas:{' '}
-                {view.counts.skipped}
+                responsável: {view.counts.unassigned} · Em conferência: {view.counts.awaitingReview}{' '}
+                · Devolvidas: {view.counts.needsCorrection} · Concluídas: {view.counts.done} ·
+                Adiadas: {view.counts.skipped}
               </Text>
             </Card>
           </Section>
@@ -719,6 +741,8 @@ export function SupervisorDashboardScreen({
                       { value: 'unassigned', label: 'Sem responsável' },
                       { value: 'pending', label: 'Pendentes' },
                       { value: 'overdue', label: 'Atrasadas' },
+                      { value: 'awaiting-review', label: 'Conferir' },
+                      { value: 'needs-correction', label: 'Devolvidas' },
                       { value: 'done', label: 'Concluídas' },
                     ]}
                   />

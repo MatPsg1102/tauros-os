@@ -28,7 +28,7 @@ import { identityRejectionMessage } from './identity-messages.js';
 /** Ações críticas que exigem identificação just-in-time. */
 export type SharedAction = 'materialize' | 'claim' | 'start' | 'submit' | 'review';
 
-export type SharedFilter = 'all' | 'pending' | 'in-progress' | 'review' | 'done';
+export type SharedFilter = 'all' | 'pending' | 'in-progress' | 'review' | 'returned' | 'done';
 
 /**
  * Estado de PRAZO derivado de apresentação (UI Operacional V1.1) — nunca
@@ -109,6 +109,8 @@ export interface SharedCounts {
   readonly open: number;
   /** Próximas do prazo (DUE_SOON) — alimenta o alerta do topo. */
   readonly dueSoon: number;
+  /** Devolvidas para correção (NEEDS_CORRECTION) — cobrança visível. */
+  readonly needsCorrection: number;
 }
 
 /** Colaborador selecionável na identificação (nome + employeeId; sem PIN). */
@@ -233,16 +235,29 @@ const ACTION_PROMPT: Readonly<Record<SharedAction, string>> = {
   review: 'Identificação do encarregado',
 };
 
+// formatter CACHEADO por fuso: construir Intl.DateTimeFormat é caro e este
+// caminho roda por tarefa a cada render (com 100 tarefas + tick de minuto,
+// seriam centenas de construções por minuto)
+const TIME_FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+function timeFormatterFor(timeZone: string): Intl.DateTimeFormat {
+  let formatter = TIME_FORMATTERS.get(timeZone);
+  if (formatter === undefined) {
+    formatter = new Intl.DateTimeFormat('pt-BR', {
+      timeZone,
+      hourCycle: 'h23',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    TIME_FORMATTERS.set(timeZone, formatter);
+  }
+  return formatter;
+}
+
 function timeOfDay(iso: string | null | undefined, timeZone: string): string | null {
   if (iso == null || iso === '') return null;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat('pt-BR', {
-    timeZone,
-    hourCycle: 'h23',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
+  return timeFormatterFor(timeZone).format(date);
 }
 
 function syncLabelFor(status: DailyTaskRecord['syncStatus']): string | null {
@@ -398,15 +413,22 @@ export function useSharedOperations(
       }
       setScheduledByPosition(scheduled);
 
+      // leituras POR TAREFA em paralelo: sequenciais seriam 100–200
+      // transações IndexedDB encadeadas com 100 tarefas (tablet fraco)
       const evidence = new Map<string, readonly EvidenceRecord[]>();
       const executions = new Map<string, TaskExecutionRecord>();
-      for (const task of tasks) {
-        evidence.set(task.id, await container.evidence.byDailyTask(FIXTURE_STORE.id, task.id));
-        if (task.lastExecutionId !== null) {
-          const execution = await container.tasks.executionById(task.lastExecutionId);
+      await Promise.all(
+        tasks.map(async (task) => {
+          const [taskEvidence, execution] = await Promise.all([
+            container.evidence.byDailyTask(FIXTURE_STORE.id, task.id),
+            task.lastExecutionId !== null
+              ? container.tasks.executionById(task.lastExecutionId)
+              : Promise.resolve(null),
+          ]);
+          evidence.set(task.id, taskEvidence);
           if (execution !== null) executions.set(task.id, execution);
-        }
-      }
+        }),
+      );
       setEvidenceByTask(evidence);
       setExecutionsById(executions);
       setPhase('ready');
@@ -592,12 +614,14 @@ export function useSharedOperations(
             if (claimed.kind === 'failed') {
               fail(
                 claimed.code === 'ACTOR_NOT_SCHEDULED'
-                  ? 'Você não está escalado hoje para assumir tarefas.'
+                  ? 'Você não aparece na escala de hoje. Se a escala do dia não estiver configurada, avise o encarregado.'
                   : claimed.code === 'ACTOR_WITHOUT_POSITION'
-                    ? 'Você não possui posição vigente para assumir tarefas.'
+                    ? 'Você ainda não tem posição cadastrada. Peça ao encarregado para configurar seu vínculo.'
                     : claimed.code === 'ALREADY_ASSIGNED'
                       ? 'Esta tarefa já tem responsável definido.'
-                      : 'Não foi possível assumir a tarefa agora.',
+                      : claimed.code === 'SNAPSHOT_EXPIRED'
+                        ? 'Sua identificação expirou. Feche e identifique-se novamente.'
+                        : 'Não foi possível assumir a tarefa agora.',
               );
               return;
             }
@@ -623,7 +647,11 @@ export function useSharedOperations(
                     ? 'Outra pessoa já está executando esta tarefa.'
                     : started.code === 'TASK_UNASSIGNED'
                       ? 'Assuma a tarefa antes de iniciar.'
-                      : 'Não foi possível iniciar a tarefa agora.',
+                      : started.code === 'TASK_NOT_STARTABLE'
+                        ? 'Esta tarefa não está mais disponível para iniciar — pode já ter sido resolvida em outro aparelho.'
+                        : started.code === 'SNAPSHOT_EXPIRED'
+                          ? 'Sua identificação expirou. Feche e identifique-se novamente.'
+                          : 'Não foi possível iniciar a tarefa agora.',
               );
               return;
             }
@@ -821,10 +849,13 @@ export function useSharedOperations(
         const readiness = await container.connectivity.assess();
         const sessionId = await resolveActorSession(actor.authorization, readiness.readyToSync);
         if (sessionId === null) {
+          // pode ser permissão OU falha técnica na abertura — não acusar o
+          // perfil da pessoa sem certeza
           setSubmitForm({
             ...form,
             busy: false,
-            error: 'Seu perfil não permite abrir turno para registrar a execução.',
+            error:
+              'Não foi possível abrir seu turno para registrar a execução. Tente novamente; se persistir, avise o encarregado.',
           });
           return;
         }
@@ -858,7 +889,11 @@ export function useSharedOperations(
                 ? 'Adicione a foto solicitada antes de enviar para conferência.'
                 : recorded.code === 'VALUE_REQUIRED'
                   ? 'Informe a medição registrada.'
-                  : 'Não foi possível finalizar agora. Tente novamente.',
+                  : recorded.code === 'TASK_ALREADY_RESOLVED'
+                    ? 'Esta tarefa já foi resolvida — possivelmente em outro aparelho. Nada foi perdido.'
+                    : recorded.code === 'SNAPSHOT_EXPIRED'
+                      ? 'Sua identificação expirou. Feche este painel e identifique-se novamente.'
+                      : 'Não foi possível finalizar agora. Tente novamente.',
           });
           return;
         }
@@ -924,7 +959,12 @@ export function useSharedOperations(
                   ? 'Quem executou não pode conferir a própria tarefa.'
                   : reviewed.code === 'REASON_REQUIRED'
                     ? 'Informe o motivo da devolução.'
-                    : 'Não foi possível registrar a conferência agora.',
+                    : reviewed.code === 'TASK_NOT_IN_REVIEW' ||
+                        reviewed.code === 'ALREADY_REVIEWED_DIFFERENTLY'
+                      ? 'Esta execução já foi conferida — possivelmente em outro aparelho.'
+                      : reviewed.code === 'SNAPSHOT_EXPIRED'
+                        ? 'Sua identificação expirou. Feche este painel e identifique-se novamente.'
+                        : 'Não foi possível registrar a conferência agora.',
           });
           return;
         }
@@ -1018,6 +1058,8 @@ export function useSharedOperations(
         return view.status === 'IN_PROGRESS' || view.status === 'NEEDS_CORRECTION';
       case 'review':
         return view.status === 'AWAITING_REVIEW';
+      case 'returned':
+        return view.status === 'NEEDS_CORRECTION';
       case 'done':
         return view.status === 'DONE' || view.status === 'SKIPPED';
       default:
@@ -1109,6 +1151,7 @@ export function useSharedOperations(
       late: views.filter((task) => task.isLate).length,
       open: openViews.length,
       dueSoon: views.filter((task) => task.dueState === 'DUE_SOON').length,
+      needsCorrection: views.filter((task) => task.status === 'NEEDS_CORRECTION').length,
     },
     positionSummaries,
     unassignedCount: openViews.filter((task) => task.positionId === null).length,

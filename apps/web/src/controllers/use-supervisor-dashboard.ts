@@ -83,6 +83,11 @@ export interface SupervisorCounts {
   readonly done: number;
   readonly skipped: number;
   readonly unassigned: number;
+  /** Fila do ENCARREGADO: entregues aguardando a conferência dele. */
+  readonly awaitingReview: number;
+  /** Devolvidas aguardando correção do executor — cobrança visível. */
+  readonly needsCorrection: number;
+  readonly inProgress: number;
 }
 
 export interface PositionOption {
@@ -682,6 +687,9 @@ export function useSupervisorDashboard(
       done: tasks.filter((task) => task.state === 'done').length,
       skipped: tasks.filter((task) => task.state === 'skipped').length,
       unassigned: tasks.filter((task) => task.isUnassigned).length,
+      awaitingReview: tasks.filter((task) => task.state === 'awaiting-review').length,
+      needsCorrection: tasks.filter((task) => task.state === 'needs-correction').length,
+      inProgress: tasks.filter((task) => task.state === 'in-progress').length,
     },
     filter,
     positionFilter,
