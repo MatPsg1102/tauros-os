@@ -53,6 +53,8 @@ export type RecordTaskOutcomeFailureCode =
   | 'TASK_ALREADY_RESOLVED'
   | 'EVIDENCE_REQUIRED'
   | 'VALUE_REQUIRED'
+  | 'SKIP_REASON_REQUIRED'
+  | 'RETURNED_TASK_CANNOT_SKIP'
   | 'SESSION_REQUIRED'
   | 'DOMAIN_REJECTED'
   | 'ENQUEUE_FAILED'
@@ -217,6 +219,10 @@ export class RecordTaskOutcomeUseCase {
           return { kind: 'failed', code: 'EVIDENCE_REQUIRED', detail: decision.detail };
         case 'VALUE_REQUIRED':
           return { kind: 'failed', code: 'VALUE_REQUIRED', detail: decision.detail };
+        case 'SKIP_REASON_REQUIRED':
+          return { kind: 'failed', code: 'SKIP_REASON_REQUIRED', detail: decision.detail };
+        case 'RETURNED_TASK_CANNOT_SKIP':
+          return { kind: 'failed', code: 'RETURNED_TASK_CANNOT_SKIP', detail: decision.detail };
         case 'SESSION_REQUIRED':
           return { kind: 'failed', code: 'SESSION_REQUIRED', detail: decision.detail };
         case 'STORE_MISMATCH':

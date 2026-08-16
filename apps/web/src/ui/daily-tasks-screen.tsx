@@ -16,6 +16,7 @@ import {
   EmptyState,
   ErrorState,
   Field,
+  Flex,
   Heading,
   Input,
   LoadingState,
@@ -24,6 +25,7 @@ import {
   Section,
   Stack,
   Text,
+  TextArea,
   type NavigationLinkAdapter,
 } from '@tauros/ui-primitives';
 
@@ -62,6 +64,8 @@ function TaskCard({
 }): ReactElement {
   const [measurement, setMeasurement] = useState('');
   const [evidence, setEvidence] = useState(false);
+  const [skipOpen, setSkipOpen] = useState(false);
+  const [skipReason, setSkipReason] = useState('');
   // resolvida OU em conferência: o operador não age aqui (o encarregado
   // confere na Operação de Hoje — o domínio também rejeita, isto é só UX)
   const resolved =
@@ -113,23 +117,57 @@ function TaskCard({
               fullWidth
               disabled={busy}
               onClick={() => {
-                const parsed = measurement.trim() === '' ? null : Number(measurement);
+                // vírgula decimal pt-BR aceita ("4,5") — mesmo contrato do
+                // drawer da Operação de Hoje
+                const raw = measurement.trim();
+                const parsed = raw === '' ? null : Number(raw.replace(',', '.'));
                 void actions.complete(task.id, {
-                  numericValue: Number.isNaN(parsed) ? null : parsed,
+                  numericValue: parsed !== null && Number.isFinite(parsed) ? parsed : null,
                   hasEvidence: evidence,
                 });
               }}
             >
               Concluir tarefa
             </Button>
-            <Button
-              fullWidth
-              variant="secondary"
-              disabled={busy}
-              onClick={() => void actions.skip(task.id)}
-            >
-              Adiar tarefa
-            </Button>
+            {!skipOpen ? (
+              <Button
+                fullWidth
+                variant="secondary"
+                disabled={busy}
+                onClick={() => setSkipOpen(true)}
+              >
+                Adiar tarefa
+              </Button>
+            ) : (
+              <Stack gap={100}>
+                <Field label="Motivo do adiamento (obrigatório)">
+                  <TextArea
+                    value={skipReason}
+                    onChange={(event) => setSkipReason(event.target.value)}
+                    disabled={busy}
+                    rows={2}
+                  />
+                </Field>
+                <Flex gap={100} wrap>
+                  <Button
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => {
+                      setSkipOpen(false);
+                      setSkipReason('');
+                    }}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    disabled={busy || skipReason.trim() === ''}
+                    onClick={() => void actions.skip(task.id, skipReason.trim())}
+                  >
+                    Confirmar adiamento
+                  </Button>
+                </Flex>
+              </Stack>
+            )}
           </Stack>
         )}
       </Stack>

@@ -77,7 +77,8 @@ export interface CompleteTaskInput {
 export interface DailyTasksActions {
   readonly reload: () => Promise<void>;
   readonly complete: (taskId: string, input: CompleteTaskInput) => Promise<void>;
-  readonly skip: (taskId: string) => Promise<void>;
+  /** Adiar exige motivo (o domínio rejeita sem) — registrado com autoria. */
+  readonly skip: (taskId: string, reason: string) => Promise<void>;
   readonly retrySync: () => Promise<void>;
 }
 
@@ -191,7 +192,12 @@ export function useDailyTasks(
   }, [container, load]);
 
   const runOutcome = useCallback(
-    async (taskId: string, kind: 'complete' | 'skip', input: CompleteTaskInput) => {
+    async (
+      taskId: string,
+      kind: 'complete' | 'skip',
+      input: CompleteTaskInput,
+      notes: string | null = null,
+    ) => {
       if (authorization === null || activeSession === null) return;
       if (busyRef.current) return;
       busyRef.current = true;
@@ -206,7 +212,7 @@ export function useDailyTasks(
           deviceId: container.deviceId,
           kind,
           numericValue: input.numericValue,
-          notes: null,
+          notes,
           hasEvidence: input.hasEvidence,
           performedOffline: !readiness.readyToSync,
         });
@@ -217,6 +223,14 @@ export function useDailyTasks(
               break;
             case 'VALUE_REQUIRED':
               setActionError('Informe a medição registrada para concluir esta tarefa.');
+              break;
+            case 'SKIP_REASON_REQUIRED':
+              setActionError('Informe o motivo do adiamento.');
+              break;
+            case 'RETURNED_TASK_CANNOT_SKIP':
+              setActionError(
+                'Tarefa devolvida para correção não pode ser adiada — corrija e reenvie.',
+              );
               break;
             case 'TASK_ALREADY_RESOLVED':
               setActionError('Esta tarefa já foi resolvida. Nada foi perdido.');
@@ -245,7 +259,10 @@ export function useDailyTasks(
     [runOutcome],
   );
   const skip = useCallback(
-    (taskId: string) => runOutcome(taskId, 'skip', { numericValue: null, hasEvidence: false }),
+    // adiar carrega MOTIVO obrigatório (o domínio rejeita sem) — autoria +
+    // explicação ficam na execução, nunca um "sumiço" sem história
+    (taskId: string, reason: string) =>
+      runOutcome(taskId, 'skip', { numericValue: null, hasEvidence: false }, reason),
     [runOutcome],
   );
   const retrySync = useCallback(async () => {

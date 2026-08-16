@@ -70,6 +70,8 @@ export type TaskOutcomeRejectionCode =
   | 'TASK_IN_EXECUTION_BY_OTHER'
   | 'EVIDENCE_REQUIRED'
   | 'VALUE_REQUIRED'
+  | 'SKIP_REASON_REQUIRED'
+  | 'RETURNED_TASK_CANNOT_SKIP'
   | 'STORE_MISMATCH'
   | 'WORK_DATE_MISMATCH'
   | 'SESSION_REQUIRED'
@@ -233,6 +235,25 @@ export function decideTaskOutcome(
       code: 'TASK_IN_EXECUTION_BY_OTHER',
       detail: 'outra pessoa está executando esta tarefa',
     };
+  }
+  if (command.kind === 'skip') {
+    // devolução do encarregado NÃO se anula por adiamento: SKIPPED é terminal
+    // sem conferência — permitir aqui deixaria o executor burlar a correção
+    if (task.status === 'NEEDS_CORRECTION') {
+      return {
+        kind: 'rejected',
+        code: 'RETURNED_TASK_CANNOT_SKIP',
+        detail: 'tarefa devolvida para correção não pode ser adiada — corrija e reenvie',
+      };
+    }
+    // adiar exige MOTIVO com autoria: "adiada" sem explicação esconde atraso
+    if (command.notes === null || command.notes.trim() === '') {
+      return {
+        kind: 'rejected',
+        code: 'SKIP_REASON_REQUIRED',
+        detail: 'informe o motivo do adiamento',
+      };
+    }
   }
   if (command.kind === 'complete') {
     if (task.requiresPhoto && !command.hasEvidence) {
