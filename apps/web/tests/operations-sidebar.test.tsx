@@ -188,6 +188,10 @@ function group(name: 'Situação' | 'Posições' | 'Equipe de hoje'): HTMLElemen
 async function renderReady(): Promise<void> {
   render(app());
   await screen.findAllByRole('heading', { name: 'Produzir linguiça' });
+  // UX V1.2: desktop inicia RECOLHIDA — estes testes validam o CONTEÚDO da
+  // triagem, então abrem e FIXAM o painel (equivalente à sidebar persistente)
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir painel operacional' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Fixar aberta' }));
 }
 
 /** Títulos dos cards visíveis no quadro principal (ordem do dia). */

@@ -4,13 +4,40 @@
 // não existe entidade "área"; lacuna registrada na rastreabilidade) e pela
 // presença PLANEJADA do dia (Escala V1 — nunca o cadastro inteiro).
 // Apresentacional: só compõe o DS; filtros são leitura pura (sem fila/audit).
+//
+// UX V1.2 — ADAPTATIVA: desktop (hover real) inicia RECOLHIDA como rail de
+// sinais operacionais; aproximar expande (overlay, sem empurrar o quadro);
+// "Fixar aberta" torna persistente. Touch (sem hover) abre por toque via
+// Drawer do DS. Mobile (<768px) segue com o Drawer da tela. Estado é
+// EFÊMERO de apresentação — nunca fila/auditoria/dado de negócio.
 
 'use client';
 
-import type { ReactElement } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 
-import { Badge, NavigationGroup, NavigationItem, Sidebar, Text } from '@tauros/ui-primitives';
+import { cssVar } from '@tauros/tokens';
+import {
+  Badge,
+  Button,
+  Drawer,
+  NavigationGroup,
+  NavigationItem,
+  Sidebar,
+  Text,
+} from '@tauros/ui-primitives';
 
+import {
+  usePointerMode,
+  usePrefersReducedMotion,
+} from '../controllers/use-interaction-capabilities.js';
 import type {
   SharedOperationsActions,
   SharedOperationsView,
@@ -198,11 +225,248 @@ export function OperationsSidebarSections({
   );
 }
 
-/** Sidebar persistente (tablet/desktop) — some no mobile via CSS do DS. */
-export function OperationsSidebar({ view, actions }: OperationsSidebarProps): ReactElement {
+/** Evita fechar sem querer ao cruzar o ponteiro entre sidebar e conteúdo. */
+const HOVER_COLLAPSE_DELAY_MS = 300;
+
+/** Estados efêmeros de apresentação (desktop): rail → overlay → fixada. */
+type PanelMode = 'collapsed' | 'temporary' | 'pinned';
+
+/** Sinal da rail: quantidade quando relevante; glifo discreto quando zero. */
+function railGlyph(count: number, status: 'error' | 'warn' | 'info', glyph: string): ReactElement {
+  if (count > 0) return <Badge status={status}>{count}</Badge>;
+  return <span>{glyph}</span>;
+}
+
+/**
+ * Painel temporário SOBRE o conteúdo (fixed: escapa do overflow do shell sem
+ * tocar o DS) — evita deslocamento brusco do quadro a cada hover (§12).
+ */
+function TemporaryPanelShell({
+  anchor,
+  reducedMotion,
+  children,
+}: {
+  readonly anchor: { readonly top: number; readonly left: number };
+  readonly reducedMotion: boolean;
+  readonly children: ReactNode;
+}): ReactElement {
+  const [entered, setEntered] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      setEntered(true);
+    });
+    return () => {
+      cancelAnimationFrame(id);
+    };
+  }, []);
+  const motion: CSSProperties = reducedMotion
+    ? {}
+    : {
+        transition: `transform ${cssVar('motion-enter-duration')} ${cssVar('motion-enter-easing')}, opacity ${cssVar('motion-enter-duration')} ${cssVar('motion-enter-easing')}`,
+        transform: entered ? 'none' : 'translateX(-8px)',
+        opacity: entered ? 1 : 0,
+      };
   return (
-    <Sidebar label="Triagem da operação">
-      <OperationsSidebarSections view={view} actions={actions} />
+    <div
+      style={{
+        position: 'fixed',
+        top: anchor.top,
+        left: anchor.left,
+        bottom: 0,
+        // mesma largura máxima do .t-sidebar expandido do DS
+        width: '30ch',
+        maxWidth: '85vw',
+        zIndex: cssVar('z-overlay'),
+        background: cssVar('color-surface-raised'),
+        borderRight: `1px solid ${cssVar('color-border-default')}`,
+        boxShadow: cssVar('elevation-sheet'),
+        overflowY: 'auto',
+        ...motion,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Sidebar ADAPTATIVA (UX V1.2). Desktop/hover: COLLAPSED (rail) →
+ * EXPANDED_TEMPORARY (overlay por aproximação/teclado) → PINNED (in-flow).
+ * Touch: rail → Drawer do DS (toque fora/ESC/foco por conta do primitive).
+ * Recolhida, a situação operacional continua visível: badges na rail + a
+ * região de alertas acima do quadro (§6). Nada aqui abre sozinho por
+ * mudança de prazo (§7) — só gesto do usuário.
+ */
+export function OperationsSidebar({ view, actions }: OperationsSidebarProps): ReactElement {
+  const pointerMode = usePointerMode();
+  const reducedMotion = usePrefersReducedMotion();
+  const [mode, setMode] = useState<PanelMode>('collapsed');
+  const [touchOpen, setTouchOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [anchor, setAnchor] = useState({ top: 0, left: 0 });
+
+  const cancelScheduledCollapse = useCallback(() => {
+    if (collapseTimer.current !== null) {
+      clearTimeout(collapseTimer.current);
+      collapseTimer.current = null;
+    }
+  }, []);
+
+  const scheduleCollapse = useCallback(() => {
+    cancelScheduledCollapse();
+    collapseTimer.current = setTimeout(() => {
+      collapseTimer.current = null;
+      setMode((current) => (current === 'temporary' ? 'collapsed' : current));
+    }, HOVER_COLLAPSE_DELAY_MS);
+  }, [cancelScheduledCollapse]);
+
+  useEffect(() => cancelScheduledCollapse, [cancelScheduledCollapse]);
+
+  const openPanel = useCallback(() => {
+    if (pointerMode === 'touch') {
+      setTouchOpen(true);
+      return;
+    }
+    cancelScheduledCollapse();
+    const rect = wrapperRef.current?.getBoundingClientRect();
+    if (rect !== undefined) setAnchor({ top: rect.top, left: rect.left });
+    setMode((current) => (current === 'pinned' ? current : 'temporary'));
+  }, [cancelScheduledCollapse, pointerMode]);
+
+  const collapseTemporary = useCallback(() => {
+    cancelScheduledCollapse();
+    setMode((current) => (current === 'temporary' ? 'collapsed' : current));
+  }, [cancelScheduledCollapse]);
+
+  const rail = (
+    <Sidebar
+      label="Triagem da operação"
+      collapsed
+      toggleLabel="Abrir painel operacional"
+      onCollapsedChange={(next) => {
+        if (!next) openPanel();
+      }}
+    >
+      <NavigationItem
+        label={`Atrasadas (${String(view.counts.late)})`}
+        icon={railGlyph(view.counts.late, 'error', '🔴')}
+        onSelect={openPanel}
+      />
+      <NavigationItem
+        label={`Próximas do prazo (${String(view.counts.dueSoon)})`}
+        icon={railGlyph(view.counts.dueSoon, 'warn', '⚠')}
+        onSelect={openPanel}
+      />
+      <NavigationItem
+        label={`Conferir (${String(view.counts.awaitingReview)})`}
+        icon={railGlyph(view.counts.awaitingReview, 'info', '✓')}
+        onSelect={openPanel}
+      />
+      <NavigationItem
+        label={`Equipe de hoje (${String(view.teamToday.length)})`}
+        icon={<span>👥</span>}
+        onSelect={openPanel}
+      />
+      <NavigationItem label="Filtros" icon={<span>🔍</span>} onSelect={openPanel} />
     </Sidebar>
+  );
+
+  const panel = (
+    <Sidebar
+      label="Triagem da operação"
+      toggleLabel="Fechar painel operacional"
+      onCollapsedChange={(next) => {
+        if (next) collapseTemporary();
+      }}
+      header={
+        <Button
+          variant="ghost"
+          onClick={() => {
+            cancelScheduledCollapse();
+            setMode(mode === 'pinned' ? 'collapsed' : 'pinned');
+          }}
+        >
+          {mode === 'pinned' ? 'Recolher' : 'Fixar aberta'}
+        </Button>
+      }
+    >
+      <OperationsSidebarSections
+        view={view}
+        actions={actions}
+        // §9: selecionar filtro recolhe SÓ quando não está fixada
+        {...(mode === 'temporary' ? { onNavigate: collapseTemporary } : {})}
+      />
+    </Sidebar>
+  );
+
+  return (
+    <div
+      ref={wrapperRef}
+      data-operations-sidebar
+      data-panel-mode={pointerMode === 'touch' ? (touchOpen ? 'touch-open' : 'touch-rail') : mode}
+      style={{ display: 'flex', minHeight: 0 }}
+      // eventos LOCALIZADOS no shell da sidebar — nunca onMouseMove global (§10)
+      onMouseEnter={
+        pointerMode === 'hover'
+          ? () => {
+              cancelScheduledCollapse();
+              openPanel();
+            }
+          : undefined
+      }
+      onMouseLeave={pointerMode === 'hover' ? scheduleCollapse : undefined}
+      // teclado: painel não some enquanto o foco estiver dentro dele (§14)
+      onFocus={cancelScheduledCollapse}
+      onBlur={(event) => {
+        if (pointerMode !== 'hover') return;
+        const next = event.relatedTarget as Node | null;
+        if (next === null || !event.currentTarget.contains(next)) scheduleCollapse();
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape' || mode !== 'temporary') return;
+        collapseTemporary();
+        // devolve o foco ao gatilho da rail após fechar o overlay
+        requestAnimationFrame(() => {
+          wrapperRef.current?.querySelector('button')?.focus();
+        });
+      }}
+    >
+      {pointerMode === 'touch' ? (
+        <>
+          {/* rail some da árvore de acessibilidade enquanto o Drawer cobre */}
+          <div style={{ visibility: touchOpen ? 'hidden' : 'visible' }}>{rail}</div>
+          <Drawer
+            open={touchOpen}
+            side="left"
+            title="Filtros e equipe"
+            description="Toque para filtrar o quadro por situação, posição ou colaborador"
+            closeLabel="Fechar"
+            onOpenChange={(isOpen) => {
+              if (!isOpen) setTouchOpen(false);
+            }}
+          >
+            <Sidebar label="Triagem da operação">
+              <OperationsSidebarSections
+                view={view}
+                actions={actions}
+                onNavigate={() => setTouchOpen(false)}
+              />
+            </Sidebar>
+          </Drawer>
+        </>
+      ) : mode === 'pinned' ? (
+        panel
+      ) : (
+        <>
+          <div style={{ visibility: mode === 'temporary' ? 'hidden' : 'visible' }}>{rail}</div>
+          {mode === 'temporary' && (
+            <TemporaryPanelShell anchor={anchor} reducedMotion={reducedMotion}>
+              {panel}
+            </TemporaryPanelShell>
+          )}
+        </>
+      )}
+    </div>
   );
 }

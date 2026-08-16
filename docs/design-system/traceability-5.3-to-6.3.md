@@ -983,3 +983,47 @@ materialização ou review).
   DEV mostra tarefas dessas posições sem colaborador correspondente na equipe.
   Comportamento pré-existente, agora VISÍVEL pela triagem; some com o cadastro
   real de definições (backend) ou limpando as fixtures de template.
+
+## UX Operacional V1.2 — sidebar adaptativa/retrátil da /operacao
+
+Somente UX/UI + estado EFÊMERO de apresentação — domínio, tarefas, escala,
+identidade, autorização, offline, recorrência e regras de prazo intactos.
+
+- **Desktop (hover real)**: inicia RECOLHIDA como navigation rail (~80px) com
+  os sinais operacionais (Badges com contagem: atrasadas/próximas/conferir +
+  equipe/filtros). Aproximar o ponteiro expande em OVERLAY (position:fixed —
+  escapa do overflow do shell sem tocar o DS; sem empurrar o quadro); afastar
+  recolhe após delay de 300 ms (anti-flicker). "Fixar aberta" → PINNED
+  (in-flow, quadro cede espaço); "Recolher" desfaz. Preferência é efêmera
+  (não há mecanismo de UI-preferences no app — nada persistido/sincronizado).
+- **Reuso do DS**: o mecanismo collapsed/expanded é o do PRÓPRIO Sidebar
+  (controlado + toggleLabel "Abrir/Fechar painel operacional" com
+  aria-expanded); rail = Sidebar collapsed + NavigationItem (labels
+  visually-hidden preservam nome acessível; contagem no rótulo). Touch usa o
+  Drawer do DS (toque fora/ESC/foco por conta do primitive). Nenhuma segunda
+  implementação de sidebar.
+- **Capacidades por media feature** (nunca user-agent):
+  `(hover:hover) and (pointer:fine)` decide hover×touch;
+  `prefers-reduced-motion` desliga a transição do overlay (translateX/opacity
+  curtos com motion tokens; cards não animam).
+- **Regras críticas**: recolher NÃO esconde a situação (badges na rail + a
+  região de alertas acionáveis acima do quadro segue lá — §6); mudança de
+  prazo NUNCA abre a sidebar sozinha (§7); selecionar filtro recolhe SÓ a
+  expansão temporária (fixada permanece — §9) e os chips de filtros ativos
+  continuam no quadro; eventos localizados no shell (mouseenter/leave/focus/
+  blur/keydown) — nenhum listener global (§10).
+- **Mobile (<768px)** preservado: gatilho "Filtros e equipe" → Drawer da tela.
+- **Testes**: +9 (`adaptive-sidebar.test.tsx`): collapsed inicial com sinais
+  visíveis, hover expande/leave recolhe (fake timers), pin persiste/unpin,
+  filtro sobrevive ao recolhimento, ESC devolve foco, reduced-motion sem
+  transition, touch abre Drawer e 1 toque seleciona, mobile sem regressão,
+  fila/audit intactos. Existentes adaptados só no helper (abrem+fixam).
+  Suíte web 151/151 — 4 execuções seguidas sem flake.
+- **Browser real (CDP)**: desktop 1280 — rail com [■5]/[●1], hover expande
+  overlay completo, João filtra e recolhe sozinha (chip fica), leave recolhe
+  com delay, fixar sobrevive ao mouse sair, Recolher volta à rail; alertas
+  visíveis com rail recolhida; touch 834 (setTouchEmulationEnabled →
+  hover:none real) — rail → toque → Drawer → 1 toque em João filtra e fecha,
+  sem overflow; 390 — Drawer da tela sem regressão.
+- **Limitação registrada**: `Emulation.setEmulatedMedia` não emula
+  hover/pointer — usar `Emulation.setTouchEmulationEnabled` na validação CDP.
