@@ -5,7 +5,6 @@
 // DA LOJA (padrão vigente, âncora, offsets) — nunca uma regra global.
 // Presença planejada ≠ presença real (comparecimento é extensão futura).
 
-import { resolvePlannedDay } from '@tauros/domain';
 import {
   PERMISSION_MODEL_VERSION,
   type ClockPort,
@@ -14,6 +13,8 @@ import {
   type ScheduleRepositoryPort,
   type WorkforceRepositoryPort,
 } from '@tauros/contracts';
+
+import { buildPlannedScheduleDay } from './planned-day-view.js';
 
 export interface LoadPlannedScheduleInput {
   readonly authorization: EffectiveAuthorization;
@@ -67,90 +68,18 @@ export class LoadPlannedScheduleUseCase {
       this.schedule.patterns(storeId),
     ]);
 
-    const teamNameById = new Map(teams.map((team) => [team.id, team.name]));
-    const employeeById = new Map(employees.map((employee) => [employee.id, employee]));
-    const positionById = new Map(positions.map((position) => [position.id, position]));
-    const definitionById = new Map(definitions.map((definition) => [definition.id, definition]));
-
-    const days: PlannedScheduleDay[] = input.operationalDates.map((operationalDate) => {
-      const decision = resolvePlannedDay({
-        storeId,
-        operationalDate,
-        anchorDate: input.storeAnchorDate,
-        patterns: patterns.map((pattern) => ({
-          id: pattern.id,
-          name: pattern.name,
-          effectiveFrom: pattern.effectiveFrom,
-          effectiveUntil: pattern.effectiveUntil,
-          days: pattern.days,
-        })),
-        teams: teams.map((team) => ({
-          id: team.id,
-          name: team.name,
-          rotationOffset: team.rotationOffset,
-        })),
-        employees: employees.map((employee) => ({
-          id: employee.id,
-          fullName: employee.fullName,
-          active: employee.active,
-        })),
-        assignments: assignments.map((assignment) => ({
-          employeeId: assignment.employeeId,
-          teamId: assignment.teamId,
-          positionId: assignment.operationalPositionId,
-          shiftDefinitionId: assignment.shiftDefinitionId,
-          validFrom: assignment.validFrom,
-          validUntil: assignment.validUntil,
-        })),
-      });
-
-      if (decision.kind === 'unconfigured') {
-        return {
-          storeId,
-          operationalDate,
-          status: 'unconfigured' as const,
-          patternName: null,
-          scheduledTeams: [],
-          employees: [],
-        };
-      }
-
-      return {
-        storeId,
-        operationalDate,
-        status: 'resolved' as const,
-        patternName: decision.patternName,
-        scheduledTeams: decision.scheduledTeamIds.map((teamId) => ({
-          teamId,
-          teamName: teamNameById.get(teamId) ?? teamId,
-        })),
-        employees: decision.employees.map((planned) => {
-          const definition =
-            planned.shiftDefinitionId !== null
-              ? definitionById.get(planned.shiftDefinitionId)
-              : undefined;
-          return {
-            employeeId: planned.employeeId,
-            fullName: employeeById.get(planned.employeeId)?.fullName ?? planned.employeeId,
-            teamId: planned.teamId,
-            positionId: planned.positionId,
-            positionName:
-              planned.positionId !== null
-                ? (positionById.get(planned.positionId)?.name ?? null)
-                : null,
-            workPeriod:
-              definition === undefined
-                ? null
-                : {
-                    shiftDefinitionId: definition.id,
-                    name: definition.name,
-                    startTime: definition.startTime,
-                    endTime: definition.endTime,
-                  },
-          };
-        }),
-      };
-    });
+    // resolução + enriquecimento compartilhados com a leitura device-local
+    // do quadro (planned-day-view) — regra única, nunca duplicada
+    const days: PlannedScheduleDay[] = input.operationalDates.map((operationalDate) =>
+      buildPlannedScheduleDay(storeId, operationalDate, input.storeAnchorDate, {
+        employees,
+        assignments,
+        teams,
+        positions,
+        definitions,
+        patterns,
+      }),
+    );
 
     return { kind: 'loaded', days };
   }

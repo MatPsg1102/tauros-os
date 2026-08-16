@@ -14,6 +14,7 @@ import {
   Banner,
   Button,
   Card,
+  Chip,
   Dialog,
   Drawer,
   EmptyState,
@@ -29,17 +30,20 @@ import {
   Section,
   Select,
   SegmentedControl,
+  Sidebar,
   Stack,
   Text,
   TextArea,
 } from '@tauros/ui-primitives';
 import type { NavigationLinkAdapter } from '@tauros/ui-primitives';
 
+import { useIsMobile } from '../controllers/use-is-mobile.js';
 import type {
   SharedOperationsActions,
   SharedOperationsView,
   SharedTaskView,
 } from '../controllers/use-shared-operations.js';
+import { OperationsSidebarSections } from './operations-sidebar.js';
 
 function statusBadge(task: SharedTaskView): ReactElement {
   if (task.status === 'DONE') return <Badge status="success">Concluída</Badge>;
@@ -109,8 +113,14 @@ function TaskCard({
         <Heading level={3}>{task.title}</Heading>
         <Flex gap={100} wrap>
           {statusBadge(task)}
+          {/* prazo: ícone + texto + forma/cor semântica — nunca só cor (P5) */}
+          {task.dueState === 'OVERDUE' && task.dueLabel !== null && (
+            <Badge status="error">{`🔴 ${task.dueLabel}`}</Badge>
+          )}
+          {task.dueState === 'DUE_SOON' && task.dueLabel !== null && (
+            <Badge status="warn">{`⚠ ${task.dueLabel}`}</Badge>
+          )}
           {task.isUnassigned && <Badge status="warn">Sem responsável</Badge>}
-          {task.isLate && task.status !== 'OVERDUE' && <Badge status="warn">Atrasada</Badge>}
           {task.evidenceCount > 0 && (
             <Badge status="neutral">{`📷 ${task.evidenceCount} evidência${task.evidenceCount > 1 ? 's' : ''}`}</Badge>
           )}
@@ -449,6 +459,99 @@ function ReviewDrawer({
   );
 }
 
+/** Região compacta de atenção operacional (§12) — visível e acionável, nunca modal. */
+function DueAlerts({
+  view,
+  actions,
+}: {
+  readonly view: SharedOperationsView;
+  readonly actions: SharedOperationsActions;
+}): ReactElement | null {
+  if (view.counts.late === 0 && view.counts.dueSoon === 0) return null;
+  return (
+    <Flex gap={100} wrap role="group" aria-label="Alertas de prazo">
+      {view.counts.late > 0 && (
+        <Chip
+          selected={view.dueFilter === 'overdue'}
+          onClick={() => actions.setDueFilter(view.dueFilter === 'overdue' ? null : 'overdue')}
+        >
+          {`🔴 ${String(view.counts.late)} ${view.counts.late === 1 ? 'tarefa atrasada' : 'tarefas atrasadas'}`}
+        </Chip>
+      )}
+      {view.counts.dueSoon > 0 && (
+        <Chip
+          selected={view.dueFilter === 'due-soon'}
+          onClick={() => actions.setDueFilter(view.dueFilter === 'due-soon' ? null : 'due-soon')}
+        >
+          {`⚠ ${String(view.counts.dueSoon)} ${view.counts.dueSoon === 1 ? 'próxima do prazo' : 'próximas do prazo'}`}
+        </Chip>
+      )}
+    </Flex>
+  );
+}
+
+/** Filtros ativos como chips removíveis (§14) + limpar tudo. */
+function ActiveFilters({
+  view,
+  actions,
+}: {
+  readonly view: SharedOperationsView;
+  readonly actions: SharedOperationsActions;
+}): ReactElement | null {
+  const positionName =
+    view.assignmentFilter?.kind === 'position'
+      ? (view.positionSummaries.find(
+          (summary) =>
+            view.assignmentFilter?.kind === 'position' &&
+            summary.positionId === view.assignmentFilter.positionId,
+        )?.name ?? 'Posição')
+      : null;
+  const chips: { readonly key: string; readonly label: string; readonly clear: () => void }[] = [];
+  if (positionName !== null)
+    chips.push({
+      key: 'position',
+      label: positionName,
+      clear: () => actions.setAssignmentFilter(null),
+    });
+  if (view.assignmentFilter?.kind === 'unassigned')
+    chips.push({
+      key: 'unassigned',
+      label: 'Sem responsável',
+      clear: () => actions.setAssignmentFilter(null),
+    });
+  if (view.employeeFilterName !== null)
+    chips.push({
+      key: 'employee',
+      label: view.employeeFilterName,
+      clear: () => actions.setEmployeeFilter(null),
+    });
+  if (view.dueFilter !== null)
+    chips.push({
+      key: 'due',
+      label: view.dueFilter === 'overdue' ? 'Atrasadas' : 'Próximas do prazo',
+      clear: () => actions.setDueFilter(null),
+    });
+  if (chips.length === 0) return null;
+  return (
+    <Flex gap={100} wrap role="group" aria-label="Filtros ativos">
+      {chips.map((chip) => (
+        <Chip
+          key={chip.key}
+          selected
+          onClick={chip.clear}
+          onRemove={chip.clear}
+          removeLabel={`Remover filtro ${chip.label}`}
+        >
+          {chip.label}
+        </Chip>
+      ))}
+      <Button variant="ghost" onClick={() => actions.clearFilters()}>
+        Limpar filtros
+      </Button>
+    </Flex>
+  );
+}
+
 export function SharedOperationsScreen({
   view,
   actions,
@@ -458,6 +561,8 @@ export function SharedOperationsScreen({
   readonly actions: SharedOperationsActions;
   readonly managementLink: NavigationLinkAdapter;
 }): ReactElement {
+  const isMobile = useIsMobile();
+  const [filtersOpen, setFiltersOpen] = useState(false);
   return (
     <Page id="conteudo">
       <PageHeader
@@ -516,8 +621,24 @@ export function SharedOperationsScreen({
       )}
 
       {view.phase === 'ready' && !view.dayNotMaterialized && (
-        <Section title="Tarefas da loja">
+        <Section
+          title={
+            view.employeeFilterName !== null
+              ? `Tarefas de ${view.employeeFilterName}`
+              : 'Tarefas da loja'
+          }
+        >
           <Stack gap={200}>
+            {/* mobile: sidebar de triagem vira Drawer (§16) */}
+            {isMobile && (
+              <Button variant="secondary" onClick={() => setFiltersOpen(true)}>
+                Filtros e equipe
+              </Button>
+            )}
+
+            <DueAlerts view={view} actions={actions} />
+            <ActiveFilters view={view} actions={actions} />
+
             <Card>
               <Text role="data">
                 Atrasadas: {view.counts.late} · Em execução: {view.counts.inProgress} · Aguardando
@@ -553,6 +674,26 @@ export function SharedOperationsScreen({
           </Stack>
         </Section>
       )}
+
+      {/* Drawer móvel de triagem — MESMO componente Sidebar/seções do desktop */}
+      <Drawer
+        open={isMobile && filtersOpen}
+        side="left"
+        title="Filtros e equipe"
+        description="Toque para filtrar o quadro por situação, posição ou colaborador"
+        closeLabel="Fechar"
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setFiltersOpen(false);
+        }}
+      >
+        <Sidebar label="Triagem da operação">
+          <OperationsSidebarSections
+            view={view}
+            actions={actions}
+            onNavigate={() => setFiltersOpen(false)}
+          />
+        </Sidebar>
+      </Drawer>
 
       <ActionPinDialog view={view} actions={actions} />
       <SubmitDrawer view={view} actions={actions} />

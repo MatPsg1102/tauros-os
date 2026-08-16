@@ -112,7 +112,8 @@ describe('ConfigResolver', () => {
     expect(snap.values['kpi.snapshot.cron']).toBe('15 * * * *');
     expect(snap.values['sync.retry.maxAttempts']).toBe(5);
     expect(Object.isFrozen(snap.values)).toBe(true);
-    expect(Object.keys(snap.values)).toHaveLength(25);
+    // 26 = Baseline v1.0 (25) + tasks.dueSoonWindowMs (UI Operacional V1.1)
+    expect(Object.keys(snap.values)).toHaveLength(26);
   });
 
   it('rejeita chave desconhecida com erro orientado (P7)', async () => {

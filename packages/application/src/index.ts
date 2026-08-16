@@ -111,3 +111,5 @@ export type {
   LoadPlannedScheduleInput,
   LoadPlannedScheduleResult,
 } from './schedule/load-planned-schedule.js';
+export { buildPlannedScheduleDay } from './schedule/planned-day-view.js';
+export type { PlannedScheduleDaySources } from './schedule/planned-day-view.js';
