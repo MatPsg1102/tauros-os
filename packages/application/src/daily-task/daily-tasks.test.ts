@@ -402,13 +402,22 @@ describe('RecordTaskOutcomeUseCase', () => {
     expect(result.task.status).toBe('DONE');
   });
 
-  it('adia uma tarefa (SKIPPED, result NA)', async () => {
+  it('adia uma tarefa (SKIPPED, result NA) — motivo é obrigatório', async () => {
     const harness = await makeOutcomeHarness();
+    // sem motivo o domínio rejeita (hardening: adiar carrega explicação)
+    const rejected = await harness.useCase.execute({
+      authorization: authorization(),
+      dailyTaskId: LIMPEZA_TASK,
+      kind: 'skip',
+      ...outcomeInput,
+    });
+    expect(rejected).toMatchObject({ kind: 'failed', code: 'SKIP_REASON_REQUIRED' });
     const result = await harness.useCase.execute({
       authorization: authorization(),
       dailyTaskId: LIMPEZA_TASK,
       kind: 'skip',
       ...outcomeInput,
+      notes: 'faltou matéria-prima',
     });
     if (result.kind !== 'recorded') throw new Error('esperava recorded');
     expect(result.execution.result).toBe('NA');
@@ -465,6 +474,7 @@ describe('RecordTaskOutcomeUseCase', () => {
       dailyTaskId: LIMPEZA_TASK,
       kind: 'skip',
       ...outcomeInput,
+      notes: 'motivo do adiamento',
     });
     const again = await harness.useCase.execute({
       authorization: authorization(),
