@@ -11,12 +11,16 @@ import {
   CAPABILITY_WORKFORCE_WRITE,
   PERMISSION_MODEL_VERSION,
   type EffectiveAuthorization,
+  type EmployeeAssignmentRecord,
+  type EmployeeRecord,
   type IdentityResult,
   type IdentityVerificationInput,
   type OperatorIdentityPort,
   type PinLockoutStorePort,
   type PinPolicyPort,
 } from '@tauros/contracts';
+
+import type { LocalWorkforceRepository } from './adapters.js';
 
 export class FixturesDisabledError extends Error {
   constructor() {
@@ -130,6 +134,10 @@ export interface FixtureTeamMember {
   readonly employeeId: string;
   readonly fullName: string;
   readonly positionId: string | null;
+  /** Equipe da escala (teams do baseline) — vínculo demo COMPLETO. */
+  readonly teamId: string | null;
+  /** Jornada declarada (shift_definitions do baseline). */
+  readonly shiftDefinitionId: string | null;
 }
 
 /** Posições operacionais da loja (operational_positions). */
@@ -142,12 +150,31 @@ export const FIXTURE_POSITIONS: readonly FixturePosition[] = [
 /**
  * Atribuições vigentes (employee_assignments). Elber (encarregado) não ocupa
  * posição atribuível — o modelo atribui tarefa a POSIÇÃO, e ele não aparece
- * como responsável automático.
+ * como responsável automático. Equipes alternadas (12x36 A/B do baseline):
+ * em qualquer data alguém do time demo está escalado.
  */
 export const FIXTURE_TEAM: readonly FixtureTeamMember[] = [
-  { employeeId: 'emp-0001', fullName: 'Marina Álvares', positionId: 'pos-atendimento' },
-  { employeeId: 'emp-0002', fullName: 'Carlos Nunes', positionId: 'pos-producao' },
-  { employeeId: 'emp-0003', fullName: 'Rita Belmonte', positionId: 'pos-apoio' },
+  {
+    employeeId: 'emp-0001',
+    fullName: 'Marina Álvares',
+    positionId: 'pos-atendimento',
+    teamId: 'team-a',
+    shiftDefinitionId: 'def-0730-1930',
+  },
+  {
+    employeeId: 'emp-0002',
+    fullName: 'Carlos Nunes',
+    positionId: 'pos-producao',
+    teamId: 'team-b',
+    shiftDefinitionId: 'def-0830-2030',
+  },
+  {
+    employeeId: 'emp-0003',
+    fullName: 'Rita Belmonte',
+    positionId: 'pos-apoio',
+    teamId: 'team-a',
+    shiftDefinitionId: 'def-0730-1930',
+  },
 ];
 
 /** Diretório de equipe (TeamDirectoryPort) sobre as fixtures. */
@@ -160,6 +187,93 @@ export class FixtureTeamDirectory {
   members(): Promise<readonly FixtureTeamMember[]> {
     if (!fixturesEnabled()) throw new FixturesDisabledError();
     return Promise.resolve(FIXTURE_TEAM);
+  }
+}
+
+// Época dos dados demo — ANTERIOR a qualquer vigência criada pela loja ou
+// por teste: quem cadastrar/realocar depois vence pela regra única de
+// vigência (currentAssignmentFor), sem o seed competir.
+const DEMO_EPOCH_DATE = '2026-07-01';
+const DEMO_EPOCH_AT = '2026-07-01T00:00:00.000Z';
+
+/**
+ * INVARIANTE DO PILOTO: quem a UI apresenta como responsável precisa ser
+ * elegível no DOMÍNIO. Elegibilidade (claim/start) lê employee_assignments do
+ * cadastro REAL (workforce) — nunca este diretório fixture. Portanto o time
+ * demo é SEMEADO como cadastro real (posições + pessoas + vínculos com
+ * vigência), idempotente e sem sobrescrever nada criado pela loja: fixtures
+ * obedecem às MESMAS invariantes da operação real. Roda no boot (composition
+ * root), somente com fixtures habilitadas; como o baseline, não nasce da fila.
+ */
+export async function ensureDemoWorkforce(
+  workforce: LocalWorkforceRepository,
+  storeId: string,
+): Promise<void> {
+  if (!fixturesEnabled()) return;
+  const [employees, assignments, positions] = await Promise.all([
+    workforce.employees(storeId),
+    workforce.assignments(storeId),
+    workforce.positions(storeId),
+  ]);
+
+  const positionIds = new Set(positions.map((position) => position.id));
+  for (const position of FIXTURE_POSITIONS) {
+    if (positionIds.has(position.id)) continue;
+    await workforce.savePosition({
+      id: position.id,
+      storeId,
+      key: position.key,
+      name: position.name,
+      clientCreatedAt: DEMO_EPOCH_AT,
+      idempotencyKey: `position-fixture:${storeId}:${position.key}`,
+      syncStatus: 'synced',
+      auditCorrelationId: position.id,
+    });
+  }
+
+  const employeeIds = new Set(employees.map((employee) => employee.id));
+  const assignedEmployeeIds = new Set(assignments.map((assignment) => assignment.employeeId));
+  // aparelho que CONTORNOU o bug pré-fix cadastrando o homônimo à mão: o
+  // cadastro da loja vale; o seed não cria um segundo (não há inativação na
+  // gestão — um duplicado seria permanente). Regra geral por nome ativo.
+  const activeNames = new Set(
+    employees
+      .filter((employee) => employee.active)
+      .map((employee) => employee.fullName.trim().toLocaleLowerCase('pt-BR')),
+  );
+  for (const member of FIXTURE_TEAM) {
+    if (member.positionId === null) continue;
+    const hasEmployee = employeeIds.has(member.employeeId);
+    const hasAssignment = assignedEmployeeIds.has(member.employeeId);
+    if (!hasEmployee && activeNames.has(member.fullName.trim().toLocaleLowerCase('pt-BR'))) {
+      continue;
+    }
+    // vínculo criado/alterado pela loja NUNCA é tocado (vigência mais nova
+    // vence pela regra única currentAssignmentFor — o seed não compete)
+    if (hasAssignment) continue;
+    const employee: EmployeeRecord = {
+      id: member.employeeId,
+      storeId,
+      registration: member.employeeId,
+      fullName: member.fullName,
+      active: true,
+      clientCreatedAt: DEMO_EPOCH_AT,
+      idempotencyKey: `employee-fixture:${storeId}:${member.employeeId}`,
+      syncStatus: 'synced',
+      auditCorrelationId: member.employeeId,
+    };
+    const assignment: EmployeeAssignmentRecord = {
+      id: `assign-fixture-${member.employeeId}`,
+      storeId,
+      employeeId: member.employeeId,
+      teamId: member.teamId,
+      operationalPositionId: member.positionId,
+      shiftDefinitionId: member.shiftDefinitionId,
+      validFrom: DEMO_EPOCH_DATE,
+      validUntil: null,
+    };
+    if (hasEmployee) await workforce.saveAssignment(assignment);
+    else await workforce.saveRegistration(employee, assignment);
   }
 }
 

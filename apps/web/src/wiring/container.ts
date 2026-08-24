@@ -121,6 +121,7 @@ import {
   FixtureOperatorIdentity,
   FixtureTaskTemplateSource,
   FixtureTeamDirectory,
+  ensureDemoWorkforce,
   fixtureOperatorRoster,
 } from './fixtures.js';
 import {
@@ -147,6 +148,12 @@ export interface ContainerOptions {
   readonly team?: TeamDirectoryPort;
   readonly schedule?: ShiftSchedulePort;
   readonly evidenceBlobs?: EvidenceBlobStorePort;
+  /**
+   * Semeadura do TIME DEMO no cadastro real (invariante do piloto: quem a UI
+   * mostra como responsável é elegível no domínio). Default true; testes que
+   * exercitam a loja VAZIA desligam explicitamente.
+   */
+  readonly demoWorkforce?: boolean;
 }
 
 export interface AppContainer {
@@ -626,6 +633,12 @@ export function buildContainer(options: ContainerOptions = {}): AppContainer {
     // catálogo inicial da loja (equipes/posições/jornadas/padrão) ANTES de
     // qualquer leitura
     await ensureWorkforceBaseline(workforce, scheduleData, FIXTURE_STORE.id);
+    // time demo como cadastro REAL (posições/pessoas/vínculos): a UI e a
+    // elegibilidade do domínio passam a ler o MESMO vínculo — no-op quando
+    // fixtures desabilitadas ou quando a loja já cadastrou/realocou alguém
+    if (options.demoWorkforce !== false) {
+      await ensureDemoWorkforce(workforce, FIXTURE_STORE.id);
+    }
     // ORDEM DE CRIAÇÃO obrigatória: queue.all() devolve ordem de CHAVE
     // (UUID aleatório no IndexedDB) — aplicar intenções fora de ordem
     // REGREDIRIA o estado local para uma intenção mais antiga (ex.: duas
