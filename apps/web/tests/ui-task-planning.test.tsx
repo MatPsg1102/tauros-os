@@ -45,6 +45,7 @@ function makeWorld(): World {
     appStore,
     transport,
     deviceOnline: () => w.online,
+    demoWorkforce: false, // loja construída do zero: o elenco é o do teste
   });
   return w;
 }

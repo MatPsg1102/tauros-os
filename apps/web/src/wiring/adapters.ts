@@ -831,13 +831,16 @@ export class CompositeTeamDirectory implements TeamDirectoryPort {
     private readonly local: LocalTeamDirectory,
   ) {}
 
+  // A LOJA vence: o cadastro real (vigência oficial) é a fonte; a fixture só
+  // completa o que o cadastro ainda não tem. Se a base vencesse, realocar um
+  // membro demo divergiria UI × elegibilidade — o exato bug do piloto.
   async positions(storeId: string): Promise<readonly OperationalPositionView[]> {
     const [base, local] = await Promise.all([
       this.base.positions(storeId),
       this.local.positions(storeId),
     ]);
-    const seen = new Set(base.map((position) => position.id));
-    return [...base, ...local.filter((position) => !seen.has(position.id))];
+    const seen = new Set(local.map((position) => position.id));
+    return [...local, ...base.filter((position) => !seen.has(position.id))];
   }
 
   async members(storeId: string): Promise<readonly TeamMemberView[]> {
@@ -845,8 +848,8 @@ export class CompositeTeamDirectory implements TeamDirectoryPort {
       this.base.members(storeId),
       this.local.members(storeId),
     ]);
-    const seen = new Set(base.map((member) => member.employeeId));
-    return [...base, ...local.filter((member) => !seen.has(member.employeeId))];
+    const seen = new Set(local.map((member) => member.employeeId));
+    return [...local, ...base.filter((member) => !seen.has(member.employeeId))];
   }
 }
 

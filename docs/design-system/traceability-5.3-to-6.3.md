@@ -1092,3 +1092,43 @@ auditoria de falhas de PIN/lockout; upload server-side de evidência + GC de
 blobs órfãos; compressão de foto (limite 8MB); idle lock
 (session.idleLockMs); histórico por data; fila sem GC (removeCompleted nunca
 acionado); 'upgrade blocked' do IndexedDB com duas abas em versões diferentes.
+
+## Piloto Vercel — coerência UI × domínio do time demo (fix/pilot-demo-workforce)
+
+**Bug real do piloto**: /operacao mostrava "Produção — Carlos Nunes", mas
+INICIAR com PIN válido do Carlos respondia NOT_ELIGIBLE ("responsabilidade
+de outra posição"). Causa raiz: duas fontes de verdade — os cards nomeiam
+ocupantes pelo diretório fixture (FIXTURE_TEAM), enquanto a elegibilidade
+(claim/start) lê employee_assignments do cadastro REAL, onde o time demo
+não existia (aparelho novo = workforce sem pessoas; os testes passavam
+porque semeavam vínculos manualmente no harness).
+
+**Correção no modelo (origem dos dados)**: `ensureDemoWorkforce` semeia o
+time demo como cadastro real no boot do composition root — posições fixture,
+pessoas e vínculos completos (equipe 12x36 A/B alternada + jornada), gated
+por `fixturesEnabled()`, idempotente, e com época de vigência anterior a
+qualquer cadastro da loja: quem a gestão cadastrar/realocar depois vence
+pela regra única `currentAssignmentFor` (o seed nunca compete). Fixtures
+passam a obedecer às mesmas invariantes da operação real; a validação de
+posição NÃO foi afrouxada (regressão prova Marina negada em tarefa de
+Produção). Seam `demoWorkforce: false` no container para suítes que
+exercitam a loja construída do zero.
+
+**Review adversarial do diff (11 agentes, 5 lentes + refutação)** — 2 P1
+confirmados e corrigidos antes do PR: (1) o CompositeTeamDirectory dava
+precedência à fixture congelada sobre o cadastro real — realocar um membro
+demo faria o bug renascer na UI; agora a LOJA vence e a fixture só completa
+(regressão cobre a metade UI da invariante); (2) aparelho que contornou o
+bug pré-fix cadastrando um homônimo à mão ganharia um duplicado permanente
+(não há inativação na gestão) — o seed agora pula membro demo quando existe
+colaborador ATIVO homônimo (regra geral, nunca hardcode). Refutados:
+unicidade por natural-key no seed de posições (converge por id fixo) e a
+variante "realoca re-abre o bug" da lente offline (mesma raiz do P1 nº 1).
+
+**Dívida registrada**: badge "Sem PIN" na gestão para membros demo cujo PIN
+DEV funciona (o badge fala do credencial local — honesto, porém confuso no
+piloto); Carlos é a fixture deliberada SEM `session.open` (matriz de
+cenários de autorização) — ele INICIA tarefas mas o envio falha ao abrir o
+turno dele ("avise o encarregado"): traço de DEV a resolver quando a
+identidade real substituir a matriz; em dias da Equipe A a posição Produção
+fica sem escalado (12x36 com 3 pessoas — dado demo, não regra).

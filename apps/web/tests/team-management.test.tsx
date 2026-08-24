@@ -139,9 +139,14 @@ describe('acesso à Gestão de Equipe (capability)', () => {
 
     expect(screen.getByRole('heading', { name: 'Equipe' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '+ Novo colaborador' })).toBeTruthy();
-    expect(screen.getByText('Nenhum colaborador cadastrado')).toBeTruthy();
 
-    // catálogo inicial: posições reais da operação disponíveis na aba Posições
+    // o time DEMO do piloto já vem como cadastro real (ensureDemoWorkforce):
+    // a mesma pessoa que os cards da operação nomeiam é gerível aqui
+    for (const name of ['Marina Álvares', 'Carlos Nunes', 'Rita Belmonte']) {
+      expect(await screen.findByRole('heading', { name })).toBeTruthy();
+    }
+
+    // catálogo inicial: posições reais da operação + posições demo na aba
     fireEvent.click(screen.getByRole('radio', { name: 'Posições' }));
     for (const name of [
       'Açougueiro 1',
@@ -150,6 +155,9 @@ describe('acesso à Gestão de Equipe (capability)', () => {
       'Auxiliar de açougue',
       'Operador de caixa',
       'Faxineira',
+      'Atendimento',
+      'Produção',
+      'Apoio',
     ]) {
       expect(await screen.findByRole('heading', { name })).toBeTruthy();
     }
@@ -189,20 +197,19 @@ describe('cadastro de colaborador', () => {
     // lista operacional: posição + equipe + jornada como CONCEITOS separados
     expect(screen.getByText(/Açougueiro 1 · Equipe A/)).toBeTruthy();
     expect(screen.getByText('Ativo desde 17/08/2026')).toBeTruthy();
-    await screen.findByText('Confirmado pelo servidor');
+    // João confirma pelo servidor ALÉM do time demo (3 seeds já 'synced')
+    await waitFor(() => {
+      expect(screen.getAllByText('Confirmado pelo servidor').length).toBeGreaterThanOrEqual(4);
+    });
 
     // persistência oficial: vínculo referencia posição e equipe por ID
     const employees = await world.container.workforce.employees(FIXTURE_STORE.id);
     const assignments = await world.container.workforce.assignments(FIXTURE_STORE.id);
-    expect(employees).toHaveLength(1);
-    expect(employees[0]).toMatchObject({
-      fullName: 'João da Silva',
-      active: true,
-      syncStatus: 'synced',
-    });
-    expect(assignments).toHaveLength(1);
-    expect(assignments[0]).toMatchObject({
-      employeeId: employees[0]!.id,
+    expect(employees).toHaveLength(4); // João + time demo semeado
+    const joao = employees.find((employee) => employee.fullName === 'João da Silva');
+    expect(joao).toMatchObject({ active: true, syncStatus: 'synced' });
+    expect(assignments).toHaveLength(4);
+    expect(assignments.find((assignment) => assignment.employeeId === joao?.id)).toMatchObject({
       operationalPositionId: 'pos-acougueiro-1',
       teamId: 'team-a',
       validFrom: '2026-08-17',
@@ -246,7 +253,8 @@ describe('cadastro de colaborador', () => {
     await screen.findByRole('heading', { name: 'João da Silva' });
 
     await waitFor(async () => {
-      expect(await world.container.workforce.employees(FIXTURE_STORE.id)).toHaveLength(1);
+      const employees = await world.container.workforce.employees(FIXTURE_STORE.id);
+      expect(employees.filter((e) => e.fullName === 'João da Silva')).toHaveLength(1);
     });
     expect(screen.getAllByRole('heading', { name: 'João da Silva' })).toHaveLength(1);
   });
@@ -274,10 +282,11 @@ describe('offline-first', () => {
     await identifyElber();
     await registerJoao();
 
-    // não mente "sucesso": o estado é explícito sobre a pendência
+    // não mente "sucesso": o estado é explícito sobre a pendência (o time
+    // demo semeado não passa pela fila — só o João aguarda o servidor)
     await screen.findByText('Salvo neste aparelho — aguardando sincronização');
     const queued = await world.container.workforce.employees(FIXTURE_STORE.id);
-    expect(queued[0]?.syncStatus).toBe('queued');
+    expect(queued.find((e) => e.fullName === 'João da Silva')?.syncStatus).toBe('queued');
 
     // conexão volta: a fila drena (motor de sync) e o app reflete no reboot
     world.online = true;
@@ -287,11 +296,13 @@ describe('offline-first', () => {
     world = makeWorld(world);
     render(app());
     await identifyElber();
-    await screen.findByText('Confirmado pelo servidor');
+    await waitFor(() => {
+      expect(screen.getAllByText('Confirmado pelo servidor').length).toBeGreaterThanOrEqual(4);
+    });
 
     const employees = await world.container.workforce.employees(FIXTURE_STORE.id);
-    expect(employees).toHaveLength(1);
-    expect(employees[0]?.syncStatus).toBe('synced');
+    expect(employees).toHaveLength(4);
+    expect(employees.find((e) => e.fullName === 'João da Silva')?.syncStatus).toBe('synced');
     expect(world.transport.submissions).toBeGreaterThan(0);
   });
 });
@@ -361,16 +372,20 @@ describe('composição das equipes', () => {
       'div[class]',
     ) as HTMLElement;
     expect(within(teamA).getByText(/João da Silva — Açougueiro 1/)).toBeTruthy();
+    expect(within(teamA).getByText(/Marina Álvares — Atendimento/)).toBeTruthy();
 
+    // Equipe B tem o Carlos do time demo — e NUNCA os membros da A
     const teamB = screen
       .getByRole('heading', { name: 'Equipe B' })
       .closest('div[class]') as HTMLElement;
-    expect(within(teamB).getByText('Nenhum colaborador nesta equipe.')).toBeTruthy();
+    expect(within(teamB).getByText(/Carlos Nunes — Produção/)).toBeTruthy();
+    expect(within(teamB).queryByText(/João da Silva/)).toBeNull();
 
     // filtro por equipe na lista de colaboradores
     fireEvent.click(screen.getByRole('radio', { name: 'Colaboradores' }));
     fireEvent.click(await screen.findByRole('radio', { name: 'Equipe B' }));
     expect(screen.queryByRole('heading', { name: 'João da Silva' })).toBeNull();
+    expect(await screen.findByRole('heading', { name: 'Carlos Nunes' })).toBeTruthy();
     fireEvent.click(screen.getByRole('radio', { name: 'Equipe A' }));
     expect(await screen.findByRole('heading', { name: 'João da Silva' })).toBeTruthy();
   });
