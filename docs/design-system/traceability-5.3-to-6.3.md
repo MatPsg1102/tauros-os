@@ -1132,3 +1132,35 @@ cenários de autorização) — ele INICIA tarefas mas o envio falha ao abrir o
 turno dele ("avise o encarregado"): traço de DEV a resolver quando a
 identidade real substituir a matriz; em dias da Equipe A a posição Produção
 fica sem escalado (12x36 com 3 pessoas — dado demo, não regra).
+
+## Foto V1.1 — captura direta por câmera (feat/photo-capture-v11)
+
+**Evolução, não sistema novo**: o input file cru do SubmitDrawer (única
+superfície de evidência do app — primeiro envio e reenvio pós-devolução
+compartilham o drawer) virou o componente co-locado `PhotoCapture`, com as
+mesmas fronteiras: `actions.addEvidence(file)` → blob local → IndexedDB →
+fila. TaskExecution, requiresPhoto, storage e offline intocados; nenhuma
+biblioteca adicionada; nada de base64.
+
+**Duas ações explícitas**: "Abrir câmera" (`capture="environment"` — traseira
+em celular/tablet) e "Escolher foto" (sem capture — galeria/arquivos). Nenhum
+input cru como experiência principal; ambos ficam `hidden` e são acionados
+pelos botões. Degradação honesta: onde o navegador não abre câmera (notebook),
+o MESMO controle nativo cai no seletor do sistema — não é erro, e "Escolher
+foto" está sempre visível ao lado. Sem `getUserMedia`: nenhum stream aberto,
+nenhuma permissão pedida na carga da tela, captura só por toque explícito.
+
+**Preview com confirmação**: seleção/captura gera object URL e mostra
+pré-visualização com "Usar foto" (persiste), "Tirar outra" (reabre a MESMA
+origem) e "Descartar". Nada é persistido sem confirmação — fechar o drawer
+com pendente não cria evidência. Object URLs revogados em troca, descarte,
+confirmação e desmontagem. Múltiplas evidências seguem suportadas como antes
+(cada confirmação adiciona uma).
+
+**Testes**: +5 em `photo-capture.test.tsx` (ações e atributos nativos;
+preview não persiste; câmera passa pelo mesmo preview; trocar/descartar +
+bloqueio de envio sem foto obrigatória; cancelar o drawer não persiste).
+Helper `attachPhoto` das suítes existentes passou a confirmar o preview.
+**Browser real** (CDP, perfil limpo): 7/7 — atributos, 390/834/1280 sem
+overflow com ações visíveis, preview sem evidência, confirmação e jornada
+completa até "Tarefa concluída.".

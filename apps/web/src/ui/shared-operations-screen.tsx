@@ -6,7 +6,7 @@
 
 'use client';
 
-import { useEffect, useRef, useState, type ReactElement } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type ReactElement } from 'react';
 
 import {
   Alert,
@@ -252,6 +252,131 @@ function ActionPinDialog({
   );
 }
 
+/**
+ * Captura de evidência (Foto V1.1) — evolução do input único: CÂMERA ou
+ * GALERIA, com preview e confirmação explícita; nada persiste sem "Usar
+ * foto". Nativo por input file (sem getUserMedia — nenhum stream aberto):
+ * em celular/tablet `capture="environment"` abre a câmera traseira; onde o
+ * navegador não abre câmera (notebook sem suporte), o MESMO controle degrada
+ * para o seletor do sistema — fallback correto, não erro. "Escolher foto"
+ * fica sempre visível como alternativa; a câmera só dispara por toque
+ * explícito do operador.
+ */
+function PhotoCapture({
+  disabled,
+  onConfirm,
+}: {
+  readonly disabled: boolean;
+  readonly onConfirm: (file: File) => void;
+}): ReactElement {
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const pickRef = useRef<HTMLInputElement>(null);
+  const [pending, setPending] = useState<{
+    readonly file: File;
+    readonly url: string;
+    readonly source: 'camera' | 'pick';
+  } | null>(null);
+
+  // preview usa object URL — revogado SEMPRE que sai de cena (troca,
+  // descarte, confirmação, desmontagem)
+  const pendingUrl = useRef<string | null>(null);
+  pendingUrl.current = pending?.url ?? null;
+  useEffect(
+    () => () => {
+      if (pendingUrl.current !== null) URL.revokeObjectURL(pendingUrl.current);
+    },
+    [],
+  );
+
+  function replacePending(
+    next: { readonly file: File; readonly url: string; readonly source: 'camera' | 'pick' } | null,
+  ): void {
+    setPending((current) => {
+      if (current !== null) URL.revokeObjectURL(current.url);
+      return next;
+    });
+  }
+
+  function onFile(source: 'camera' | 'pick') {
+    return (event: ChangeEvent<HTMLInputElement>): void => {
+      const file = event.target.files?.[0];
+      // limpa o input: reapresentar o MESMO arquivo dispara change de novo
+      event.target.value = '';
+      if (file === undefined) return;
+      replacePending({ file, url: URL.createObjectURL(file), source });
+    };
+  }
+
+  return (
+    <Stack gap={100}>
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        aria-label="Capturar pela câmera"
+        hidden
+        disabled={disabled}
+        onChange={onFile('camera')}
+      />
+      <input
+        ref={pickRef}
+        type="file"
+        accept="image/*"
+        aria-label="Adicionar foto"
+        hidden
+        disabled={disabled}
+        onChange={onFile('pick')}
+      />
+      {pending === null ? (
+        <Flex gap={100} wrap>
+          <Button
+            variant="secondary"
+            disabled={disabled}
+            onClick={() => cameraRef.current?.click()}
+          >
+            Abrir câmera
+          </Button>
+          <Button variant="secondary" disabled={disabled} onClick={() => pickRef.current?.click()}>
+            Escolher foto
+          </Button>
+        </Flex>
+      ) : (
+        <Stack gap={100}>
+          <img
+            src={pending.url}
+            alt="Pré-visualização da foto"
+            style={{ maxWidth: '160px', maxHeight: '160px', borderRadius: '4px' }}
+          />
+          {/* confirmar e repetir andam juntas (mesmo peso de decisão);
+              descartar é a saída — nunca compete com elas na mesma linha */}
+          <Flex gap={100} wrap>
+            <Button
+              disabled={disabled}
+              onClick={() => {
+                onConfirm(pending.file);
+                replacePending(null);
+              }}
+            >
+              Usar foto
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={disabled}
+              onClick={() => (pending.source === 'camera' ? cameraRef : pickRef).current?.click()}
+            >
+              Tirar outra
+            </Button>
+          </Flex>
+          <Button variant="ghost" disabled={disabled} onClick={() => replacePending(null)}>
+            Descartar
+          </Button>
+        </Stack>
+      )}
+    </Stack>
+  );
+}
+
 /** Finalização: medição/foto/observação → concluir ou enviar p/ conferência. */
 function SubmitDrawer({
   view,
@@ -262,7 +387,6 @@ function SubmitDrawer({
 }): ReactElement {
   const [measure, setMeasure] = useState('');
   const [notes, setNotes] = useState('');
-  const fileRef = useRef<HTMLInputElement>(null);
   const form = view.submitForm;
   const open = form !== null;
 
@@ -326,18 +450,9 @@ function SubmitDrawer({
               )}
             </Flex>
           )}
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            aria-label="Adicionar foto"
+          <PhotoCapture
             disabled={form?.busy === true}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file !== undefined) void actions.addEvidence(file);
-              event.target.value = '';
-            }}
+            onConfirm={(file) => void actions.addEvidence(file)}
           />
         </Stack>
 
