@@ -1231,8 +1231,10 @@ quadro.
   vazio sem escalados, interseção vazia com as duas saídas. **177 testes web
   verdes** — os 166 existentes passaram SEM edição de teste.
 
-**Pendência registrada**: a faixa e o grupo "Equipe de hoje" da sidebar são
-redundantes por desenho (mesma fonte, mesmo filtro). Mantidos os dois: a
-sidebar segue sendo a triagem completa (situação × posição × pessoa) e a faixa
-é o atalho glove-first. Se a triagem por pessoa migrar de vez para o corpo,
-o grupo da sidebar pode sair — decisão de UX, sem impacto arquitetural.
+**Redundância INTENCIONAL (decisão de UX aprovada, não é pendência)**: a faixa
+e o grupo "Equipe de hoje" da sidebar são redundantes por desenho — mesma
+fonte (presença planejada), mesmo filtro (`employeeFilter`). Os dois ficam,
+com papéis distintos e declarados: o **corpo** é a navegação rápida
+glove-first do funcionário; a **sidebar** é a triagem operacional completa
+(situação × posição × pessoa). Nenhuma refatoração para eliminar a
+redundância — a duplicação é de APRESENTAÇÃO, nunca de fonte de verdade.
