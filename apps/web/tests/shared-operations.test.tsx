@@ -205,9 +205,11 @@ async function findTaskDialog(title: string): Promise<HTMLElement> {
 }
 
 function attachPhoto(): void {
+  // Foto V1.1: seleção abre PREVIEW; só "Usar foto" persiste a evidência
   const input = screen.getByLabelText('Adicionar foto') as HTMLInputElement;
   const file = new File(['foto-da-serra'], 'serra.jpg', { type: 'image/jpeg' });
   fireEvent.change(input, { target: { files: [file] } });
+  fireEvent.click(screen.getByRole('button', { name: 'Usar foto' }));
 }
 
 beforeEach(() => {
