@@ -10,6 +10,8 @@ import {
   CAPABILITY_CONFIG_WRITE,
   CAPABILITY_SESSION_CLOSE,
   CAPABILITY_SESSION_OPEN,
+  CAPABILITY_TASK_REVIEW,
+  CAPABILITY_WORKFORCE_WRITE,
 } from '@tauros/contracts';
 import { MemoryLocalStore, OFFLINE_SCHEMA } from '@tauros/infrastructure';
 
@@ -263,14 +265,20 @@ describe('snapshot e autorização offline (§10/§36)', () => {
   it('usuário comum NÃO ganha capabilities de encarregado automaticamente', () => {
     const byId = (id: string): readonly string[] =>
       FIXTURE_OPERATORS.find((op) => op.employeeId === id)?.permissions ?? [];
-    // Marina: operadora completa de turno, sem escrita de configuração
-    expect(byId('emp-0001')).not.toContain(CAPABILITY_CONFIG_WRITE);
-    // Carlos: sem abertura — prova negativa viva do quadro de permissões
-    expect(byId('emp-0002')).not.toContain(CAPABILITY_SESSION_OPEN);
-    expect(byId('emp-0002')).not.toContain(CAPABILITY_CONFIG_WRITE);
-    // Rita: abre mas não fecha nem configura
-    expect(byId('emp-0003')).not.toContain(CAPABILITY_SESSION_CLOSE);
-    expect(byId('emp-0003')).not.toContain(CAPABILITY_CONFIG_WRITE);
+    // Todo EXECUTOR tem o mínimo operacional (abrir/fechar o PRÓPRIO turno:
+    // registrar execução resolve o próprio turno) e NADA de gestão. A prova
+    // negativa viva é sobre capability GERENCIAL — nunca sobre o mínimo, cuja
+    // ausência apenas impedia o executor de finalizar a própria tarefa.
+    for (const executor of ['emp-0001', 'emp-0002', 'emp-0003']) {
+      expect(byId(executor)).toContain(CAPABILITY_SESSION_OPEN);
+      expect(byId(executor)).toContain(CAPABILITY_SESSION_CLOSE);
+      expect(byId(executor)).not.toContain(CAPABILITY_CONFIG_WRITE);
+      expect(byId(executor)).not.toContain(CAPABILITY_TASK_REVIEW);
+      expect(byId(executor)).not.toContain(CAPABILITY_WORKFORCE_WRITE);
+    }
+    // e o encarregado segue sendo o ÚNICO com o perfil gerencial
+    expect(byId('emp-0004')).toContain(CAPABILITY_CONFIG_WRITE);
+    expect(byId('emp-0004')).toContain(CAPABILITY_TASK_REVIEW);
   });
 
   it('autorização deriva das permissões efetivas, nunca do nome/identidade', async () => {
