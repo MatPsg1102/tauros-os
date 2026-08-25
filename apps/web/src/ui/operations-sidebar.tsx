@@ -41,37 +41,8 @@ import {
 import type {
   SharedOperationsActions,
   SharedOperationsView,
-  TeamMemberSummary,
 } from '../controllers/use-shared-operations.js';
-
-function plural(count: number, singular: string, pluralForm: string): string {
-  return `${String(count)} ${count === 1 ? singular : pluralForm}`;
-}
-
-/** Resumo compacto do colaborador — no máximo dois números úteis (§7). */
-function memberBadge(member: TeamMemberSummary): ReactElement {
-  if (member.overdueCount > 0) {
-    return (
-      <Badge status="error">
-        {plural(member.overdueCount, 'atrasada', 'atrasadas')}
-        {member.openCount > member.overdueCount
-          ? ` · ${plural(member.openCount, 'aberta', 'abertas')}`
-          : ''}
-      </Badge>
-    );
-  }
-  if (member.openCount > 0) {
-    return <Badge status="neutral">{plural(member.openCount, 'aberta', 'abertas')}</Badge>;
-  }
-  if (member.awaitingReviewCount > 0) {
-    return (
-      <Badge status="info">
-        {plural(member.awaitingReviewCount, 'em conferência', 'em conferência')}
-      </Badge>
-    );
-  }
-  return <Badge status="success">Em dia</Badge>;
-}
+import { memberBadge } from './team-member-badge.js';
 
 export interface OperationsSidebarProps {
   readonly view: SharedOperationsView;

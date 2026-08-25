@@ -1164,3 +1164,75 @@ Helper `attachPhoto` das suítes existentes passou a confirmar o preview.
 **Browser real** (CDP, perfil limpo): 7/7 — atributos, 390/834/1280 sem
 overflow com ações visíveis, preview sem evidência, confirmação e jornada
 completa até "Tarefa concluída.".
+
+## UX Operacional V1.3 — navegação por funcionário escalado na /operacao (feat/operacao-nav-equipe)
+
+READ MODEL + controller + UI da `/operacao`. Nenhuma mudança em domínio,
+application, contratos, DS (`ui-*`), identidade, PIN, TaskExecution, escala,
+recorrência, RBAC, offline, auditoria, materialização ou review. Nenhum ADR.
+
+**Problema atacado**: filtrar o quadro por PESSOA existia desde a V1.1, mas só
+pela sidebar — que na V1.2 passou a iniciar RECOLHIDA como rail no desktop.
+O caminho era: aproximar/abrir o painel → rolar até o terceiro grupo → tocar.
+Caro para tablet de chão com luva, e sem nenhuma pista prévia de que o filtro
+existia. A navegação por funcionário virou o caminho PRIMÁRIO no corpo do
+quadro.
+
+- **Faixa "Equipe escalada hoje"** (`TeamStrip`, corpo do quadro, acima do
+  SegmentedControl — "quem" antes de "o quê"): um `Chip` por pessoa com
+  `Avatar` decorativo + primeiro nome + o MESMO badge de pendências da
+  sidebar, mais "Toda a equipe". Fonte ÚNICA = `view.teamToday` (presença
+  PLANEJADA — Escala V1), nunca o cadastro inteiro. Escreve no MESMO
+  `employeeFilter` da sidebar: **não há segunda fonte de verdade nem estado
+  paralelo** — as duas superfícies refletem uma à outra (provado por teste).
+  Selecionar mostra posição + jornada planejada como confirmação.
+- **`Chip` e não `Tabs`**: `Tab` do DS emite `aria-controls` apontando para um
+  `TabPanel`; sem painel a referência fica pendurada (violação axe), e um
+  painel por pessoa montaria N cópias da lista. `Chip` em `role="group"` é a
+  MESMA linguagem já usada pelos alertas de prazo e filtros ativos. Zero
+  mudança em `ui-*`.
+- **Sem heading próprio**: os títulos dos cards são `h3`; um `h3` "Equipe de
+  hoje" ao lado deles achataria o outline. A faixa é um GRUPO rotulado por
+  `aria-labelledby` apontando para o próprio rótulo visível — nome visível e
+  acessível são o mesmo nó, sem anúncio duplicado. Rótulo "Equipe escalada
+  hoje" (distinto do grupo "Equipe de hoje" da sidebar, que permanece).
+- **Nomes do card — ESCALADOS primeiro, ocupantes como fallback honesto**:
+  `assigneeNames` vinha de `team.members()` (ocupantes vigentes do diretório,
+  SEM filtro de escala), enquanto "Equipe de hoje" vinha da presença
+  planejada — dois conjuntos diferentes nomeando a mesma operação. Agora o
+  card usa os ESCALADOS da posição responsável; só quando NINGUÉM está
+  escalado nela cai nos ocupantes vigentes, marcados com "(fora da escala de
+  hoje)". O estado local `scheduledByPosition` (nome enganoso: nunca foi
+  escala) virou `occupantsByPosition`; o mapa de escalados é derivado de
+  `plannedDay`. Novo campo derivado `assigneesOffSchedule` no view model.
+- **INVARIANTE DO PILOTO (#36) PRESERVADA**: nomear NUNCA autoriza. A
+  elegibilidade de claim/start segue lida de `employee_assignments` pelo
+  domínio (`currentAssignmentFor` + `decideStartDailyTask`); a UI só apresenta.
+  `CompositeTeamDirectory` (loja vence) e `ensureDemoWorkforce` intactos —
+  `pilot-demo-workforce.test.tsx` passa sem uma linha alterada.
+- **Vazio operacional claro**: sem ninguém escalado, a faixa não fica muda —
+  "Ninguém escalado para hoje" explica que as tarefas seguem no quadro pela
+  posição responsável e aponta para a gestão; escala não configurada tem
+  vazio próprio ("Escala de hoje não configurada"). O quadro NUNCA some.
+- **Interseção vazia que explica**: o genérico "Nenhuma tarefa aqui" virou
+  "Nenhuma tarefa nesta combinação de filtros" nomeando QUAL combinação
+  esvaziou (`activeFilterSummary`), com "Limpar todos os filtros" e a saída
+  dedicada "Ver todas de {pessoa}". Rótulo distinto do "Limpar filtros" dos
+  chips ativos — os dois podiam coexistir na tela (defeito real, não só
+  ambiguidade de teste).
+- **Reuso**: `memberBadge`/`plural`/`firstName` extraídos para
+  `ui/team-member-badge.tsx` — o MESMO sinal de pendências na sidebar e na
+  faixa, calculado uma vez no view model.
+- **Testes**: +11 (`operacao-team-strip.test.tsx`): faixa só com escalados
+  (ocupante de folga não vira opção), sinal igual ao da sidebar, toque filtra
+  /alterna, "Toda a equipe" não derruba os demais filtros, faixa ↔ sidebar no
+  mesmo filtro, leitura pura (fila e `audit_outbox` inalterados), axe, card
+  com escalado ignora ocupante de folga, card sem escalado rotula o fallback,
+  vazio sem escalados, interseção vazia com as duas saídas. **177 testes web
+  verdes** — os 166 existentes passaram SEM edição de teste.
+
+**Pendência registrada**: a faixa e o grupo "Equipe de hoje" da sidebar são
+redundantes por desenho (mesma fonte, mesmo filtro). Mantidos os dois: a
+sidebar segue sendo a triagem completa (situação × posição × pessoa) e a faixa
+é o atalho glove-first. Se a triagem por pessoa migrar de vez para o corpo,
+o grupo da sidebar pode sair — decisão de UX, sem impacto arquitetural.
