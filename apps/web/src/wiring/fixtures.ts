@@ -70,13 +70,21 @@ export const FIXTURE_STORE: FixtureStore = {
 };
 
 /**
- * Operadores cobrindo os cenários reais de autorização: completo, sem
- * abertura, com abertura mas sem fechamento, e o ENCARREGADO — que também é
- * operador: abre o próprio turno (session.open) além das capacidades de
- * encarregado (config.write — capability oficial que governa task_templates
- * na RLS congelada). A autorização vem SEMPRE das permissões efetivas
- * (ADR-018), nunca de nome/cargo. O PIN é fixture de desenvolvimento:
- * comparado apenas em memória e descartado.
+ * Operadores DEV do piloto. Todo EXECUTOR carrega o mesmo mínimo operacional
+ * — session.open + session.close — porque concluir tarefa registra execução e
+ * o registro resolve/abre o próprio turno. Este é exatamente o conjunto que o
+ * PilotBridgeAuthorizationSource concede à credencial local real: o caminho
+ * DEV e o caminho real NÃO podem divergir (a divergência fazia o executor
+ * assumir e iniciar por elegibilidade e falhar só ao finalizar).
+ *
+ * O ENCARREGADO é também operador: soma ao mínimo as capacidades de gestão
+ * (config.write — capability oficial que governa task_templates na RLS
+ * congelada — workforce.write e task.review). Nenhum executor recebe
+ * capability gerencial: conferir o próprio trabalho continua impossível.
+ *
+ * A autorização vem SEMPRE das permissões efetivas (ADR-018), nunca de
+ * nome/cargo. O PIN é fixture de desenvolvimento: comparado apenas em
+ * memória e descartado.
  */
 export const FIXTURE_OPERATORS: readonly FixtureOperator[] = [
   {
@@ -95,7 +103,12 @@ export const FIXTURE_OPERATORS: readonly FixtureOperator[] = [
     membershipId: 'memb-0002',
     name: 'Carlos Nunes',
     pin: '113355',
-    permissions: ['audit.read'],
+    // mínimo operacional do piloto: executar tarefa registra execução, e o
+    // registro resolve/abre o PRÓPRIO turno (session.open/close). Mesmo
+    // conjunto que o PilotBridgeAuthorizationSource concede à credencial
+    // local real — o caminho DEV não pode divergir dele. NENHUMA capability
+    // gerencial: conferência/configuração seguem só com o encarregado.
+    permissions: [CAPABILITY_SESSION_OPEN, CAPABILITY_SESSION_CLOSE, 'audit.read'],
   },
   {
     employeeId: 'emp-0003',
@@ -103,7 +116,8 @@ export const FIXTURE_OPERATORS: readonly FixtureOperator[] = [
     membershipId: 'memb-0003',
     name: 'Rita Belmonte',
     pin: '997755',
-    permissions: [CAPABILITY_SESSION_OPEN, 'audit.read'],
+    // mesmo mínimo operacional dos demais executores (ver emp-0002)
+    permissions: [CAPABILITY_SESSION_OPEN, CAPABILITY_SESSION_CLOSE, 'audit.read'],
   },
   {
     employeeId: 'emp-0004',

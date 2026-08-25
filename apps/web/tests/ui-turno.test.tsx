@@ -7,12 +7,14 @@ import { axe } from 'jest-axe';
 import { type ReactElement } from 'react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { PERMISSION_MODEL_VERSION } from '@tauros/contracts';
 import { MemoryLocalStore, OFFLINE_SCHEMA } from '@tauros/infrastructure';
 
 import TurnoPage from '../src/app/turno/page.js';
 import { AppProviders } from '../src/app/providers.js';
 import { APP_STATE_SCHEMA } from '../src/wiring/adapters.js';
 import { buildContainer, type AppContainer } from '../src/wiring/container.js';
+import { FIXTURE_STORE } from '../src/wiring/fixtures.js';
 import { FakeSessionSyncTransport } from '../src/wiring/transport-fake.js';
 import { navigations, resetNavigations } from './setup-router.js';
 
@@ -48,6 +50,38 @@ function makeWorld(): World {
     deviceOnline: () => w.online,
   });
   return w;
+}
+
+/**
+ * Container cuja IDENTIDADE resolve sem o mínimo operacional — o estado real
+ * de um colaborador ainda NÃO provisionado (UnprovisionedAuthorizationSource:
+ * identificar prova QUEM é, nunca O QUE PODE). As fixtures DEV do piloto todas
+ * carregam session.open (o executor precisa dele para finalizar a própria
+ * tarefa), então a prova negativa da UI vem daqui — do port, não de uma
+ * persona com permissão faltando por acidente.
+ */
+function withUnprovisionedIdentity(container: AppContainer): AppContainer {
+  return {
+    ...container,
+    identity: {
+      verify: (input: { employeeId: string }) =>
+        Promise.resolve({
+          kind: 'verified' as const,
+          authorization: {
+            operatorEmployeeId: input.employeeId,
+            operatorProfileId: null,
+            membershipId: null,
+            storeId: FIXTURE_STORE.id,
+            sessionId: `unprovisioned:${input.employeeId}`,
+            permissions: [] as readonly string[],
+            permissionModelVersion: PERMISSION_MODEL_VERSION,
+            configVersionRef: undefined,
+            validUntil: new Date(NOW.getTime() + 3_600_000),
+            origin: 'offline-snapshot' as const,
+          },
+        }),
+    },
+  };
 }
 
 function page(): ReactElement {
@@ -121,6 +155,7 @@ describe('jornada de abertura de turno', () => {
   });
 
   it('SEM PERMISSÃO: estado seguro e orientativo, sem ação de abrir', async () => {
+    world.container = withUnprovisionedIdentity(world.container);
     render(page());
     await identifyAs('Carlos Nunes', ['1', '1', '3', '3', '5', '5']);
     await screen.findByText('Sem permissão para abrir turno');
@@ -158,6 +193,7 @@ describe('jornada de abertura de turno', () => {
   });
 
   it('SEM ABERTURA: negado para abrir também não ganha a entrada de gestão', async () => {
+    world.container = withUnprovisionedIdentity(world.container);
     render(page());
     await identifyAs('Carlos Nunes', ['1', '1', '3', '3', '5', '5']);
     await screen.findByText('Sem permissão para abrir turno');

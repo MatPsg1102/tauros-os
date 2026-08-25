@@ -8,6 +8,7 @@ import { type ReactElement } from 'react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { TaskTemplateSnapshot } from '@tauros/contracts';
+import { CAPABILITY_SESSION_OPEN, PERMISSION_MODEL_VERSION } from '@tauros/contracts';
 import { MemoryLocalStore, OFFLINE_SCHEMA } from '@tauros/infrastructure';
 
 import TarefasPage from '../src/app/turno/tarefas/page.js';
@@ -16,6 +17,7 @@ import { AppProviders } from '../src/app/providers.js';
 import { OperatorSessionProvider } from '../src/controllers/operator-session-context.js';
 import { APP_STATE_SCHEMA } from '../src/wiring/adapters.js';
 import { buildContainer, type AppContainer } from '../src/wiring/container.js';
+import { FIXTURE_STORE } from '../src/wiring/fixtures.js';
 import { FakeSessionSyncTransport } from '../src/wiring/transport-fake.js';
 import { navigations, resetNavigations } from './setup-router.js';
 
@@ -171,6 +173,31 @@ describe('fechamento de turno na tela', () => {
   });
 
   it('operador sem a capability não recebe a ação de fechar', async () => {
+    // ABRE mas não FECHA: perfil efetivo parcial. Nenhuma fixture DEV do
+    // piloto tem essa forma (todo executor abre e fecha o próprio turno), então
+    // a prova negativa vem do PORT de identidade — a UI decide pela capability
+    // efetiva, jamais por quem a pessoa é.
+    world.container = {
+      ...world.container,
+      identity: {
+        verify: (input: { employeeId: string }) =>
+          Promise.resolve({
+            kind: 'verified' as const,
+            authorization: {
+              operatorEmployeeId: input.employeeId,
+              operatorProfileId: null,
+              membershipId: null,
+              storeId: FIXTURE_STORE.id,
+              sessionId: `parcial:${input.employeeId}`,
+              permissions: [CAPABILITY_SESSION_OPEN] as readonly string[],
+              permissionModelVersion: PERMISSION_MODEL_VERSION,
+              configVersionRef: undefined,
+              validUntil: new Date(NOW.getTime() + 3_600_000),
+              origin: 'offline-snapshot' as const,
+            },
+          }),
+      },
+    };
     render(app('turno'));
     await openShiftAs('Rita Belmonte', ['9', '9', '7', '7', '5', '5']);
     expect(screen.queryByRole('button', { name: 'Fechar turno' })).toBeNull();

@@ -1238,3 +1238,57 @@ com papéis distintos e declarados: o **corpo** é a navegação rápida
 glove-first do funcionário; a **sidebar** é a triagem operacional completa
 (situação × posição × pessoa). Nenhuma refatoração para eliminar a
 redundância — a duplicação é de APRESENTAÇÃO, nunca de fonte de verdade.
+
+## Fix — mínimo operacional do executor (fixture DEV × PilotBridge)
+
+**Bug de piloto**: operador assumia e INICIAVA a tarefa, capturava a foto e
+falhava ao FINALIZAR com "Não foi possível abrir seu turno para registrar a
+execução". Diagnóstico fechado antes de qualquer alteração de código.
+
+- **Causa raiz**: registrar execução exige `operatorSessionId`
+  (`RecordTaskOutcome`), e o controller resolve isso abrindo o PRÓPRIO turno
+  just-in-time — o que passa por `CAPABILITY_SESSION_OPEN`. A fixture DEV do
+  Carlos (`emp-0002`) tinha só `audit.read`, divergindo do
+  `PilotBridgeAuthorizationSource`, que concede `session.open` +
+  `session.close` a qualquer colaborador com credencial local real. **Assimetria
+  do ciclo**: assumir/iniciar passam por ELEGIBILIDADE (posição vigente +
+  escalado, sem capability); só o desfecho passa por CAPABILITY.
+- **Por que escapou do CI**: todo teste que chegava a "Finalizar" usava Marina
+  ou Rita — as duas personas que por acaso tinham `session.open`. Carlos era
+  testado só até INICIAR (`pilot-demo-workforce`, PR #36 destravou a
+  elegibilidade e a jornada avançou até expor a metade da capability).
+- **Correção (proximate, sem re-arquitetar)**: alinhar o caminho DEV ao mínimo
+  já definido pelo bridge. `emp-0002` e `emp-0003` passam a ter
+  `session.open` + `session.close`; `emp-0001` já tinha. **Nenhuma capability
+  gerencial concedida** — `task.review`/`config.write`/`workforce.write`
+  seguem exclusivas do encarregado. Domínio, contracts, application,
+  `TaskExecution`, `OperatorSession` e evidência/câmera **intocados**: o diff
+  de produção é uma linha de `permissions` por operador.
+- **Invariante nova e explícita**: todo EXECUTOR do piloto carrega o MESMO
+  mínimo operacional, e o caminho DEV não pode divergir do bridge. Coberta por
+  teste (`todo EXECUTOR do piloto carrega o mesmo mínimo`).
+- **Testes**: +6 em `pilot-demo-workforce.test.tsx` — jornada fixture COMPLETA
+  (iniciar → foto → finalizar), autoria `emp-0002` + turno resolvido + evidência
+  vinculada à execução, duplo toque não duplica execução nem turno, e o executor
+  NEGADO ao conferir a própria execução ("Seu perfil não permite conferir
+  execuções."). Os 6 falham sem o fix e passam com ele; os testes de
+  incompatibilidade de POSIÇÃO seguem intactos. **183 testes web verdes.**
+- **Testes ajustados (assertiva obsoleta, não regressão)**: três testes
+  encodavam a assimetria como invariante. `vertical-slice` agora afirma o que
+  de fato importa — executor tem o mínimo e NÃO tem gestão. Os estados de UI
+  "sem permissão para abrir/fechar" deixaram de depender de uma persona com
+  permissão faltando por acidente e passam a vir do PORT de identidade
+  (colaborador não provisionado / perfil parcial), preservando a cobertura
+  negativa sem inventar persona.
+- **Validação em navegador (Chromium/CDP)**: `/operacao` → "Higienizar bancada
+  de manipulação" → Carlos → PIN → iniciar → foto → **"Tarefa concluída."**;
+  card em "Concluída · 📷 1 evidência"; IndexedDB com UMA sessão ACTIVE de
+  `emp-0002` e execução `DONE` com autoria `emp-0002` e evidência vinculada.
+  Em seguida, tarefa que exige conferência: Carlos envia e é **negado** ao
+  tentar aprovar a própria execução (segue "Aguardando conferência").
+  Relógio do navegador fixado em 26/08 — na escala 12x36 o Carlos (Equipe B)
+  não trabalha em 25/08.
+
+**Pendência mantida (não regride)**: o bridge continua sendo ponte de piloto;
+a resolução real de permissões efetivas (ADR-018) substitui os dois caminhos
+quando o backend de identidade/membership existir.
