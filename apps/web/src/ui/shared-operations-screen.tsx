@@ -6,10 +6,11 @@
 
 'use client';
 
-import { useEffect, useRef, useState, type ChangeEvent, type ReactElement } from 'react';
+import { useEffect, useId, useRef, useState, type ChangeEvent, type ReactElement } from 'react';
 
 import {
   Alert,
+  Avatar,
   Badge,
   Banner,
   Button,
@@ -44,6 +45,17 @@ import type {
   SharedTaskView,
 } from '../controllers/use-shared-operations.js';
 import { OperationsSidebarSections } from './operations-sidebar.js';
+import { firstName, memberBadge } from './team-member-badge.js';
+
+/** Rótulos operacionais das situações — fonte única do SegmentedControl. */
+const SITUATION_LABEL: Readonly<Record<SharedOperationsView['filter'], string>> = {
+  all: 'todas',
+  pending: 'pendentes',
+  'in-progress': 'em execução',
+  review: 'a conferir',
+  returned: 'devolvidas',
+  done: 'concluídas',
+};
 
 function statusBadge(task: SharedTaskView): ReactElement {
   if (task.status === 'DONE') return <Badge status="success">Concluída</Badge>;
@@ -132,6 +144,11 @@ function TaskCard({
             : task.assigneeNames.length > 0
               ? ` — ${task.assigneeNames.join(', ')}`
               : ''}
+          {/* honestidade: nomear ocupante fora da escala nunca vira promessa
+              de execução — a elegibilidade continua sendo do domínio (§4) */}
+          {task.startedByName === null && task.assigneesOffSchedule
+            ? ' (fora da escala de hoje)'
+            : ''}
           {' · '}
           {window}
           {task.startedAtTime !== null ? ` · Iniciada ${task.startedAtTime}` : ''}
@@ -695,6 +712,146 @@ function ActiveFilters({
   );
 }
 
+/**
+ * Faixa "Equipe de hoje" — navegação PRIMÁRIA por pessoa no corpo do quadro
+ * (UX Operacional V1.3). Antes, filtrar por colaborador exigia alcançar a
+ * sidebar (recolhida como rail no desktop) e rolar até o terceiro grupo: caro
+ * demais para tablet com luva. Aqui é toque único, alvo grande, sempre
+ * visível — mesma linguagem de Chip dos alertas de prazo.
+ *
+ * Fonte ÚNICA: `view.teamToday` = presença PLANEJADA da data (Escala V1),
+ * nunca o cadastro inteiro. Escreve no MESMO `employeeFilter` da sidebar —
+ * não há segunda fonte de verdade nem estado paralelo. Selecionar uma pessoa
+ * é LEITURA PURA: não toca fila, auditoria nem autorização. Aparecer na faixa
+ * não autoriza nada — claim/start seguem decididos pelo domínio no PIN.
+ */
+/**
+ * Resumo pt-BR dos filtros ativos para o vazio HONESTO: dizer QUAL combinação
+ * esvaziou o quadro, em vez do genérico "nenhuma tarefa aqui". Leitura pura
+ * do view model — nenhum estado próprio.
+ */
+function activeFilterSummary(view: SharedOperationsView): string {
+  const parts: string[] = [];
+  if (view.employeeFilterName !== null) parts.push(view.employeeFilterName);
+  if (view.assignmentFilter?.kind === 'unassigned') parts.push('sem responsável');
+  else if (view.assignmentFilter?.kind === 'position') {
+    const positionId = view.assignmentFilter.positionId;
+    parts.push(
+      view.positionSummaries.find((summary) => summary.positionId === positionId)?.name ??
+        'a posição selecionada',
+    );
+  }
+  if (view.dueFilter !== null)
+    parts.push(view.dueFilter === 'overdue' ? 'atrasadas' : 'próximas do prazo');
+  if (view.filter !== 'all') parts.push(SITUATION_LABEL[view.filter]);
+  return parts.length === 0 ? 'os filtros atuais' : parts.join(' + ');
+}
+
+function TeamStrip({
+  view,
+  actions,
+  managementLink,
+}: {
+  readonly view: SharedOperationsView;
+  readonly actions: SharedOperationsActions;
+  readonly managementLink: NavigationLinkAdapter;
+}): ReactElement {
+  const captionId = useId();
+  // rótulo VISÍVEL e acessível são o mesmo nó: sem heading (o outline pertence
+  // aos cards) e sem anúncio duplicado.
+  const caption = (
+    <Text id={captionId} role="data">
+      Equipe escalada hoje
+    </Text>
+  );
+
+  if (view.scheduleStatus === 'unconfigured') {
+    return (
+      <Stack gap={100}>
+        {caption}
+        <EmptyState
+          title="Escala de hoje não configurada"
+          description="Esta loja ainda não tem um padrão de escala vigente para a data. As tarefas continuam no quadro pela posição responsável, mas ninguém aparece como escalado."
+          action={
+            <Button
+              variant="secondary"
+              onClick={() => {
+                managementLink.navigate?.();
+              }}
+            >
+              Configurar escala
+            </Button>
+          }
+        />
+      </Stack>
+    );
+  }
+
+  if (view.teamToday.length === 0) {
+    return (
+      <Stack gap={100}>
+        {caption}
+        <EmptyState
+          title="Ninguém escalado para hoje"
+          description="Nenhum colaborador está previsto na escala desta data. As tarefas seguem no quadro pela posição responsável e podem ser assumidas mediante identificação por PIN."
+          action={
+            <Button
+              variant="secondary"
+              onClick={() => {
+                managementLink.navigate?.();
+              }}
+            >
+              Ver escala e equipe
+            </Button>
+          }
+        />
+      </Stack>
+    );
+  }
+
+  const selected = view.teamToday.find((member) => member.employeeId === view.employeeFilter);
+  return (
+    <Stack gap={100}>
+      {caption}
+      <Flex gap={100} wrap role="group" aria-labelledby={captionId}>
+        <Chip
+          selected={view.employeeFilter === null}
+          onClick={() => actions.setEmployeeFilter(null)}
+        >
+          Toda a equipe
+        </Chip>
+        {view.teamToday.map((member) => (
+          <Chip
+            key={member.employeeId}
+            selected={view.employeeFilter === member.employeeId}
+            onClick={() =>
+              actions.setEmployeeFilter(
+                view.employeeFilter === member.employeeId ? null : member.employeeId,
+              )
+            }
+          >
+            <Flex gap={50} align="center">
+              {/* nome já está ao lado: avatar é decorativo (sem anúncio duplo) */}
+              <Avatar name={member.name} size="sm" decorative />
+              {firstName(member.name)}
+              {memberBadge(member)}
+            </Flex>
+          </Chip>
+        ))}
+      </Flex>
+      {/* contexto de quem está selecionado: posição e jornada JÁ vêm prontas do
+          view model — o operador confirma que filtrou a pessoa certa */}
+      {selected !== undefined && (
+        <Text role="data" tone="secondary">
+          {selected.name}
+          {selected.positionName !== null ? ` · ${selected.positionName}` : ''}
+          {selected.workPeriodLabel !== null ? ` · ${selected.workPeriodLabel}` : ''}
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
 export function SharedOperationsScreen({
   view,
   actions,
@@ -706,6 +863,11 @@ export function SharedOperationsScreen({
 }): ReactElement {
   const isMobile = useIsMobile();
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const hasFilters =
+    view.filter !== 'all' ||
+    view.assignmentFilter !== null ||
+    view.employeeFilter !== null ||
+    view.dueFilter !== null;
   return (
     <Page id="conteudo">
       <PageHeader
@@ -787,6 +949,9 @@ export function SharedOperationsScreen({
             )}
 
             <DueAlerts view={view} actions={actions} />
+
+            <TeamStrip view={view} actions={actions} managementLink={managementLink} />
+
             <ActiveFilters view={view} actions={actions} />
 
             <Card>
@@ -811,10 +976,36 @@ export function SharedOperationsScreen({
             />
 
             {view.tasks.length === 0 ? (
-              <EmptyState
-                title="Nenhuma tarefa aqui"
-                description="Não há tarefas nesta situação agora."
-              />
+              hasFilters ? (
+                <EmptyState
+                  title="Nenhuma tarefa nesta combinação de filtros"
+                  description={`Nada corresponde a ${activeFilterSummary(view)} agora. Ajuste ou limpe os filtros para ver o quadro completo.`}
+                  action={
+                    <Button onClick={() => actions.clearFilters()}>Limpar todos os filtros</Button>
+                  }
+                  {...(view.employeeFilterName !== null
+                    ? {
+                        secondaryAction: (
+                          <Button
+                            variant="secondary"
+                            onClick={() => {
+                              actions.setFilter('all');
+                              actions.setAssignmentFilter(null);
+                              actions.setDueFilter(null);
+                            }}
+                          >
+                            {`Ver todas de ${view.employeeFilterName}`}
+                          </Button>
+                        ),
+                      }
+                    : {})}
+                />
+              ) : (
+                <EmptyState
+                  title="Nenhuma tarefa aqui"
+                  description="Não há tarefas nesta situação agora."
+                />
+              )
             ) : (
               <Stack gap={200}>
                 {view.tasks.map((task) => (

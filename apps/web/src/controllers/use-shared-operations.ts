@@ -80,8 +80,16 @@ export interface SharedTaskView {
   /** Estado derivado de prazo + rótulo pronto ("Vence em 18 min"). */
   readonly dueState: DueState;
   readonly dueLabel: string | null;
-  /** Ocupantes escalados hoje na posição responsável. */
+  /**
+   * Responsáveis NOMEADOS no card: colaboradores ESCALADOS hoje na posição
+   * responsável (fonte oficial única — Escala V1). Quando NINGUÉM está
+   * escalado nela, cai nos OCUPANTES vigentes do diretório para o card não
+   * ficar mudo — sinalizado por `assigneesOffSchedule` (rótulo honesto).
+   * Nomear NUNCA autoriza: claim/start seguem decididos pelo domínio.
+   */
   readonly assigneeNames: readonly string[];
+  /** true quando os nomes vieram do fallback de ocupantes (ninguém escalado). */
+  readonly assigneesOffSchedule: boolean;
   /** Quem está executando (início real). */
   readonly startedByName: string | null;
   readonly startTime: string | null;
@@ -351,7 +359,9 @@ export function useSharedOperations(
   );
   const [employeeNames, setEmployeeNames] = useState<ReadonlyMap<string, string>>(new Map());
   const [positionNames, setPositionNames] = useState<ReadonlyMap<string, string>>(new Map());
-  const [scheduledByPosition, setScheduledByPosition] = useState<
+  // OCUPANTES vigentes por posição (diretório da loja) — fallback dos nomes do
+  // card quando a posição não tem ninguém escalado hoje. Não é escala.
+  const [occupantsByPosition, setOccupantsByPosition] = useState<
     ReadonlyMap<string, readonly string[]>
   >(new Map());
   const [connectivity, setConnectivity] = useState({ deviceOnline: true, readyToSync: false });
@@ -399,19 +409,20 @@ export function useSharedOperations(
       setEmployeeNames(new Map(employees.map((employee) => [employee.id, employee.fullName])));
       setPositionNames(new Map(positions.map((position) => [position.id, position.name])));
 
-      // Nomes dos cards: OCUPANTES VIGENTES por posição (diretório local,
-      // sem identidade — leitura do dispositivo). Presença planejada segue
-      // sendo consultada apenas DENTRO das ações identificadas (claim); a
-      // autorização de um ator NUNCA é reutilizada em leituras posteriores.
-      const scheduled = new Map<string, string[]>();
+      // FALLBACK dos nomes do card: OCUPANTES VIGENTES por posição (diretório
+      // local, sem identidade — leitura do dispositivo; mesma regra única de
+      // vigência do domínio). Só entra quando a posição não tem NINGUÉM
+      // escalado hoje: a presença planejada é a fonte oficial e vem de
+      // `plannedDay`. A autorização de um ator NUNCA é reutilizada em leituras.
+      const occupants = new Map<string, string[]>();
       const members = await container.team.members(FIXTURE_STORE.id);
       for (const member of members) {
         if (member.positionId === null) continue;
-        const names = scheduled.get(member.positionId) ?? [];
+        const names = occupants.get(member.positionId) ?? [];
         names.push(member.fullName);
-        scheduled.set(member.positionId, names);
+        occupants.set(member.positionId, names);
       }
-      setScheduledByPosition(scheduled);
+      setOccupantsByPosition(occupants);
 
       // leituras POR TAREFA em paralelo: sequenciais seriam 100–200
       // transações IndexedDB encadeadas com 100 tarefas (tablet fraco)
@@ -1051,6 +1062,19 @@ export function useSharedOperations(
     });
   }, [endActorContext]);
 
+  // colaboradores PLANEJADOS hoje (Escala V1) — nunca o cadastro inteiro (§4)
+  const plannedEmployees = plannedDay?.status === 'resolved' ? plannedDay.employees : [];
+
+  // ESCALADOS hoje POR POSIÇÃO: fonte oficial dos nomes do card. Derivada da
+  // presença planejada; o diretório de ocupantes só entra como fallback.
+  const scheduledNamesByPosition = new Map<string, string[]>();
+  for (const employee of plannedEmployees) {
+    if (employee.positionId === null) continue;
+    const names = scheduledNamesByPosition.get(employee.positionId) ?? [];
+    names.push(employee.fullName);
+    scheduledNamesByPosition.set(employee.positionId, names);
+  }
+
   const now = new Date(nowMs);
   const views: readonly SharedTaskView[] = records.map((record) => {
     const positionId = record.assignedPositionId ?? record.template.targetPositionId;
@@ -1059,6 +1083,12 @@ export function useSharedOperations(
     const dueAt = new Date(record.dueAt);
     // regra oficial única (domínio): entregue/terminal nunca atrasa (§9)
     const dueState = dueStateFor(record.status, dueAt, now, dueSoonWindowMs);
+    // ESCALADOS da posição primeiro (fonte oficial); só sem ninguém escalado
+    // o card cai nos OCUPANTES vigentes — e diz que estão fora da escala.
+    const scheduledNames =
+      positionId === null ? [] : (scheduledNamesByPosition.get(positionId) ?? []);
+    const occupantNames = positionId === null ? [] : (occupantsByPosition.get(positionId) ?? []);
+    const assigneeNames = scheduledNames.length > 0 ? scheduledNames : occupantNames;
     return {
       id: record.id,
       title: record.template.title,
@@ -1066,7 +1096,8 @@ export function useSharedOperations(
       statusLabel: STATUS_LABEL[record.status],
       positionId,
       positionName: positionId === null ? null : (positionNames.get(positionId) ?? 'Equipe'),
-      assigneeNames: positionId === null ? [] : (scheduledByPosition.get(positionId) ?? []),
+      assigneeNames,
+      assigneesOffSchedule: scheduledNames.length === 0 && occupantNames.length > 0,
       startedByEmployeeId: startedBy,
       startedByName: startedBy === null ? null : (employeeNames.get(startedBy) ?? startedBy),
       startTime: timeOfDay(record.plannedStartAt, FIXTURE_STORE.timeZone),
@@ -1105,9 +1136,6 @@ export function useSharedOperations(
         return true;
     }
   };
-
-  // colaboradores PLANEJADOS hoje (Escala V1) — nunca o cadastro inteiro (§4)
-  const plannedEmployees = plannedDay?.status === 'resolved' ? plannedDay.employees : [];
 
   const byAssignment = (view: SharedTaskView): boolean => {
     if (assignmentFilter === null) return true;
