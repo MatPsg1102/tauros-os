@@ -977,7 +977,9 @@ export function SharedOperationsScreen({
         </div>
       )}
 
-      {view.phase === 'loading' && <LoadingState label="Carregando a operação de hoje" />}
+      {view.phase === 'loading' && (
+        <LoadingState label="Carregando a operação de hoje" variant="skeleton" lines={4} />
+      )}
       {view.phase === 'error' && (
         <ErrorState
           title="Não foi possível carregar a operação"

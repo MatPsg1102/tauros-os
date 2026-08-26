@@ -186,7 +186,7 @@ describe('acesso do encarregado', () => {
 
     rerender(app('encarregado'));
     expect(
-      await screen.findByText('Você não possui permissão para acessar esta área.'),
+      await screen.findByText(/Você não possui permissão para acessar esta área/),
     ).toBeTruthy();
     expect(screen.queryByRole('button', { name: '+ Nova tarefa' })).toBeNull();
   });

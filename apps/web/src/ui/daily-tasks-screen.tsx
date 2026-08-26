@@ -204,7 +204,9 @@ export function DailyTasksScreen({
         </Alert>
       )}
 
-      {view.phase === 'loading' && <LoadingState label="Carregando as tarefas de hoje" />}
+      {view.phase === 'loading' && (
+        <LoadingState label="Carregando as tarefas de hoje" variant="skeleton" lines={4} />
+      )}
 
       {view.phase === 'no-session' && (
         <EmptyState

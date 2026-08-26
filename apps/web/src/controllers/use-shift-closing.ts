@@ -139,7 +139,9 @@ export function useShiftClosing(
           return;
         }
         case 'SNAPSHOT_EXPIRED':
-          setActionError('A autorização expirou. Identifique-se novamente para fechar o turno.');
+          setActionError(
+            'Sua identificação expirou. Identifique-se novamente para fechar o turno.',
+          );
           setPhase('error');
           return;
         default:

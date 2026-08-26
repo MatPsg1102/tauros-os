@@ -473,6 +473,16 @@ function ShiftSection({
               </div>
               {session.closeSyncStatus === 'synced' ? (
                 <Text tone="secondary">Confirmado pelo servidor.</Text>
+              ) : session.closeSyncStatus === 'failed' ? (
+                // estado TERMINAL da fila: prometer envio automático mentiria
+                <>
+                  <Text tone="secondary">
+                    O registro está seguro neste aparelho, mas o envio falhou. Tente de novo.
+                  </Text>
+                  <Button variant="secondary" onClick={() => void actions.retrySync()}>
+                    Tentar sincronizar agora
+                  </Button>
+                </>
               ) : (
                 <>
                   <Text tone="secondary">
@@ -710,13 +720,16 @@ export function SupervisorDashboardScreen({
       )}
 
       {view.phase === 'bootstrapping' && <LoadingState label="Preparando a área do encarregado" />}
-      {view.phase === 'loading' && <LoadingState label="Carregando o quadro da equipe" />}
+      {view.phase === 'loading' && (
+        <LoadingState label="Carregando o quadro da equipe" variant="skeleton" lines={4} />
+      )}
 
       {view.phase === 'identify' && <IdentifyStep view={view} actions={actions} />}
 
       {view.phase === 'denied' && (
         <Alert status="warning" title="Acesso restrito">
-          Você não possui permissão para acessar esta área.
+          Você não possui permissão para acessar esta área. Procure o responsável pela unidade para
+          ajustar o acesso.
         </Alert>
       )}
 
