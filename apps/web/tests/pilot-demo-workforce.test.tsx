@@ -77,11 +77,8 @@ async function enterPinAndConfirm(pin: string): Promise<HTMLElement> {
   const dialog = await screen.findByRole('dialog');
   const name = OPERATOR_BY_PIN[pin];
   if (name !== undefined) {
-    fireEvent.change(within(dialog).getByRole('combobox'), {
-      target: {
-        value: (within(dialog).getByRole('option', { name }) as HTMLOptionElement).value,
-      },
-    });
+    // V2 glove-first: a identidade é um RadioGroup (alvos 64px), não Select
+    fireEvent.click(within(dialog).getByRole('radio', { name }));
   }
   const cells = within(dialog).getAllByLabelText(/Dígito \d de 6/);
   pin.split('').forEach((digit, index) => {
@@ -101,7 +98,7 @@ async function openDay(): Promise<void> {
 
 async function findCard(title: string): Promise<HTMLElement> {
   const heading = await screen.findByRole('heading', { name: title });
-  return heading.closest('div[class]') as HTMLElement;
+  return heading.closest('article') as HTMLElement;
 }
 
 /** Autorização efêmera do encarregado — só para semear pela via oficial. */

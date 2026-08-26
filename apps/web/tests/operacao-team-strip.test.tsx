@@ -205,7 +205,7 @@ function cardTitles(): readonly string[] {
 function card(title: string): HTMLElement {
   const section = screen.getByRole('region', { name: /Tarefas d/ });
   const heading = within(section).getByRole('heading', { level: 3, name: title });
-  return heading.closest('.t-card') as HTMLElement;
+  return heading.closest('article') as HTMLElement;
 }
 
 async function renderReady(): Promise<void> {

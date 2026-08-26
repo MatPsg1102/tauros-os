@@ -405,7 +405,17 @@ export function useSharedOperations(
       setRoster(roster);
       setPinLength(policy.length);
       setNowMs(container.clock().getTime());
-      setRecords([...tasks].sort((a, b) => a.dueAt.localeCompare(b.dueAt)));
+      // ordem de APRESENTAÇÃO do quadro (leitura pura): por vencimento
+      // (dueAt — contrato aprovado), com PARTIÇÃO aberta/resolvida — trabalho
+      // entregue (DONE/SKIPPED) nunca fica acima do que ainda exige ação
+      setRecords(
+        [...tasks].sort((a, b) => {
+          const resolvedA = a.status === 'DONE' || a.status === 'SKIPPED' ? 1 : 0;
+          const resolvedB = b.status === 'DONE' || b.status === 'SKIPPED' ? 1 : 0;
+          if (resolvedA !== resolvedB) return resolvedA - resolvedB;
+          return a.dueAt.localeCompare(b.dueAt);
+        }),
+      );
       setEmployeeNames(new Map(employees.map((employee) => [employee.id, employee.fullName])));
       setPositionNames(new Map(positions.map((position) => [position.id, position.name])));
 

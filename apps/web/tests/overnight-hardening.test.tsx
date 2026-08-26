@@ -126,11 +126,8 @@ async function seedMarinaWithTask(): Promise<void> {
 /** Identifica no diálogo do quadro (select + PIN + confirmar). */
 async function identifyInDialog(name: string, pin: string): Promise<void> {
   const dialog = await screen.findByRole('dialog');
-  fireEvent.change(within(dialog).getByRole('combobox'), {
-    target: {
-      value: (within(dialog).getByRole('option', { name }) as HTMLOptionElement).value,
-    },
-  });
+  // V2 glove-first: a identidade é um RadioGroup (alvos 64px), não Select
+  fireEvent.click(within(dialog).getByRole('radio', { name }));
   const cells = within(dialog).getAllByLabelText(/Dígito \d de 6/);
   pin.split('').forEach((digit, index) => {
     fireEvent.keyDown(cells[index] as HTMLElement, { key: digit });
@@ -160,14 +157,14 @@ describe('P0 — contenção de autoria', () => {
     const heading = screen.getAllByRole('heading', {
       name: 'Higienizar bancada',
     })[0] as HTMLElement;
-    const card = heading.closest('div[class]') as HTMLElement;
+    const card = heading.closest('article') as HTMLElement;
     fireEvent.click(within(card).getByRole('button', { name: 'Iniciar' }));
     await identifyInDialog('Marina Álvares', '224466');
     await screen.findByText('Tarefa iniciada.');
     const started = screen.getAllByRole('heading', {
       name: 'Higienizar bancada',
     })[0] as HTMLElement;
-    const startedCard = started.closest('div[class]') as HTMLElement;
+    const startedCard = started.closest('article') as HTMLElement;
     fireEvent.click(within(startedCard).getByRole('button', { name: 'Finalizar' }));
     await identifyInDialog('Marina Álvares', '224466');
     await screen.findByRole('dialog', { name: /Higienizar bancada/ });
@@ -205,7 +202,7 @@ describe('P1 — a UI nunca congela em busy', () => {
     const heading = screen.getAllByRole('heading', {
       name: 'Higienizar bancada',
     })[0] as HTMLElement;
-    const card = heading.closest('div[class]') as HTMLElement;
+    const card = heading.closest('article') as HTMLElement;
     fireEvent.click(within(card).getByRole('button', { name: 'Iniciar' }));
     await identifyInDialog('Marina Álvares', '224466');
 

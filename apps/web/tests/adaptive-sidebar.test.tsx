@@ -178,7 +178,7 @@ describe('Desktop (hover real) — rail, expansão por aproximação e pin', () 
     // conteúdo completo NÃO está montado no estado recolhido
     expect(screen.queryByText('Equipe de hoje')).toBeNull();
     // §6: recolher não esconde a situação — alertas do quadro continuam lá
-    const alerts = screen.getByRole('group', { name: 'Alertas de prazo' });
+    const alerts = screen.getByRole('group', { name: 'Alertas da operação' });
     expect(within(alerts).getByRole('button', { name: /1 tarefa atrasada/ })).toBeTruthy();
     expect(within(alerts).getByRole('button', { name: /1 próxima do prazo/ })).toBeTruthy();
   });

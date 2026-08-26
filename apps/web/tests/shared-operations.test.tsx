@@ -179,11 +179,8 @@ async function enterPinAndConfirm(pin: string): Promise<void> {
   const dialog = await screen.findByRole('dialog');
   const name = OPERATOR_BY_PIN[pin];
   if (name !== undefined) {
-    fireEvent.change(within(dialog).getByRole('combobox'), {
-      target: {
-        value: (within(dialog).getByRole('option', { name }) as HTMLOptionElement).value,
-      },
-    });
+    // V2 glove-first: a identidade é um RadioGroup (alvos 64px), não Select
+    fireEvent.click(within(dialog).getByRole('radio', { name }));
   }
   const cells = within(dialog).getAllByLabelText(/Dígito \d de 6/);
   pin.split('').forEach((digit, index) => {
@@ -194,7 +191,7 @@ async function enterPinAndConfirm(pin: string): Promise<void> {
 
 async function actOnCard(title: string, action: string, pin: string): Promise<void> {
   const heading = await screen.findByRole('heading', { name: title });
-  const card = heading.closest('div[class]') as HTMLElement;
+  const card = heading.closest('article') as HTMLElement;
   fireEvent.click(within(card).getByRole('button', { name: action }));
   await enterPinAndConfirm(pin);
 }
@@ -353,7 +350,9 @@ describe('FLUXO B — foto obrigatória + conferência', () => {
     // conferência do encarregado (PIN Elber) com evidência visível
     await actOnCard('Limpeza da serra', 'Conferir', '123456');
     const review = await findTaskDialog('Limpeza da serra');
-    expect(within(review).getByText(/Executor: Marina Álvares/)).toBeTruthy();
+    // V2: rótulo e valor em linhas separadas (fatos escaneáveis da decisão)
+    expect(within(review).getByText('Executor')).toBeTruthy();
+    expect(within(review).getByText('Marina Álvares')).toBeTruthy();
     expect(within(review).getByAltText('Evidência da execução')).toBeTruthy();
     fireEvent.click(within(review).getByRole('button', { name: 'Aprovar' }));
     await screen.findByText('Execução aprovada.');

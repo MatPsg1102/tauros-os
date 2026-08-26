@@ -341,8 +341,8 @@ describe('Alertas de prazo — topo do quadro', () => {
     await seedStandardDay();
     await renderReady();
     // destaque no card: ícone + texto (nunca só cor)
-    expect(screen.getByText(/🔴 Atrasada há 1 h/)).toBeTruthy();
-    expect(screen.getByText(/⚠ Vence em 20 min/)).toBeTruthy();
+    expect(screen.getByText(/Atrasada há 1 h/)).toBeTruthy();
+    expect(screen.getByText(/Vence em 20 min/)).toBeTruthy();
     // alerta "atrasadas" filtra OVERDUE
     fireEvent.click(screen.getByRole('button', { name: /1 tarefa atrasada/ }));
     expect(cardTitles()).toEqual(['Limpeza da serra']);
@@ -355,15 +355,15 @@ describe('Alertas de prazo — topo do quadro', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await seedStandardDay();
     await renderReady();
-    expect(screen.getByText(/⚠ Vence em 20 min/)).toBeTruthy();
+    expect(screen.getByText(/Vence em 20 min/)).toBeTruthy();
 
     // 11:00 → 11:25 (5 min após o vencimento das 11:20) + tick de minuto
     currentNow = new Date('2026-08-13T14:25:00.000Z');
     act(() => {
       vi.advanceTimersByTime(60_000);
     });
-    expect(screen.getByText(/🔴 Atrasada há 5 min/)).toBeTruthy();
-    expect(screen.queryByText(/⚠ Vence em/)).toBeNull();
+    expect(screen.getByText(/Atrasada há 5 min/)).toBeTruthy();
+    expect(screen.queryByText(/Vence em/)).toBeNull();
 
     // NENHUMA mutation: o status persistido segue PENDING (derivação pura)
     const tasks = await container.tasks.byWorkDate(FIXTURE_STORE.id, WORK_DATE);
