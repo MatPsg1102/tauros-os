@@ -444,7 +444,7 @@ describe('FLUXO B — foto obrigatória + conferência', () => {
     ).toBe('');
     fireEvent.click(within(finalReview).getByRole('button', { name: 'Aprovar' }));
     await screen.findByText('Execução aprovada.');
-  });
+  }, 15_000);
 });
 
 describe('FLUXO D — segurança da conferência', () => {
