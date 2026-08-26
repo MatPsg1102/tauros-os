@@ -320,7 +320,7 @@ export function ShiftOpeningScreen({
           <Card>
             <Stack gap={200}>
               <Alert status="warning" title="O dia operacional virou">
-                {`Seu turno de ${shortDateLabel(view.staleSessionDate)} continua aberto. Feche-o para começar o dia de hoje — o fechamento fica registrado com a sua identificação.`}
+                {`Seu turno de ${view.staleSessionDate !== null ? shortDateLabel(view.staleSessionDate) : 'outro dia'} continua aberto. Feche-o para começar o dia de hoje — o fechamento fica registrado com a sua identificação.`}
               </Alert>
               {view.actionError !== null && (
                 <Alert status="error" live="polite" title="Fechamento não realizado">
@@ -328,7 +328,10 @@ export function ShiftOpeningScreen({
                 </Alert>
               )}
               <Button fullWidth onClick={() => void actions.closeStaleShift()}>
-                Fechar turno de {shortDateLabel(view.staleSessionDate)}
+                Fechar turno de{' '}
+                {view.staleSessionDate !== null
+                  ? shortDateLabel(view.staleSessionDate)
+                  : 'outro dia'}
               </Button>
             </Stack>
           </Card>

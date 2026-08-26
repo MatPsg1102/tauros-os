@@ -21,17 +21,14 @@ import {
   ErrorState,
   Field,
   Flex,
-  Heading,
   Input,
   LoadingState,
   Page,
   PageHeader,
-  Panel,
-  PanelBody,
-  PanelHeader,
   PinInput,
   Radio,
   RadioGroup,
+  ResponsiveGrid,
   Section,
   SegmentedControl,
   Select,
@@ -53,6 +50,8 @@ import type {
   TeamManagementView,
 } from '../controllers/use-team-management.js';
 import { AttentionStrip, plural } from './attention-strip.js';
+import { shortDateLabel } from './format.js';
+import { OperationalTaskCard } from './operational-task-card.js';
 import { TeamManagementSection } from './team-management-section.js';
 
 const WEEKDAY_LABEL: Readonly<Record<Weekday, string>> = {
@@ -64,16 +63,6 @@ const WEEKDAY_LABEL: Readonly<Record<Weekday, string>> = {
   SAT: 'Sáb',
   SUN: 'Dom',
 };
-
-function stateBadge(task: SupervisorTaskView): ReactElement {
-  if (task.state === 'done') return <Badge status="success">Concluída</Badge>;
-  if (task.state === 'skipped') return <Badge status="neutral">Adiada</Badge>;
-  if (task.state === 'overdue') return <Badge status="warn">Atrasada</Badge>;
-  if (task.state === 'in-progress') return <Badge status="info">Em execução</Badge>;
-  if (task.state === 'awaiting-review') return <Badge status="info">Aguardando conferência</Badge>;
-  if (task.state === 'needs-correction') return <Badge status="warn">Correção necessária</Badge>;
-  return <Badge status="info">Pendente</Badge>;
-}
 
 function syncLine(task: SupervisorTaskView): string | null {
   if (task.syncStatus === 'queued') return 'Aguardando sincronização';
@@ -333,7 +322,7 @@ function CreateTaskDrawer({
               </RadioGroup>
 
               {effectiveRepeatMode === 'weekdays' && (
-                <Stack gap={100} aria-label="Dias da semana">
+                <Stack gap={100} role="group" aria-label="Dias da semana">
                   <Text role="label">Dias da semana</Text>
                   <Flex gap={100} wrap>
                     {ALL_WEEKDAYS.map((day) => (
@@ -441,7 +430,7 @@ function ShiftSection({
           {isOpen && (
             <>
               <div role="status">
-                <Text>Turno aberto em {session.operationalDate}.</Text>
+                <Text>Turno aberto em {shortDateLabel(session.operationalDate)}.</Text>
               </div>
               {session.syncStatus === 'synced' ? (
                 <Badge status="success">Confirmado pelo servidor</Badge>
@@ -633,40 +622,32 @@ function TaskItem({
   readonly positions: SupervisorDashboardView['assignablePositions'];
   readonly onAssign: SupervisorDashboardActions['assignTask'];
 }): ReactElement {
-  const sync = syncLine(task);
-  const window =
-    task.startTime !== null ? `${task.startTime}–${task.dueTime}` : `até ${task.dueTime}`;
+  // MESMA linha de operação dos outros quadros (vocabulário canônico +
+  // régua + hora âncora): o encarregado não gerencia num "outro sistema"
   return (
-    <Card>
-      <Stack gap={100}>
-        <Heading level={3}>{task.title}</Heading>
-        <Flex gap={100} wrap>
-          {stateBadge(task)}
-          {task.isUnassigned && <Badge status="warn">Sem responsável</Badge>}
-        </Flex>
-        <Text role="data" tone="secondary">
-          {task.assigneeNames.length > 0
-            ? `${task.positionName} — ${task.assigneeNames.join(', ')}`
-            : task.positionName}
-          {' · '}
-          {window}
-        </Text>
-        {task.requiresPhoto && <Text tone="secondary">Exige registro de foto.</Text>}
-        {sync !== null && (
-          <Text role="data" tone="secondary">
-            {sync}
-          </Text>
-        )}
-        {/* distribuição/REdistribuição: só enquanto ninguém pôs a mão —
-            execução viva e trabalho entregue não se redistribuem (domínio
-            rejeita TASK_IN_EXECUTION; a UI nem oferece) */}
-        {(task.state === 'pending' ||
-          task.state === 'overdue' ||
-          task.state === 'needs-correction') && (
-          <AssignControl task={task} positions={positions} onAssign={onAssign} />
-        )}
-      </Stack>
-    </Card>
+    <OperationalTaskCard
+      title={task.title}
+      state={task.state}
+      isUnassigned={task.isUnassigned}
+      timeCaption={task.startTime !== null ? `${task.startTime} →` : 'até'}
+      timePrimary={task.dueTime}
+      meta={
+        task.assigneeNames.length > 0
+          ? `${task.positionName} — ${task.assigneeNames.join(', ')}`
+          : task.positionName
+      }
+      requirementLabel={task.requiresPhoto ? '📷 Exige registro de foto' : null}
+      syncLabel={syncLine(task)}
+    >
+      {/* distribuição/REdistribuição: só enquanto ninguém pôs a mão —
+          execução viva e trabalho entregue não se redistribuem (domínio
+          rejeita TASK_IN_EXECUTION; a UI nem oferece) */}
+      {(task.state === 'pending' ||
+        task.state === 'overdue' ||
+        task.state === 'needs-correction') && (
+        <AssignControl task={task} positions={positions} onAssign={onAssign} />
+      )}
+    </OperationalTaskCard>
   );
 }
 
@@ -775,9 +756,10 @@ export function SupervisorDashboardScreen({
               ) : undefined
             }
           >
-            {/* exceções acionáveis (mesma linguagem da /operacao): tocar
-                filtra o quadro da equipe logo abaixo. Tudo em dia = calma. */}
-            <Stack gap={100}>
+            {/* UMA região para as tarefas do dia: exceções acionáveis, números
+                calmos, filtros e o próprio quadro — a strip filtra o que está
+                logo abaixo dela (mesma composição da /operacao) */}
+            <Stack gap={200}>
               <AttentionStrip
                 groupLabel="Alertas do dia"
                 tiles={[
@@ -819,79 +801,82 @@ export function SupervisorDashboardScreen({
                   },
                 ]}
               />
-              <Text role="data" tone="secondary">
-                Pendentes: {view.counts.pending} · Concluídas: {view.counts.done} · Adiadas:{' '}
-                {view.counts.skipped}
-              </Text>
-            </Stack>
-          </Section>
-
-          <Section title="Tarefas da equipe">
-            {view.assignError !== null && (
-              <Alert status="error" live="polite" title="Atribuição não realizada">
-                {view.assignError}
-              </Alert>
-            )}
-            <Panel>
-              <PanelHeader>
-                <Stack gap={200}>
-                  <SegmentedControl
-                    aria-label="Filtrar tarefas por situação"
-                    value={view.filter}
-                    onValueChange={(value) =>
-                      actions.setFilter(value as SupervisorDashboardView['filter'])
-                    }
-                    options={[
-                      { value: 'all', label: 'Todas' },
-                      { value: 'unassigned', label: 'Sem responsável' },
-                      { value: 'pending', label: 'Pendentes' },
-                      { value: 'overdue', label: 'Atrasadas' },
-                      { value: 'awaiting-review', label: 'Conferir' },
-                      { value: 'needs-correction', label: 'Devolvidas' },
-                      { value: 'done', label: 'Concluídas' },
-                    ]}
-                  />
-                  <Field label="Por funcionário">
-                    <Select
-                      value={view.positionFilter ?? ''}
-                      onChange={(event) =>
-                        actions.setPositionFilter(
-                          event.target.value === '' ? null : event.target.value,
-                        )
-                      }
-                    >
-                      <option value="">Toda a equipe</option>
-                      {view.positions.map((position) => (
-                        <option key={position.id} value={position.id}>
-                          {position.memberNames.length > 0
-                            ? position.memberNames.join(', ')
-                            : position.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                </Stack>
-              </PanelHeader>
-              <PanelBody>
-                {view.tasks.length === 0 ? (
-                  <EmptyState
-                    title="Nenhuma tarefa aqui"
-                    description="Não há tarefas nesta situação para hoje. Crie uma nova tarefa se necessário."
-                  />
-                ) : (
-                  <Stack gap={200}>
-                    {view.tasks.map((task) => (
-                      <TaskItem
-                        key={task.id}
-                        task={task}
-                        positions={view.assignablePositions}
-                        onAssign={actions.assignTask}
-                      />
-                    ))}
+              {/* números calmos no padrão de tile (caption sobre número) */}
+              <Flex gap={300} wrap>
+                {(
+                  [
+                    ['Pendentes', view.counts.pending],
+                    ['Concluídas', view.counts.done],
+                    ['Adiadas', view.counts.skipped],
+                  ] as const
+                ).map(([label, count]) => (
+                  <Stack key={label} gap={0}>
+                    <Text role="caption" tone="secondary">
+                      {label}
+                    </Text>
+                    <Text role="data">{count}</Text>
                   </Stack>
-                )}
-              </PanelBody>
-            </Panel>
+                ))}
+              </Flex>
+
+              {view.assignError !== null && (
+                <Alert status="error" live="polite" title="Atribuição não realizada">
+                  {view.assignError}
+                </Alert>
+              )}
+
+              <SegmentedControl
+                aria-label="Filtrar tarefas por situação"
+                value={view.filter}
+                onValueChange={(value) =>
+                  actions.setFilter(value as SupervisorDashboardView['filter'])
+                }
+                options={[
+                  { value: 'all', label: 'Todas' },
+                  { value: 'unassigned', label: 'Sem responsável' },
+                  { value: 'pending', label: 'Pendentes' },
+                  { value: 'overdue', label: 'Atrasadas' },
+                  { value: 'awaiting-review', label: 'Conferir' },
+                  { value: 'needs-correction', label: 'Devolvidas' },
+                  { value: 'done', label: 'Concluídas' },
+                ]}
+              />
+              <Field label="Por funcionário">
+                <Select
+                  value={view.positionFilter ?? ''}
+                  onChange={(event) =>
+                    actions.setPositionFilter(event.target.value === '' ? null : event.target.value)
+                  }
+                >
+                  <option value="">Toda a equipe</option>
+                  {view.positions.map((position) => (
+                    <option key={position.id} value={position.id}>
+                      {position.memberNames.length > 0
+                        ? position.memberNames.join(', ')
+                        : position.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              {view.tasks.length === 0 ? (
+                <EmptyState
+                  title="Nenhuma tarefa aqui"
+                  description="Não há tarefas nesta situação para hoje. Crie uma nova tarefa se necessário."
+                />
+              ) : (
+                <ResponsiveGrid itemSize="lg" gap={200}>
+                  {view.tasks.map((task) => (
+                    <TaskItem
+                      key={task.id}
+                      task={task}
+                      positions={view.assignablePositions}
+                      onAssign={actions.assignTask}
+                    />
+                  ))}
+                </ResponsiveGrid>
+              )}
+            </Stack>
           </Section>
 
           {teamView.enabled && <TeamManagementSection view={teamView} actions={teamActions} />}

@@ -126,6 +126,12 @@ describe('fechamento de turno na tela', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Fechar turno' }));
     await screen.findByRole('heading', { name: 'Fechar o turno agora?' });
     const dialog = screen.getByRole('dialog');
+    // V2: o operador fecha SABENDO o estado do dia — resumo em linhas.
+    // Sem tarefas materializadas neste fluxo, tudo zera e o aviso de
+    // trabalho em aberto corretamente NÃO aparece.
+    await within(dialog).findByText('Pendentes');
+    expect(within(dialog).getByText('Concluídas')).toBeTruthy();
+    expect(within(dialog).queryByText('Ainda há trabalho em aberto')).toBeNull();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Fechar turno' }));
 
     await screen.findByRole('heading', { name: 'Turno fechado' });
@@ -162,8 +168,9 @@ describe('fechamento de turno na tela', () => {
     await screen.findByRole('heading', { name: 'Turno fechado' });
     expect(screen.getByText('Aguardando conexão')).toBeTruthy();
     // V2: estados exclusivos — fechado, a seção "Turno aberto" (e sua linha
-    // de pendência) sai de cena; a pendência do FECHAMENTO permanece visível
-    expect(screen.getAllByText(/Salvo neste aparelho/).length).toBeGreaterThanOrEqual(1);
+    // de pendência) sai de cena; SÓ a pendência do FECHAMENTO permanece
+    expect(screen.getAllByText(/Salvo neste aparelho/)).toHaveLength(1);
+    expect(screen.queryByRole('heading', { name: 'Turno aberto' })).toBeNull();
 
     world.online = true;
     world.transport.available = true;

@@ -34,6 +34,14 @@ import type {
 import { operationalDateLabel } from './format.js';
 import { OperationalTaskCard } from './operational-task-card.js';
 
+/** Exceção primeiro no quadro pessoal (apresentação pura, estável). */
+function exceptionRank(task: DailyTaskItemView): number {
+  if (task.state === 'overdue') return 0;
+  if (task.state === 'needs-correction') return 1;
+  if (task.state === 'done' || task.state === 'skipped') return 3;
+  return 2;
+}
+
 function syncLabel(task: DailyTaskItemView): string | null {
   if (task.syncStatus === 'queued') return 'Salvo neste aparelho';
   if (task.syncStatus === 'synced') return 'Confirmado pelo servidor';
@@ -325,17 +333,7 @@ export function DailyTasksScreen({
               {/* exceção primeiro: atrasadas/devolvidas sobem; dentro de cada
                   grupo a ordem do carregador é preservada (apresentação pura) */}
               {[...view.tasks]
-                .sort((a, b) => {
-                  const rank = (task: DailyTaskItemView): number =>
-                    task.state === 'overdue'
-                      ? 0
-                      : task.state === 'needs-correction'
-                        ? 1
-                        : task.state === 'done' || task.state === 'skipped'
-                          ? 3
-                          : 2;
-                  return rank(a) - rank(b);
-                })
+                .sort((a, b) => exceptionRank(a) - exceptionRank(b))
                 .map((task) => (
                   <TaskCard
                     key={task.id}

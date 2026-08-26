@@ -129,7 +129,7 @@ describe('navegação integrada /turno ↔ /encarregado (identidade compartilhad
     // chega ao painel PRONTO, sem pedir PIN de novo (contexto compartilhado)
     rerender(app('encarregado'));
     await screen.findByRole('heading', { name: /Bom dia, Elber/ });
-    expect(screen.queryByText('Digite seu PIN')).toBeNull();
+    expect(screen.queryByText('Identificação do operador')).toBeNull();
     expect(screen.getByRole('button', { name: '+ Nova tarefa' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Turno' })).toBeTruthy();
 
@@ -139,7 +139,7 @@ describe('navegação integrada /turno ↔ /encarregado (identidade compartilhad
     expect(navigations()).toContain('/turno');
     rerender(app('turno'));
     await screen.findByRole('button', { name: 'Abrir turno' });
-    expect(screen.queryByText('Digite seu PIN')).toBeNull();
+    expect(screen.queryByText('Identificação do operador')).toBeNull();
   });
 });
 
@@ -196,10 +196,14 @@ describe('painel do encarregado', () => {
   it('mostra resumo, tarefas da equipe com responsável e status', async () => {
     render(app());
     await identifyElber();
-    expect(screen.getByText(/Pendentes: \d/)).toBeTruthy();
+    // V2: números em tiles (rótulo sobre valor), não texto corrido — o rótulo
+    // também existe como opção do filtro, por isso getAllByText
+    expect(screen.getAllByText('Pendentes').length).toBeGreaterThan(0);
     // fixtures: 4 tarefas do dia, com posição — nomes visíveis
     expect((await screen.findAllByText(/Produção — Carlos Nunes/)).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/até \d{2}:\d{2}/).length).toBeGreaterThan(0);
+    // V2: hora âncora ("até" + HH:mm em nós próprios na linha de operação)
+    expect(screen.getAllByText('até').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^\d{2}:\d{2}$/).length).toBeGreaterThan(0);
   });
 
   it('filtra por situação', async () => {
@@ -269,8 +273,9 @@ describe('compatibilidade com ocorrências legadas (IndexedDB anterior ao planej
     // painel carregou (heading Bom dia já confirmado) e a tarefa legada aparece
     expect(await screen.findByRole('heading', { name: 'Tarefa legada' })).toBeTruthy();
     // sem início planejado → mostra só "até HH:MM", sem crash
-    const legacyCard = screen.getByRole('heading', { name: 'Tarefa legada' }).closest('div');
-    expect(legacyCard?.textContent).toMatch(/até \d{2}:\d{2}/);
+    const legacyCard = screen.getByRole('heading', { name: 'Tarefa legada' }).closest('article');
+    expect(legacyCard?.textContent).toMatch(/até/);
+    expect(legacyCard?.textContent).toMatch(/\d{2}:\d{2}/);
   });
 });
 
@@ -356,7 +361,7 @@ describe('turno do encarregado (encarregado também é operador)', () => {
     expect(screen.queryByText(/Sem permissão para abrir turno/)).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Abrir turno' }));
-    await screen.findByText(/Turno aberto em \d{4}-\d{2}-\d{2}/);
+    await screen.findByText(/Turno aberto em \d{2}\/\d{2}/);
     await waitFor(() => expect(screen.getByText('Confirmado pelo servidor')).toBeTruthy());
     expect(screen.queryByRole('button', { name: 'Abrir turno' })).toBeNull();
     expect(screen.queryByText(/Sem permissão para fechar turno/)).toBeNull();
@@ -378,7 +383,7 @@ describe('turno do encarregado (encarregado também é operador)', () => {
     const open = await screen.findByRole('button', { name: 'Abrir turno' });
     fireEvent.click(open);
     fireEvent.click(open);
-    await screen.findByText(/Turno aberto em \d{4}-\d{2}-\d{2}/);
+    await screen.findByText(/Turno aberto em \d{2}\/\d{2}/);
     await waitFor(() => expect(world.transport.submissions).toBe(1));
     expect(await world.container.queue.all()).toHaveLength(1);
   });
@@ -390,7 +395,7 @@ describe('turno do encarregado (encarregado também é operador)', () => {
     await identifyElber();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Abrir turno' }));
-    await screen.findByText(/Turno aberto em \d{4}-\d{2}-\d{2}/);
+    await screen.findByText(/Turno aberto em \d{2}\/\d{2}/);
     expect(screen.getByText('Aguardando sincronização')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Fechar turno' }));
@@ -409,13 +414,13 @@ describe('turno do encarregado (encarregado também é operador)', () => {
     const first = render(app());
     await identifyElber();
     fireEvent.click(await screen.findByRole('button', { name: 'Abrir turno' }));
-    await screen.findByText(/Turno aberto em \d{4}-\d{2}-\d{2}/);
+    await screen.findByText(/Turno aberto em \d{2}\/\d{2}/);
     first.unmount();
 
     // "reload": nova árvore sobre os MESMOS stores — identidade se refaz
     render(app());
     await identifyElber();
-    await screen.findByText(/Turno aberto em \d{4}-\d{2}-\d{2}/);
+    await screen.findByText(/Turno aberto em \d{2}\/\d{2}/);
     expect(screen.queryByRole('button', { name: 'Abrir turno' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Fechar turno' })).toBeTruthy();
   });

@@ -351,9 +351,17 @@ describe('FLUXO B — foto obrigatória + conferência', () => {
     await actOnCard('Limpeza da serra', 'Conferir', '123456');
     const review = await findTaskDialog('Limpeza da serra');
     // V2: rótulo e valor em linhas separadas (fatos escaneáveis da decisão)
-    expect(within(review).getByText('Executor')).toBeTruthy();
-    expect(within(review).getByText('Marina Álvares')).toBeTruthy();
+    const executorRow = within(review).getByText('Executor').closest('div') as HTMLElement;
+    expect(within(executorRow).getByText('Marina Álvares')).toBeTruthy();
     expect(within(review).getByAltText('Evidência da execução')).toBeTruthy();
+    // V2: a miniatura AMPLIA num Modal — conferir exige julgar a foto
+    fireEvent.click(within(review).getByRole('button', { name: 'Ampliar foto 1 de 1' }));
+    const photoModal = await screen.findByRole('dialog', { name: 'Foto da evidência' });
+    expect(within(photoModal).getByAltText('Evidência da execução')).toBeTruthy();
+    fireEvent.click(within(photoModal).getByRole('button', { name: 'Fechar' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Foto da evidência' })).toBeNull();
+    });
     fireEvent.click(within(review).getByRole('button', { name: 'Aprovar' }));
     await screen.findByText('Execução aprovada.');
     fireEvent.click(screen.getByRole('radio', { name: 'Concluídas' }));

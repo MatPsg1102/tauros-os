@@ -60,6 +60,7 @@ export function useShiftClosing(
   const [actionError, setActionError] = useState<string | null>(null);
   const [summary, setSummary] = useState<ShiftClosingSummary | null>(null);
   const submittingRef = useRef(false);
+  const summaryRequestRef = useRef(0);
 
   const canCloseShift = identity.operator?.permissions.includes(CAPABILITY_SESSION_CLOSE) ?? false;
 
@@ -70,18 +71,26 @@ export function useShiftClosing(
     // encarregado fecha SABENDO o que fica para trás — avisar ≠ impedir
     setSummary(null);
     if (session !== null) {
-      void container.tasks.byWorkDate(FIXTURE_STORE.id, session.operationalDate).then((tasks) => {
-        setSummary({
-          done: tasks.filter((task) => task.status === 'DONE').length,
-          pending: tasks.filter(
-            (task) => task.status === 'PENDING' || task.status === 'IN_PROGRESS',
-          ).length,
-          overdue: tasks.filter((task) => task.status === 'OVERDUE').length,
-          awaitingReview: tasks.filter((task) => task.status === 'AWAITING_REVIEW').length,
-          needsCorrection: tasks.filter((task) => task.status === 'NEEDS_CORRECTION').length,
-          skipped: tasks.filter((task) => task.status === 'SKIPPED').length,
+      const requested = (summaryRequestRef.current += 1);
+      void container.tasks
+        .byWorkDate(FIXTURE_STORE.id, session.operationalDate)
+        .then((tasks) => {
+          // resolução tardia de um diálogo já fechado/reaberto não escreve
+          if (summaryRequestRef.current !== requested) return;
+          setSummary({
+            done: tasks.filter((task) => task.status === 'DONE').length,
+            pending: tasks.filter(
+              (task) => task.status === 'PENDING' || task.status === 'IN_PROGRESS',
+            ).length,
+            overdue: tasks.filter((task) => task.status === 'OVERDUE').length,
+            awaitingReview: tasks.filter((task) => task.status === 'AWAITING_REVIEW').length,
+            needsCorrection: tasks.filter((task) => task.status === 'NEEDS_CORRECTION').length,
+            skipped: tasks.filter((task) => task.status === 'SKIPPED').length,
+          });
+        })
+        .catch(() => {
+          // resumo é cortesia de leitura: sem ele o diálogo segue decidível
         });
-      });
     }
   }, [container, session]);
 

@@ -340,7 +340,7 @@ describe('Alertas de prazo — topo do quadro', () => {
   it('cards destacam ATRASADA/PRÓXIMA e os alertas do topo filtram ao toque', async () => {
     await seedStandardDay();
     await renderReady();
-    // destaque no card: ícone + texto (nunca só cor)
+    // destaque no card: badge semântico com texto + régua de cor (nunca só cor)
     expect(screen.getByText(/Atrasada há 1 h/)).toBeTruthy();
     expect(screen.getByText(/Vence em 20 min/)).toBeTruthy();
     // alerta "atrasadas" filtra OVERDUE
@@ -423,4 +423,37 @@ describe('Acessibilidade', () => {
     await screen.findAllByRole('heading', { name: 'Produzir linguiça' });
     expect((await axe(dom)).violations).toEqual([]);
   }, 30_000);
+});
+
+describe('V2 — tiles de atenção e partição do quadro', () => {
+  it('tile "sem responsável" filtra o quadro ao toque (e o toque de novo limpa)', async () => {
+    await seedStandardDay();
+    await renderReady();
+
+    // Higienizar bancada não tem posição → 1 sem responsável na faixa
+    fireEvent.click(screen.getByRole('button', { name: /1 sem responsável/ }));
+    expect(cardTitles()).toEqual(['Higienizar bancada']);
+    // toque de novo desfaz o filtro (mesmo contrato dos demais tiles)
+    fireEvent.click(screen.getByRole('button', { name: /1 sem responsável/ }));
+    expect(cardTitles()).toHaveLength(4);
+  });
+
+  it('partição aberta/resolvida: concluída de vencimento cedo afunda no quadro', async () => {
+    await seedStandardDay();
+    // resolve a tarefa de vencimento MAIS CEDO (Limpeza da serra, 10:00)
+    const tasks = await container.tasks.byWorkDate(FIXTURE_STORE.id, WORK_DATE);
+    const serra = tasks.find((task) => task.template.title === 'Limpeza da serra');
+    if (serra === undefined) throw new Error('seed sem a serra');
+    await container.tasks.save({ ...serra, status: 'DONE' });
+
+    await renderReady();
+    // ordem por dueAt PRESERVADA dentro do grupo aberto; a DONE (dueAt mais
+    // cedo do dia) deixa de furar a fila do trabalho que ainda exige ação
+    expect(cardTitles()).toEqual([
+      'Produzir linguiça',
+      'Fechar câmara fria',
+      'Higienizar bancada',
+      'Limpeza da serra',
+    ]);
+  });
 });

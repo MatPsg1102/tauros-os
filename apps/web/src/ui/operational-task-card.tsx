@@ -103,7 +103,7 @@ export function OperationalTaskCard({
               style={{
                 fontSize: cssVar('emphasis-level2-size'),
                 fontWeight: cssVar('emphasis-level2-weight'),
-                lineHeight: 1,
+                lineHeight: cssVar('type-role-heading-leading'),
               }}
             >
               {timePrimary}

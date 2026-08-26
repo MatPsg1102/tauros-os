@@ -8,6 +8,7 @@
 
 import { useEffect, useId, useRef, useState, type ChangeEvent, type ReactElement } from 'react';
 
+import { cssVar } from '@tauros/tokens';
 import {
   Alert,
   Avatar,
@@ -396,14 +397,26 @@ function EvidenceGallery({
   return (
     <>
       <Flex gap={100} wrap>
-        {items.map((item) =>
+        {items.map((item, index) =>
           item.url !== null ? (
+            // alvo glove-first mesmo para foto estreita + rótulo que distingue
+            // as miniaturas para leitor de tela
             <button
               key={item.id}
               type="button"
-              aria-label="Ampliar foto"
+              aria-label={`Ampliar foto ${String(index + 1)} de ${String(items.length)}`}
               onClick={() => setExpanded(item.url)}
-              style={{ padding: 0, border: 0, background: 'none', cursor: 'pointer' }}
+              style={{
+                padding: 0,
+                border: 0,
+                background: 'none',
+                cursor: 'pointer',
+                minWidth: cssVar('size-control-min'),
+                minHeight: cssVar('size-control-min'),
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
             >
               <img
                 src={item.url}

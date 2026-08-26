@@ -138,7 +138,8 @@ describe('WHEN_SCHEDULED usa o resolver REAL da Escala Operacional', () => {
     await registerMember('João da Silva', 'Açougueiro 1', 'Equipe A');
     await createWhenScheduledTask('Organizar balcão antes do fechamento', 'Açougueiro 1');
     await screen.findByRole('heading', { name: 'Organizar balcão antes do fechamento' });
-    expect(screen.getAllByText(/17:00–19:00/).length).toBeGreaterThan(0);
+    // V2: janela como legenda "17:00 →" + hora âncora "19:00"
+    expect(screen.getAllByText('17:00 →').length).toBeGreaterThan(0);
     view.unmount();
 
     // 14/08 (Equipe B): a posição NÃO está escalada — nenhuma ocorrência nova

@@ -86,7 +86,7 @@ describe('jornada vertical do encarregado', () => {
 
     // 2) abre o PRÓPRIO turno pelo painel
     fireEvent.click(await screen.findByRole('button', { name: 'Abrir turno' }));
-    await screen.findByText(/Turno aberto em \d{4}-\d{2}-\d{2}/);
+    await screen.findByText(/Turno aberto em \d{2}\/\d{2}/);
 
     // snapshot que atravessou a aplicação carrega o perfil COMPLETO —
     // autorização veio das permissões efetivas, não de nome/cargo
@@ -121,7 +121,9 @@ describe('jornada vertical do encarregado', () => {
     // 4) tarefa aparece imediatamente no quadro da equipe, com responsável e horário
     await screen.findByRole('heading', { name: 'Conferir estoque de embalagens' });
     expect(screen.getAllByText(/Apoio — Rita Belmonte/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/14:00–15:30/).length).toBeGreaterThan(0);
+    // V2: janela vira legenda "14:00 →" + hora âncora "15:30" (nós próprios)
+    expect(screen.getAllByText('14:00 →').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('15:30').length).toBeGreaterThan(0);
 
     // persistência real (repositório local) + domínio validado
     const templates = await world.container.templates.byStore('store-centro-0001');
