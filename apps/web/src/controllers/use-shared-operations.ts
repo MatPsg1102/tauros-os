@@ -22,6 +22,7 @@ import type {
 } from '@tauros/contracts';
 
 import type { AppContainer } from '../wiring/container.js';
+import { timeOfDay } from './time-of-day.js';
 import { FIXTURE_STORE } from '../wiring/fixtures.js';
 import { identityRejectionMessage } from './identity-messages.js';
 
@@ -245,28 +246,7 @@ const ACTION_PROMPT: Readonly<Record<SharedAction, string>> = {
 
 // formatter CACHEADO por fuso: construir Intl.DateTimeFormat é caro e este
 // caminho roda por tarefa a cada render (com 100 tarefas + tick de minuto,
-// seriam centenas de construções por minuto)
-const TIME_FORMATTERS = new Map<string, Intl.DateTimeFormat>();
-function timeFormatterFor(timeZone: string): Intl.DateTimeFormat {
-  let formatter = TIME_FORMATTERS.get(timeZone);
-  if (formatter === undefined) {
-    formatter = new Intl.DateTimeFormat('pt-BR', {
-      timeZone,
-      hourCycle: 'h23',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-    TIME_FORMATTERS.set(timeZone, formatter);
-  }
-  return formatter;
-}
-
-function timeOfDay(iso: string | null | undefined, timeZone: string): string | null {
-  if (iso == null || iso === '') return null;
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return null;
-  return timeFormatterFor(timeZone).format(date);
-}
+// (timeOfDay compartilhado — ver controllers/time-of-day.ts)
 
 function syncLabelFor(status: DailyTaskRecord['syncStatus']): string | null {
   if (status === 'queued') return 'Salvo neste aparelho — aguardando sincronização';

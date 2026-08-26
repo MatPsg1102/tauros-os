@@ -84,9 +84,8 @@ function app(route: 'turno' | 'tarefas'): ReactElement {
 
 async function identifyAs(name: string, pin: readonly string[]): Promise<void> {
   await screen.findByRole('heading', { name: 'Abertura de turno' });
-  const select = await screen.findByRole('combobox');
-  const option = (screen.getByText(name) as HTMLOptionElement).value;
-  fireEvent.change(select, { target: { value: option } });
+  // V2 glove-first: identificação por RadioGroup (alvos 64px), não Select
+  fireEvent.click(await screen.findByRole('radio', { name }));
   const cells = screen.getAllByLabelText(/Dígito \d de 6/);
   pin.forEach((digit, index) => {
     fireEvent.keyDown(cells[index] as HTMLElement, { key: digit });
@@ -162,8 +161,9 @@ describe('fechamento de turno na tela', () => {
 
     await screen.findByRole('heading', { name: 'Turno fechado' });
     expect(screen.getByText('Aguardando conexão')).toBeTruthy();
-    // abertura E fechamento pendentes: a mesma linguagem para os dois
-    expect(screen.getAllByText(/Salvo neste aparelho/).length).toBeGreaterThanOrEqual(2);
+    // V2: estados exclusivos — fechado, a seção "Turno aberto" (e sua linha
+    // de pendência) sai de cena; a pendência do FECHAMENTO permanece visível
+    expect(screen.getAllByText(/Salvo neste aparelho/).length).toBeGreaterThanOrEqual(1);
 
     world.online = true;
     world.transport.available = true;
@@ -223,7 +223,8 @@ describe('quadro de tarefas do dia', () => {
       await screen.findByRole('heading', { name: 'Higienizar bancada de manipulação' }),
     ).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Conferir reposição da vitrine' })).toBeTruthy();
-    expect(screen.getAllByText('A fazer')).toHaveLength(2);
+    // 2 badges de estado + 1 rótulo do resumo em linhas (V2)
+    expect(screen.getAllByText('A fazer')).toHaveLength(3);
     expect((await axe(container)).violations).toEqual([]);
   });
 

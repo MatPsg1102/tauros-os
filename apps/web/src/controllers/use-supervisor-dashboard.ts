@@ -23,6 +23,7 @@ import {
 } from '@tauros/contracts';
 
 import type { AppContainer } from '../wiring/container.js';
+import { timeOfDay } from './time-of-day.js';
 import { FIXTURE_STORE } from '../wiring/fixtures.js';
 import { useOperatorSession, type IdentifiedOperatorView } from './operator-session-context.js';
 import { identityRejectionMessage } from './identity-messages.js';
@@ -194,22 +195,8 @@ function greetingFor(now: Date, timeZone: string): string {
   return 'Boa noite';
 }
 
-/**
- * HH:MM no fuso da loja, TOLERANTE a valor ausente/ inválido — ocorrências
- * materializadas ANTES do planejamento (IndexedDB legado) não têm
- * plannedStartAt; devolvemos null em vez de estourar `new Date(inválido)`.
- */
-function timeOfDay(iso: string | null | undefined, timeZone: string): string | null {
-  if (iso === null || iso === undefined || iso === '') return null;
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat('pt-BR', {
-    timeZone,
-    hourCycle: 'h23',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
-}
+// (timeOfDay compartilhado, tolerante a valor ausente/inválido —
+// ver controllers/time-of-day.ts)
 
 /** "HH:MM" → minutos do dia. Entrada inválida vira 0 (o domínio rejeita). */
 function hhmmToMinutes(value: string): number {

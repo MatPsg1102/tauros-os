@@ -94,9 +94,8 @@ function page(): ReactElement {
 
 async function identifyAs(name: string, pin: readonly string[]): Promise<void> {
   await screen.findByRole('heading', { name: 'Abertura de turno' });
-  const select = await screen.findByRole('combobox');
-  const option = (screen.getByText(name) as HTMLOptionElement).value;
-  fireEvent.change(select, { target: { value: option } });
+  // V2 glove-first: identificação por RadioGroup (alvos 64px), não Select
+  fireEvent.click(await screen.findByRole('radio', { name }));
   const cells = screen.getAllByLabelText(/Dígito \d de 6/);
   pin.forEach((digit, index) => {
     fireEvent.keyDown(cells[index] as HTMLElement, { key: digit });

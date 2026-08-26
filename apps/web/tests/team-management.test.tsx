@@ -166,9 +166,8 @@ describe('acesso à Gestão de Equipe (capability)', () => {
     // Marina identifica-se no /turno (session.open, SEM gestão de equipe)
     const { rerender } = render(app('turno'));
     await screen.findByRole('heading', { name: 'Abertura de turno' });
-    const select = await screen.findByRole('combobox');
-    const option = (screen.getByText('Marina Álvares') as HTMLOptionElement).value;
-    fireEvent.change(select, { target: { value: option } });
+    // V2 glove-first: identificação por RadioGroup (alvos 64px), não Select
+    fireEvent.click(await screen.findByRole('radio', { name: 'Marina Álvares' }));
     const cells = screen.getAllByLabelText(/Dígito \d de 6/);
     ['2', '2', '4', '4', '6', '6'].forEach((digit, index) => {
       fireEvent.keyDown(cells[index] as HTMLElement, { key: digit });

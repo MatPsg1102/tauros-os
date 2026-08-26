@@ -10,6 +10,7 @@ import { operationalDateFor, storeDayStartFor } from '@tauros/application';
 import type { DailyTaskRecord, OperatorSessionRecord, TaskSyncStatus } from '@tauros/contracts';
 
 import type { AppContainer } from '../wiring/container.js';
+import { timeOfDay } from './time-of-day.js';
 import { FIXTURE_STORE } from '../wiring/fixtures.js';
 import { useOperatorSession } from './operator-session-context.js';
 
@@ -43,6 +44,8 @@ export interface DailyTaskItemView {
   readonly title: string;
   readonly state: DailyTaskItemState;
   readonly dueAt: string;
+  /** Horário-limite "HH:mm" no fuso da LOJA (apresentação pronta). */
+  readonly dueTime: string | null;
   readonly requiresPhoto: boolean;
   readonly expectedRange: { readonly min: number | null; readonly max: number | null } | null;
   readonly syncStatus: TaskSyncStatus | null;
@@ -100,6 +103,7 @@ function toItem(record: DailyTaskRecord): DailyTaskItemView {
     title: record.template.title,
     state,
     dueAt: record.dueAt,
+    dueTime: timeOfDay(record.dueAt, FIXTURE_STORE.timeZone),
     requiresPhoto: record.template.requiresPhoto,
     expectedRange: hasRange
       ? { min: record.expectedMinSnapshot, max: record.expectedMaxSnapshot }
