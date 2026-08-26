@@ -332,25 +332,40 @@ export function OperationsSidebar({ view, actions }: OperationsSidebarProps): Re
         if (!next) openPanel();
       }}
     >
+      {/* V2: tocar um sinal da rail já APLICA o filtro (leitura pura) além
+          de abrir o painel — a triagem mais comum deixa de custar dois
+          passos com luva */}
       <NavigationItem
         label={`Atrasadas (${String(view.counts.late)})`}
         icon={railGlyph(view.counts.late, 'error', '🔴')}
-        onSelect={openPanel}
+        onSelect={() => {
+          actions.setDueFilter('overdue');
+          openPanel();
+        }}
       />
       <NavigationItem
         label={`Próximas do prazo (${String(view.counts.dueSoon)})`}
         icon={railGlyph(view.counts.dueSoon, 'warn', '⚠')}
-        onSelect={openPanel}
+        onSelect={() => {
+          actions.setDueFilter('due-soon');
+          openPanel();
+        }}
       />
       <NavigationItem
         label={`Conferir (${String(view.counts.awaitingReview)})`}
         icon={railGlyph(view.counts.awaitingReview, 'info', '✓')}
-        onSelect={openPanel}
+        onSelect={() => {
+          actions.setFilter('review');
+          openPanel();
+        }}
       />
       <NavigationItem
         label={`Devolvidas (${String(view.counts.needsCorrection)})`}
         icon={railGlyph(view.counts.needsCorrection, 'warn', '↩')}
-        onSelect={openPanel}
+        onSelect={() => {
+          actions.setFilter('returned');
+          openPanel();
+        }}
       />
       <NavigationItem
         label={`Equipe de hoje (${String(view.teamToday.length)})`}

@@ -9,17 +9,14 @@ import { useState, type ReactElement } from 'react';
 
 import {
   Alert,
-  Badge,
   Banner,
   Button,
-  Card,
   EmptyState,
   ErrorState,
   Field,
   Flex,
-  Heading,
-  Input,
   LoadingState,
+  NumberInput,
   Page,
   PageHeader,
   Section,
@@ -34,15 +31,15 @@ import type {
   DailyTasksActions,
   DailyTasksView,
 } from '../controllers/use-daily-tasks.js';
+import { operationalDateLabel } from './format.js';
+import { OperationalTaskCard } from './operational-task-card.js';
 
-function stateBadge(task: DailyTaskItemView): ReactElement {
-  if (task.state === 'done') return <Badge status="success">Concluída</Badge>;
-  if (task.state === 'skipped') return <Badge status="neutral">Adiada</Badge>;
-  if (task.state === 'overdue') return <Badge status="warn">Atrasada</Badge>;
-  if (task.state === 'in-progress') return <Badge status="info">Em execução</Badge>;
-  if (task.state === 'awaiting-review') return <Badge status="info">Aguardando conferência</Badge>;
-  if (task.state === 'needs-correction') return <Badge status="warn">Correção necessária</Badge>;
-  return <Badge status="info">A fazer</Badge>;
+/** Exceção primeiro no quadro pessoal (apresentação pura, estável). */
+function exceptionRank(task: DailyTaskItemView): number {
+  if (task.state === 'overdue') return 0;
+  if (task.state === 'needs-correction') return 1;
+  if (task.state === 'done' || task.state === 'skipped') return 3;
+  return 2;
 }
 
 function syncLabel(task: DailyTaskItemView): string | null {
@@ -57,12 +54,15 @@ function TaskCard({
   task,
   actions,
   busy,
+  processing,
 }: {
   readonly task: DailyTaskItemView;
   readonly actions: DailyTasksActions;
   readonly busy: boolean;
+  /** ESTA tarefa está processando (feedback no card certo, não em todos). */
+  readonly processing: boolean;
 }): ReactElement {
-  const [measurement, setMeasurement] = useState('');
+  const [measurement, setMeasurement] = useState<number | null>(null);
   const [evidence, setEvidence] = useState(false);
   const [skipOpen, setSkipOpen] = useState(false);
   const [skipReason, setSkipReason] = useState('');
@@ -70,110 +70,100 @@ function TaskCard({
   // confere na Operação de Hoje — o domínio também rejeita, isto é só UX)
   const resolved =
     task.state === 'done' || task.state === 'skipped' || task.state === 'awaiting-review';
-  const sync = syncLabel(task);
+  const range = task.expectedRange;
 
   return (
-    <Card>
-      <Stack gap={200}>
-        <Stack gap={100}>
-          <Heading level={3}>{task.title}</Heading>
-          <div>{stateBadge(task)}</div>
-          {task.expectedRange !== null && (
-            <Text role="data" tone="secondary">
-              Faixa esperada: {task.expectedRange.min ?? '—'} a {task.expectedRange.max ?? '—'}
-            </Text>
+    <OperationalTaskCard
+      title={task.title}
+      state={task.state}
+      pendingLabel="A fazer"
+      timeCaption="até"
+      timePrimary={task.dueTime ?? '—'}
+      meta={
+        range !== null
+          ? `Faixa esperada: ${range.min ?? '—'} a ${range.max ?? '—'}`
+          : 'Tarefa do dia'
+      }
+      requirementLabel={
+        task.requiresPhoto && !resolved ? '📷 Esta tarefa exige registro de foto' : null
+      }
+      syncLabel={syncLabel(task)}
+    >
+      {!resolved && (
+        <Stack gap={200}>
+          {range !== null && (
+            <Field label="Medição registrada">
+              {/* NumberInput do DS: vírgula pt-BR nativa — fim do parse manual */}
+              <NumberInput
+                value={measurement}
+                onValueChange={(change) => setMeasurement(change.value)}
+                allowNegative
+                disabled={busy}
+              />
+            </Field>
           )}
-          {task.requiresPhoto && !resolved && (
-            <Text tone="secondary">Esta tarefa exige registro de foto.</Text>
-          )}
-          {sync !== null && (
-            <Text role="data" tone="secondary">
-              {sync}
-            </Text>
-          )}
-        </Stack>
-
-        {!resolved && (
-          <Stack gap={200}>
-            {task.expectedRange !== null && (
-              <Field label="Medição registrada">
-                <Input
-                  inputMode="decimal"
-                  value={measurement}
-                  onChange={(event) => setMeasurement(event.target.value)}
-                />
-              </Field>
-            )}
-            {task.requiresPhoto && (
-              <Button
-                fullWidth
-                variant={evidence ? 'primary' : 'secondary'}
-                onClick={() => setEvidence(true)}
-              >
-                {evidence ? 'Foto registrada' : 'Registrar foto'}
-              </Button>
-            )}
+          {task.requiresPhoto && (
             <Button
               fullWidth
-              disabled={busy}
-              onClick={() => {
-                // vírgula decimal pt-BR aceita ("4,5") — mesmo contrato do
-                // drawer da Operação de Hoje
-                const raw = measurement.trim();
-                const parsed = raw === '' ? null : Number(raw.replace(',', '.'));
-                void actions.complete(task.id, {
-                  numericValue: parsed !== null && Number.isFinite(parsed) ? parsed : null,
-                  hasEvidence: evidence,
-                });
-              }}
+              variant={evidence ? 'primary' : 'secondary'}
+              onClick={() => setEvidence(true)}
             >
-              Concluir tarefa
+              {evidence ? 'Foto registrada' : 'Registrar foto'}
             </Button>
-            {task.state === 'needs-correction' ? null : !skipOpen ? (
-              // devolvida NÃO oferece adiamento (o domínio rejeitaria):
-              // corrija e reenvie — a devolução do encarregado não se anula
-              <Button
-                fullWidth
-                variant="secondary"
-                disabled={busy}
-                onClick={() => setSkipOpen(true)}
-              >
-                Adiar tarefa
-              </Button>
-            ) : (
-              <Stack gap={100}>
-                <Field label="Motivo do adiamento (obrigatório)">
-                  <TextArea
-                    value={skipReason}
-                    onChange={(event) => setSkipReason(event.target.value)}
-                    disabled={busy}
-                    rows={2}
-                  />
-                </Field>
-                <Flex gap={100} wrap>
-                  <Button
-                    variant="secondary"
-                    disabled={busy}
-                    onClick={() => {
-                      setSkipOpen(false);
-                      setSkipReason('');
-                    }}
-                  >
-                    Cancelar
-                  </Button>
-                  <Button
-                    disabled={busy || skipReason.trim() === ''}
-                    onClick={() => void actions.skip(task.id, skipReason.trim())}
-                  >
-                    Confirmar adiamento
-                  </Button>
-                </Flex>
-              </Stack>
-            )}
-          </Stack>
-        )}
-      </Stack>
-    </Card>
+          )}
+          <Button
+            fullWidth
+            disabled={busy}
+            loading={processing}
+            onClick={() =>
+              void actions.complete(task.id, {
+                numericValue: measurement,
+                hasEvidence: evidence,
+              })
+            }
+          >
+            Concluir tarefa
+          </Button>
+          {task.state === 'needs-correction' ? null : !skipOpen ? (
+            // devolvida NÃO oferece adiamento (o domínio rejeitaria):
+            // corrija e reenvie — a devolução do encarregado não se anula
+            <Button fullWidth variant="secondary" disabled={busy} onClick={() => setSkipOpen(true)}>
+              Adiar tarefa
+            </Button>
+          ) : (
+            <Stack gap={100}>
+              <Field label="Motivo do adiamento (obrigatório)">
+                <TextArea
+                  value={skipReason}
+                  onChange={(event) => setSkipReason(event.target.value)}
+                  disabled={busy}
+                  rows={2}
+                />
+              </Field>
+              <Flex gap={100} wrap>
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    setSkipOpen(false);
+                    setSkipReason('');
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  disabled={busy || skipReason.trim() === ''}
+                  loading={processing && skipOpen}
+                  onClick={() => void actions.skip(task.id, skipReason.trim())}
+                >
+                  Confirmar adiamento
+                </Button>
+              </Flex>
+            </Stack>
+          )}
+        </Stack>
+      )}
+    </OperationalTaskCard>
   );
 }
 
@@ -190,26 +180,11 @@ export function DailyTasksScreen({
     <Page id="conteudo">
       <PageHeader
         title="Tarefas de hoje"
-        {...(view.operationalDate !== null ? { eyebrow: view.operationalDate } : {})}
+        {...(view.operationalDate !== null
+          ? { eyebrow: operationalDateLabel(view.operationalDate) }
+          : {})}
         description={
           view.operatorName === null ? 'Quadro do dia' : `Operador: ${view.operatorName}`
-        }
-        status={
-          view.readyToSync ? (
-            <Badge status="success">Conectado</Badge>
-          ) : (
-            <Badge status="warn">Sem conexão — operação local segura</Badge>
-          )
-        }
-        actions={
-          <Button
-            variant="secondary"
-            onClick={() => {
-              shiftLink.navigate?.();
-            }}
-          >
-            Voltar ao turno
-          </Button>
         }
       />
 
@@ -237,7 +212,9 @@ export function DailyTasksScreen({
         </Alert>
       )}
 
-      {view.phase === 'loading' && <LoadingState label="Carregando as tarefas de hoje" />}
+      {view.phase === 'loading' && (
+        <LoadingState label="Carregando as tarefas de hoje" variant="skeleton" lines={4} />
+      )}
 
       {view.phase === 'no-session' && (
         <EmptyState
@@ -272,8 +249,21 @@ export function DailyTasksScreen({
       )}
 
       {view.phase === 'expired' && (
-        <Alert status="warning" title="Identificação expirada">
-          Sua identificação expirou. Volte ao turno e identifique-se novamente para continuar.
+        <Alert
+          status="warning"
+          title="Identificação expirada"
+          action={
+            <Button
+              variant="secondary"
+              onClick={() => {
+                shiftLink.navigate?.();
+              }}
+            >
+              Ir para o turno
+            </Button>
+          }
+        >
+          Sua identificação expirou. Identifique-se novamente para continuar.
         </Alert>
       )}
 
@@ -312,33 +302,50 @@ export function DailyTasksScreen({
               ) : undefined
             }
           >
-            <Card>
-              <Text role="data">
-                A fazer: {view.counts.pending} · Atrasadas: {view.counts.overdue} · Concluídas:{' '}
-                {view.counts.done} · Adiadas: {view.counts.skipped}
-              </Text>
-            </Card>
+            <Flex gap={300} wrap>
+              {(
+                [
+                  ['Atrasadas', view.counts.overdue],
+                  ['A fazer', view.counts.pending],
+                  ['Concluídas', view.counts.done],
+                  ['Adiadas', view.counts.skipped],
+                ] as const
+              ).map(([label, count]) => (
+                <Stack key={label} gap={0}>
+                  <Text role="caption" tone="secondary">
+                    {label}
+                  </Text>
+                  <Text role="data">{count}</Text>
+                </Stack>
+              ))}
+            </Flex>
           </Section>
 
           <Section title="Tarefas">
-            <Stack gap={300}>
-              {view.tasks.map((task) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  actions={actions}
-                  busy={view.busyTaskId !== null}
-                />
-              ))}
+            {/* erro de ação VISÍVEL onde o operador age — nunca no rodapé
+                depois de todos os cards */}
+            {view.actionError !== null && (
+              <Alert status="warning" live="polite" title="Registro não concluído">
+                {view.actionError}
+              </Alert>
+            )}
+            <Stack gap={200}>
+              {/* exceção primeiro: atrasadas/devolvidas sobem; dentro de cada
+                  grupo a ordem do carregador é preservada (apresentação pura) */}
+              {[...view.tasks]
+                .sort((a, b) => exceptionRank(a) - exceptionRank(b))
+                .map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    actions={actions}
+                    busy={view.busyTaskId !== null}
+                    processing={view.busyTaskId === task.id}
+                  />
+                ))}
             </Stack>
           </Section>
         </>
-      )}
-
-      {view.actionError !== null && view.phase === 'ready' && (
-        <Alert status="warning" live="polite" title="Registro não concluído">
-          {view.actionError}
-        </Alert>
       )}
     </Page>
   );

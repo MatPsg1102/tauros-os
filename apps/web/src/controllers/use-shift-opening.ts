@@ -244,7 +244,7 @@ export function useShiftOpening(container: AppContainer): [ShiftOpeningView, Shi
           return;
         }
         case 'SNAPSHOT_EXPIRED':
-          setActionError('A autorização offline expirou. Identifique-se novamente.');
+          setActionError('Sua identificação expirou. Identifique-se novamente.');
           setPhase('identify');
           setOperator(null);
           authRef.current = null;

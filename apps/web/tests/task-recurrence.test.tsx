@@ -72,11 +72,8 @@ function app(): ReactElement {
 
 async function identifyElber(greeting = /Bom dia, Elber/): Promise<void> {
   await screen.findByText('Digite seu PIN');
-  fireEvent.change(screen.getByRole('combobox'), {
-    target: {
-      value: (screen.getByRole('option', { name: 'Elber' }) as HTMLOptionElement).value,
-    },
-  });
+  // V2 glove-first: identificação por RadioGroup (alvos 64px), não Select
+  fireEvent.click(screen.getByRole('radio', { name: 'Elber' }));
   const cells = screen.getAllByLabelText(/Dígito \d de 6/);
   ['1', '2', '3', '4', '5', '6'].forEach((digit, index) => {
     fireEvent.keyDown(cells[index] as HTMLElement, { key: digit });
@@ -141,7 +138,8 @@ describe('WHEN_SCHEDULED usa o resolver REAL da Escala Operacional', () => {
     await registerMember('João da Silva', 'Açougueiro 1', 'Equipe A');
     await createWhenScheduledTask('Organizar balcão antes do fechamento', 'Açougueiro 1');
     await screen.findByRole('heading', { name: 'Organizar balcão antes do fechamento' });
-    expect(screen.getAllByText(/17:00–19:00/).length).toBeGreaterThan(0);
+    // V2: janela como legenda "17:00 →" + hora âncora "19:00"
+    expect(screen.getAllByText('17:00 →').length).toBeGreaterThan(0);
     view.unmount();
 
     // 14/08 (Equipe B): a posição NÃO está escalada — nenhuma ocorrência nova
@@ -261,6 +259,8 @@ describe('atribuição situacional não contamina o template', () => {
 
     // atribui a ocorrência de HOJE a João (escalado)
     fireEvent.click(screen.getByRole('radio', { name: 'Sem responsável' }));
+    // V2: a atribuição expande sob demanda (progressive disclosure)
+    fireEvent.click(await screen.findByRole('button', { name: 'Atribuir responsável' }));
     const assign = (await screen.findByLabelText('Atribuir a')) as HTMLSelectElement;
     const joao = [...assign.querySelectorAll('option')].find((o) =>
       o.textContent?.includes('Açougueiro 1'),

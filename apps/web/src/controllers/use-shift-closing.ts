@@ -24,11 +24,23 @@ export type ShiftClosingPhase =
   | 'conflict'
   | 'error';
 
+/** Resumo do dia exibido ANTES de fechar (leitura pura do quadro local). */
+export interface ShiftClosingSummary {
+  readonly done: number;
+  readonly pending: number;
+  readonly overdue: number;
+  readonly awaitingReview: number;
+  readonly needsCorrection: number;
+  readonly skipped: number;
+}
+
 export interface ShiftClosingView {
   readonly phase: ShiftClosingPhase;
   readonly canCloseShift: boolean;
   readonly session: OperatorSessionRecord | null;
   readonly actionError: string | null;
+  /** null enquanto carrega (ou sem sessão) — a decisão nunca espera. */
+  readonly summary: ShiftClosingSummary | null;
 }
 
 export interface ShiftClosingActions {
@@ -46,14 +58,41 @@ export function useShiftClosing(
   const identity = useOperatorSession();
   const [phase, setPhase] = useState<ShiftClosingPhase>('idle');
   const [actionError, setActionError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<ShiftClosingSummary | null>(null);
   const submittingRef = useRef(false);
+  const summaryRequestRef = useRef(0);
 
   const canCloseShift = identity.operator?.permissions.includes(CAPABILITY_SESSION_CLOSE) ?? false;
 
   const requestClose = useCallback(() => {
     setActionError(null);
     setPhase('confirming');
-  }, []);
+    // resumo é LEITURA do quadro local (nunca bloqueia a decisão): o
+    // encarregado fecha SABENDO o que fica para trás — avisar ≠ impedir
+    setSummary(null);
+    if (session !== null) {
+      const requested = (summaryRequestRef.current += 1);
+      void container.tasks
+        .byWorkDate(FIXTURE_STORE.id, session.operationalDate)
+        .then((tasks) => {
+          // resolução tardia de um diálogo já fechado/reaberto não escreve
+          if (summaryRequestRef.current !== requested) return;
+          setSummary({
+            done: tasks.filter((task) => task.status === 'DONE').length,
+            pending: tasks.filter(
+              (task) => task.status === 'PENDING' || task.status === 'IN_PROGRESS',
+            ).length,
+            overdue: tasks.filter((task) => task.status === 'OVERDUE').length,
+            awaitingReview: tasks.filter((task) => task.status === 'AWAITING_REVIEW').length,
+            needsCorrection: tasks.filter((task) => task.status === 'NEEDS_CORRECTION').length,
+            skipped: tasks.filter((task) => task.status === 'SKIPPED').length,
+          });
+        })
+        .catch(() => {
+          // resumo é cortesia de leitura: sem ele o diálogo segue decidível
+        });
+    }
+  }, [container, session]);
 
   const cancelClose = useCallback(() => {
     // o diálogo também emite o fechamento APÓS confirmar: só volta ao início
@@ -109,7 +148,9 @@ export function useShiftClosing(
           return;
         }
         case 'SNAPSHOT_EXPIRED':
-          setActionError('A autorização expirou. Identifique-se novamente para fechar o turno.');
+          setActionError(
+            'Sua identificação expirou. Identifique-se novamente para fechar o turno.',
+          );
           setPhase('error');
           return;
         default:
@@ -129,7 +170,7 @@ export function useShiftClosing(
   }, [container, refresh]);
 
   return [
-    { phase, canCloseShift, session, actionError },
+    { phase, canCloseShift, session, actionError, summary },
     { requestClose, cancelClose, confirmClose, retrySync },
   ];
 }

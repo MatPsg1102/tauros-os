@@ -179,11 +179,8 @@ async function enterPinAndConfirm(pin: string): Promise<void> {
   const dialog = await screen.findByRole('dialog');
   const name = OPERATOR_BY_PIN[pin];
   if (name !== undefined) {
-    fireEvent.change(within(dialog).getByRole('combobox'), {
-      target: {
-        value: (within(dialog).getByRole('option', { name }) as HTMLOptionElement).value,
-      },
-    });
+    // V2 glove-first: a identidade é um RadioGroup (alvos 64px), não Select
+    fireEvent.click(within(dialog).getByRole('radio', { name }));
   }
   const cells = within(dialog).getAllByLabelText(/Dígito \d de 6/);
   pin.split('').forEach((digit, index) => {
@@ -194,7 +191,7 @@ async function enterPinAndConfirm(pin: string): Promise<void> {
 
 async function actOnCard(title: string, action: string, pin: string): Promise<void> {
   const heading = await screen.findByRole('heading', { name: title });
-  const card = heading.closest('div[class]') as HTMLElement;
+  const card = heading.closest('article') as HTMLElement;
   fireEvent.click(within(card).getByRole('button', { name: action }));
   await enterPinAndConfirm(pin);
 }
@@ -353,8 +350,18 @@ describe('FLUXO B — foto obrigatória + conferência', () => {
     // conferência do encarregado (PIN Elber) com evidência visível
     await actOnCard('Limpeza da serra', 'Conferir', '123456');
     const review = await findTaskDialog('Limpeza da serra');
-    expect(within(review).getByText(/Executor: Marina Álvares/)).toBeTruthy();
+    // V2: rótulo e valor em linhas separadas (fatos escaneáveis da decisão)
+    const executorRow = within(review).getByText('Executor').closest('div') as HTMLElement;
+    expect(within(executorRow).getByText('Marina Álvares')).toBeTruthy();
     expect(within(review).getByAltText('Evidência da execução')).toBeTruthy();
+    // V2: a miniatura AMPLIA num Modal — conferir exige julgar a foto
+    fireEvent.click(within(review).getByRole('button', { name: 'Ampliar foto 1 de 1' }));
+    const photoModal = await screen.findByRole('dialog', { name: 'Foto da evidência' });
+    expect(within(photoModal).getByAltText('Evidência da execução')).toBeTruthy();
+    fireEvent.click(within(photoModal).getByRole('button', { name: 'Fechar' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Foto da evidência' })).toBeNull();
+    });
     fireEvent.click(within(review).getByRole('button', { name: 'Aprovar' }));
     await screen.findByText('Execução aprovada.');
     fireEvent.click(screen.getByRole('radio', { name: 'Concluídas' }));
@@ -437,7 +444,7 @@ describe('FLUXO B — foto obrigatória + conferência', () => {
     ).toBe('');
     fireEvent.click(within(finalReview).getByRole('button', { name: 'Aprovar' }));
     await screen.findByText('Execução aprovada.');
-  });
+  }, 15_000);
 });
 
 describe('FLUXO D — segurança da conferência', () => {

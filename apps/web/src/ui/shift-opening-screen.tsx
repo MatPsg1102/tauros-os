@@ -17,13 +17,14 @@ import {
   Card,
   ConfirmDialog,
   ErrorState,
-  Field,
+  Flex,
   LoadingState,
   Page,
   PageHeader,
   PinInput,
+  Radio,
+  RadioGroup,
   Section,
-  Select,
   Stack,
   Text,
   type NavigationLinkAdapter,
@@ -31,12 +32,7 @@ import {
 
 import type { ShiftClosingActions, ShiftClosingView } from '../controllers/use-shift-closing.js';
 import type { ShiftOpeningActions, ShiftOpeningView } from '../controllers/use-shift-opening.js';
-
-/** dd/mm a partir de YYYY-MM-DD — apresentação (nunca cálculo de fuso). */
-function staleDateLabel(operationalDate: string | null): string {
-  if (operationalDate === null) return 'outro dia';
-  return `${operationalDate.slice(8, 10)}/${operationalDate.slice(5, 7)}`;
-}
+import { shortDateLabel } from './format.js';
 
 function syncBadge(view: ShiftOpeningView): ReactElement {
   const status = view.session?.syncStatus;
@@ -53,28 +49,39 @@ function IdentifyStep({
   readonly view: ShiftOpeningView;
   readonly actions: ShiftOpeningActions;
 }): ReactElement {
-  const [employeeId, setEmployeeId] = useState(view.operators[0]?.employeeId ?? '');
+  // tablet COMPARTILHADO: ninguém nasce selecionado — cada pessoa escolhe a
+  // si mesma (pré-selecionar o primeiro do roster induzia erro de identidade)
+  const [employeeId, setEmployeeId] = useState('');
   const [pin, setPin] = useState('');
+  // células remontam por TENTATIVA (contador): a antiga key usava a STRING do
+  // erro e dois erros idênticos seguidos deixavam as células cheias com o
+  // botão travado (P0 da auditoria). A seleção persiste no erro de PIN.
+  const [attemptSeq, setAttemptSeq] = useState(0);
   return (
     <Section title="Identificação do operador" description="Confirme quem está assumindo o turno">
       <Card>
         <Stack gap={200}>
-          <Field label="Operador">
-            <Select value={employeeId} onChange={(event) => setEmployeeId(event.target.value)}>
-              <option value="" disabled>
-                Selecione o operador
-              </option>
-              {view.operators.map((candidate) => (
-                <option key={candidate.employeeId} value={candidate.employeeId}>
-                  {candidate.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          {/* V2 glove-first: RadioGroup (alvos 64px), não dropdown do SO */}
+          <RadioGroup
+            label="Operador"
+            value={employeeId}
+            onValueChange={(value) => {
+              setEmployeeId(value);
+              setPin('');
+            }}
+          >
+            {view.operators.map((candidate) => (
+              <Radio
+                key={candidate.employeeId}
+                value={candidate.employeeId}
+                label={candidate.name}
+              />
+            ))}
+          </RadioGroup>
           <Stack gap={100}>
             <Text role="label">PIN de operação</Text>
             <PinInput
-              key={`${employeeId}:${view.identifyError ?? 'pin'}`}
+              key={`${employeeId}:${String(attemptSeq)}`}
               length={view.pinLength}
               label="PIN de operação"
               mask
@@ -90,8 +97,10 @@ function IdentifyStep({
             fullWidth
             disabled={employeeId === '' || pin.length < view.pinLength}
             onClick={() => {
-              void actions.identify(employeeId, pin);
+              const value = pin;
               setPin('');
+              setAttemptSeq((sequence) => sequence + 1);
+              void actions.identify(employeeId, value);
             }}
           >
             Confirmar identificação
@@ -114,9 +123,10 @@ function ActiveShiftActions({
 }): ReactElement {
   return (
     <Stack gap={200}>
+      {/* a ação do DIA é ir ao quadro; fechar é a ação TERMINAL — pesos
+          distintos (antes ambas eram secondary) */}
       <Button
         fullWidth
-        variant="secondary"
         onClick={() => {
           tasksLink.navigate?.();
         }}
@@ -149,7 +159,42 @@ function ActiveShiftActions({
         confirmLabel="Fechar turno"
         cancelLabel="Continuar no turno"
         onConfirm={() => closingActions.confirmClose()}
-      />
+      >
+        {/* fechar SABENDO o que fica para trás — exceções primeiro;
+            avisar ≠ impedir (nenhuma regra de bloqueio aprovada) */}
+        {closing.summary !== null && (
+          <Stack gap={100}>
+            <Stack gap={50}>
+              {(
+                [
+                  ['Atrasadas', closing.summary.overdue],
+                  ['Pendentes', closing.summary.pending],
+                  ['Em conferência', closing.summary.awaitingReview],
+                  ['Devolvidas', closing.summary.needsCorrection],
+                  ['Concluídas', closing.summary.done],
+                  ['Adiadas', closing.summary.skipped],
+                ] as const
+              ).map(([label, count]) => (
+                <Flex key={label} gap={100} justify="between" align="baseline">
+                  <Text role="caption" tone="secondary">
+                    {label}
+                  </Text>
+                  <Text role="data">{count}</Text>
+                </Flex>
+              ))}
+            </Stack>
+            {closing.summary.pending +
+              closing.summary.overdue +
+              closing.summary.awaitingReview +
+              closing.summary.needsCorrection >
+              0 && (
+              <Alert status="warning" title="Ainda há trabalho em aberto">
+                Você pode fechar mesmo assim — as tarefas continuam no quadro do dia.
+              </Alert>
+            )}
+          </Stack>
+        )}
+      </ConfirmDialog>
     </Stack>
   );
 }
@@ -171,6 +216,9 @@ function ClosedShiftSection({
           <Badge status="success">Confirmado pelo servidor</Badge>
         ) : status === 'conflict' ? (
           <Badge status="critical">Precisa de revisão</Badge>
+        ) : status === 'failed' ? (
+          // estado TERMINAL da fila: prometer "aguardando conexão" mentiria
+          <Badge status="error">Não foi possível enviar</Badge>
         ) : (
           <Badge status="info">Aguardando conexão</Badge>
         )
@@ -185,6 +233,17 @@ function ClosedShiftSection({
             <>
               <Text tone="secondary">
                 Salvo neste aparelho. O fechamento será enviado assim que houver conexão.
+              </Text>
+              <Button variant="secondary" onClick={() => void closingActions.retrySync()}>
+                Tentar sincronizar agora
+              </Button>
+            </>
+          )}
+          {status === 'failed' && (
+            <>
+              <Text tone="secondary">
+                O registro está seguro neste aparelho, mas o envio falhou. Tente de novo; se
+                persistir, avise o responsável.
               </Text>
               <Button variant="secondary" onClick={() => void closingActions.retrySync()}>
                 Tentar sincronizar agora
@@ -223,13 +282,6 @@ export function ShiftOpeningScreen({
             ? 'Identifique-se para iniciar o turno de trabalho'
             : `Operador: ${view.operator.name}`
         }
-        status={
-          view.connectivity.readyToSync ? (
-            <Badge status="success">Conectado</Badge>
-          ) : (
-            <Badge status="warn">Sem conexão — operação local segura</Badge>
-          )
-        }
       />
 
       {!view.connectivity.readyToSync && view.phase !== 'bootstrapping' && (
@@ -237,30 +289,6 @@ export function ShiftOpeningScreen({
           Sem conexão com o servidor. Você pode abrir o turno normalmente: tudo fica salvo neste
           aparelho e será enviado quando a conexão voltar.
         </Banner>
-      )}
-
-      {/* Entrada da Área do Encarregado — só com a DECISÃO pronta do view
-          model (capability efetiva), nunca por nome/cargo. Visível a partir
-          da identificação, independente do estado do turno. */}
-      {view.canManageTeam && view.operator !== null && (
-        <Section title="Gestão da equipe">
-          <Card>
-            <Stack gap={100}>
-              <Text tone="secondary">
-                Acompanhe as tarefas da equipe, crie e atribua novas tarefas e coordene o dia.
-              </Text>
-              <Button
-                fullWidth
-                variant="secondary"
-                onClick={() => {
-                  supervisorLink.navigate?.();
-                }}
-              >
-                Ir para a Área do Encarregado
-              </Button>
-            </Stack>
-          </Card>
-        </Section>
       )}
 
       {view.phase === 'bootstrapping' && <LoadingState label="Preparando o turno" />}
@@ -292,7 +320,7 @@ export function ShiftOpeningScreen({
           <Card>
             <Stack gap={200}>
               <Alert status="warning" title="O dia operacional virou">
-                {`Seu turno de ${staleDateLabel(view.staleSessionDate)} continua aberto. Feche-o para começar o dia de hoje — o fechamento fica registrado com a sua identificação.`}
+                {`Seu turno de ${view.staleSessionDate !== null ? shortDateLabel(view.staleSessionDate) : 'outro dia'} continua aberto. Feche-o para começar o dia de hoje — o fechamento fica registrado com a sua identificação.`}
               </Alert>
               {view.actionError !== null && (
                 <Alert status="error" live="polite" title="Fechamento não realizado">
@@ -300,47 +328,55 @@ export function ShiftOpeningScreen({
                 </Alert>
               )}
               <Button fullWidth onClick={() => void actions.closeStaleShift()}>
-                Fechar turno de {staleDateLabel(view.staleSessionDate)}
+                Fechar turno de{' '}
+                {view.staleSessionDate !== null
+                  ? shortDateLabel(view.staleSessionDate)
+                  : 'outro dia'}
               </Button>
             </Stack>
           </Card>
         </Section>
       )}
 
-      {view.phase === 'opened' && view.session !== null && (
-        <Section title="Turno aberto" actions={syncBadge(view)}>
-          <Card>
-            <Stack gap={100}>
-              <div role="status">
-                <Text>
-                  Turno aberto para {view.operator?.name} em {view.session.operationalDate}.
-                </Text>
-              </div>
-              <Text role="data" tone="secondary">
-                Data operacional: {view.session.operationalDate} · Loja: {view.store.name}
-              </Text>
-              {view.session.syncStatus === 'queued' && (
-                <>
-                  <Text tone="secondary">
-                    Salvo neste aparelho. Será enviado ao servidor assim que houver conexão.
+      {view.phase === 'opened' &&
+        view.session !== null &&
+        closing.phase !== 'closed' &&
+        closing.phase !== 'conflict' && (
+          <Section title="Turno aberto" actions={syncBadge(view)}>
+            <Card>
+              <Stack gap={100}>
+                <div role="status">
+                  <Text>
+                    Turno aberto para {view.operator?.name} em{' '}
+                    {shortDateLabel(view.session.operationalDate)}.
                   </Text>
-                  <Button variant="secondary" onClick={() => void actions.retrySync()}>
-                    Tentar sincronizar agora
-                  </Button>
-                </>
-              )}
-              {view.session.syncStatus === 'synced' && (
-                <Text tone="secondary">Confirmado pelo servidor.</Text>
-              )}
-              <ActiveShiftActions
-                closing={closing}
-                closingActions={closingActions}
-                tasksLink={tasksLink}
-              />
-            </Stack>
-          </Card>
-        </Section>
-      )}
+                </div>
+                <Text role="data" tone="secondary">
+                  Data operacional: {shortDateLabel(view.session.operationalDate)} · Loja:{' '}
+                  {view.store.name}
+                </Text>
+                {view.session.syncStatus === 'queued' && (
+                  <>
+                    <Text tone="secondary">
+                      Salvo neste aparelho. Será enviado ao servidor assim que houver conexão.
+                    </Text>
+                    <Button variant="secondary" onClick={() => void actions.retrySync()}>
+                      Tentar sincronizar agora
+                    </Button>
+                  </>
+                )}
+                {view.session.syncStatus === 'synced' && (
+                  <Text tone="secondary">Confirmado pelo servidor.</Text>
+                )}
+                <ActiveShiftActions
+                  closing={closing}
+                  closingActions={closingActions}
+                  tasksLink={tasksLink}
+                />
+              </Stack>
+            </Card>
+          </Section>
+        )}
 
       {view.phase === 'opened' && closing.phase === 'submitting' && (
         <LoadingState label="Fechando o turno" />
@@ -373,11 +409,42 @@ export function ShiftOpeningScreen({
         </Alert>
       )}
 
+      {/* Entrada da Área do Encarregado — só com a DECISÃO pronta do view
+          model (capability efetiva), nunca por nome/cargo. Depois do conteúdo
+          da fase: a navegação de gestão não fura a fila do job da tela. */}
+      {view.canManageTeam && view.operator !== null && (
+        <Section title="Gestão da equipe">
+          <Card>
+            <Stack gap={100}>
+              <Text tone="secondary">
+                Acompanhe as tarefas da equipe, crie e atribua novas tarefas e coordene o dia.
+              </Text>
+              <Button
+                fullWidth
+                variant="secondary"
+                onClick={() => {
+                  supervisorLink.navigate?.();
+                }}
+              >
+                Ir para a Área do Encarregado
+              </Button>
+            </Stack>
+          </Card>
+        </Section>
+      )}
+
       {view.phase === 'denied' && (
-        <Alert status="warning" title="Sem permissão para abrir turno">
-          Seu perfil não permite abrir o turno nesta loja. Procure o responsável pela unidade para
-          ajustar o acesso.
-        </Alert>
+        <Stack gap={200}>
+          <Alert status="warning" title="Sem permissão para abrir turno">
+            Seu perfil não permite abrir o turno nesta loja. Procure o responsável pela unidade para
+            ajustar o acesso.
+          </Alert>
+          {/* tablet compartilhado: o beco sem saída de UMA pessoa não pode
+              travar o aparelho para as demais */}
+          <Button variant="secondary" onClick={() => actions.reset()}>
+            Identificar outro operador
+          </Button>
+        </Stack>
       )}
 
       {view.phase === 'config-error' && (

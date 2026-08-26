@@ -42,11 +42,8 @@ function app(): ReactElement {
 
 async function enterPinAndConfirm(name: string, pin: string): Promise<void> {
   const dialog = await screen.findByRole('dialog');
-  fireEvent.change(within(dialog).getByRole('combobox'), {
-    target: {
-      value: (within(dialog).getByRole('option', { name }) as HTMLOptionElement).value,
-    },
-  });
+  // V2 glove-first: a identidade é um RadioGroup (alvos 64px), não Select
+  fireEvent.click(within(dialog).getByRole('radio', { name }));
   const cells = within(dialog).getAllByLabelText(/Dígito \d de 6/);
   pin.split('').forEach((digit, index) => {
     fireEvent.keyDown(cells[index] as HTMLElement, { key: digit });
@@ -65,7 +62,7 @@ async function openDay(): Promise<void> {
 /** Abre o drawer de finalização da limpeza final (Apoio) com a Rita. */
 async function openSubmitDrawer(): Promise<void> {
   const heading = await screen.findByRole('heading', { name: 'Checar limpeza final do salão' });
-  const card = heading.closest('div[class]') as HTMLElement;
+  const card = heading.closest('article') as HTMLElement;
   fireEvent.click(within(card).getByRole('button', { name: 'Iniciar' }));
   await enterPinAndConfirm('Rita Belmonte', '997755');
   await waitFor(() => {
@@ -174,7 +171,7 @@ describe('Foto V1.1 — captura por câmera e galeria com preview', () => {
 
     // reabrir: sem pendente, sem evidência criada
     const heading = await screen.findByRole('heading', { name: 'Checar limpeza final do salão' });
-    const card = heading.closest('div[class]') as HTMLElement;
+    const card = heading.closest('article') as HTMLElement;
     fireEvent.click(within(card).getByRole('button', { name: 'Finalizar' }));
     await enterPinAndConfirm('Rita Belmonte', '997755');
     await screen.findByRole('button', { name: 'Abrir câmera' });

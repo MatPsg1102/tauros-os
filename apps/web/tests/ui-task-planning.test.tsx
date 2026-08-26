@@ -60,11 +60,8 @@ function app(): ReactElement {
 
 async function identifyElber(): Promise<void> {
   await screen.findByText('Digite seu PIN');
-  fireEvent.change(screen.getByRole('combobox'), {
-    target: {
-      value: (screen.getByRole('option', { name: 'Elber' }) as HTMLOptionElement).value,
-    },
-  });
+  // V2 glove-first: identificação por RadioGroup (alvos 64px), não Select
+  fireEvent.click(screen.getByRole('radio', { name: 'Elber' }));
   const cells = screen.getAllByLabelText(/Dígito \d de 6/);
   ['1', '2', '3', '4', '5', '6'].forEach((digit, index) => {
     fireEvent.keyDown(cells[index] as HTMLElement, { key: digit });
@@ -216,6 +213,8 @@ describe('fila do encarregado — sem responsável e atribuição situacional', 
       ).toBeNull();
     });
 
+    // V2: a atribuição expande sob demanda (progressive disclosure)
+    fireEvent.click(await screen.findByRole('button', { name: 'Atribuir responsável' }));
     // candidatos vêm da presença PLANEJADA: só quem está escalado hoje
     const assign = (await screen.findByLabelText('Atribuir a')) as HTMLSelectElement;
     const options = [...assign.querySelectorAll('option')].map((o) => o.textContent ?? '');

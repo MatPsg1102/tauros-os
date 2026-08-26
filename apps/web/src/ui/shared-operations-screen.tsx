@@ -8,13 +8,13 @@
 
 import { useEffect, useId, useRef, useState, type ChangeEvent, type ReactElement } from 'react';
 
+import { cssVar } from '@tauros/tokens';
 import {
   Alert,
   Avatar,
   Badge,
   Banner,
   Button,
-  Card,
   Chip,
   Dialog,
   Drawer,
@@ -22,17 +22,20 @@ import {
   ErrorState,
   Field,
   Flex,
-  Heading,
-  Input,
   LoadingState,
+  Modal,
+  NumberInput,
   Page,
   PageHeader,
   PinInput,
+  Radio,
+  RadioGroup,
+  ResponsiveGrid,
   Section,
-  Select,
   SegmentedControl,
   Sidebar,
   Stack,
+  StickyRegion,
   Text,
   TextArea,
 } from '@tauros/ui-primitives';
@@ -44,7 +47,11 @@ import type {
   SharedOperationsView,
   SharedTaskView,
 } from '../controllers/use-shared-operations.js';
+import { AttentionStrip, plural } from './attention-strip.js';
+import { operationalDateLabel } from './format.js';
+import { OperationalTaskCard } from './operational-task-card.js';
 import { OperationsSidebarSections } from './operations-sidebar.js';
+import { visualStateFromStatus } from './task-status.js';
 import { firstName, memberBadge } from './team-member-badge.js';
 
 /** Rótulos operacionais das situações — fonte única do SegmentedControl. */
@@ -56,16 +63,6 @@ const SITUATION_LABEL: Readonly<Record<SharedOperationsView['filter'], string>> 
   returned: 'devolvidas',
   done: 'concluídas',
 };
-
-function statusBadge(task: SharedTaskView): ReactElement {
-  if (task.status === 'DONE') return <Badge status="success">Concluída</Badge>;
-  if (task.status === 'SKIPPED') return <Badge status="neutral">Adiada</Badge>;
-  if (task.status === 'IN_PROGRESS') return <Badge status="info">Em execução</Badge>;
-  if (task.status === 'AWAITING_REVIEW') return <Badge status="info">Aguardando conferência</Badge>;
-  if (task.status === 'NEEDS_CORRECTION') return <Badge status="warn">Correção necessária</Badge>;
-  if (task.status === 'OVERDUE') return <Badge status="warn">Atrasada</Badge>;
-  return <Badge status="neutral">Pendente</Badge>;
-}
 
 /** Ação PRINCIPAL do card conforme o estado — grande e óbvia. */
 function primaryAction(
@@ -110,6 +107,22 @@ function primaryAction(
   return null;
 }
 
+/** Linha de responsabilidade: posição — pessoa(s), com honestidade de escala. */
+function responsibilityLine(task: SharedTaskView): string {
+  const who =
+    task.startedByName !== null
+      ? ` — ${task.startedByName}`
+      : task.assigneeNames.length > 0
+        ? ` — ${task.assigneeNames.join(', ')}`
+        : '';
+  // honestidade: nomear ocupante fora da escala nunca vira promessa de
+  // execução — a elegibilidade continua sendo do domínio (§4)
+  const offSchedule =
+    task.startedByName === null && task.assigneesOffSchedule ? ' (fora da escala de hoje)' : '';
+  const started = task.startedAtTime !== null ? ` · Iniciada ${task.startedAtTime}` : '';
+  return `${task.positionName ?? '—'}${who}${offSchedule}${started}`;
+}
+
 function TaskCard({
   task,
   actions,
@@ -117,58 +130,32 @@ function TaskCard({
   readonly task: SharedTaskView;
   readonly actions: SharedOperationsActions;
 }): ReactElement {
-  const window =
-    task.startTime !== null ? `${task.startTime} → ${task.dueTime}` : `Até ${task.dueTime}`;
+  // o atraso é derivação OFICIAL do domínio (isOverdue) e chega por dueState:
+  // uma tarefa PENDING vencida É visualmente atrasada
+  const state =
+    task.dueState === 'OVERDUE' ? ('overdue' as const) : visualStateFromStatus(task.status);
   return (
-    <Card>
-      <Stack gap={100}>
-        <Heading level={3}>{task.title}</Heading>
-        <Flex gap={100} wrap>
-          {statusBadge(task)}
-          {/* prazo: ícone + texto + forma/cor semântica — nunca só cor (P5) */}
-          {task.dueState === 'OVERDUE' && task.dueLabel !== null && (
-            <Badge status="error">{`🔴 ${task.dueLabel}`}</Badge>
-          )}
-          {task.dueState === 'DUE_SOON' && task.dueLabel !== null && (
-            <Badge status="warn">{`⚠ ${task.dueLabel}`}</Badge>
-          )}
-          {task.isUnassigned && <Badge status="warn">Sem responsável</Badge>}
-          {task.evidenceCount > 0 && (
-            <Badge status="neutral">{`📷 ${task.evidenceCount} evidência${task.evidenceCount > 1 ? 's' : ''}`}</Badge>
-          )}
-        </Flex>
-        <Text role="data" tone="secondary">
-          {task.positionName ?? 'Sem responsável'}
-          {task.startedByName !== null
-            ? ` — ${task.startedByName}`
-            : task.assigneeNames.length > 0
-              ? ` — ${task.assigneeNames.join(', ')}`
-              : ''}
-          {/* honestidade: nomear ocupante fora da escala nunca vira promessa
-              de execução — a elegibilidade continua sendo do domínio (§4) */}
-          {task.startedByName === null && task.assigneesOffSchedule
-            ? ' (fora da escala de hoje)'
-            : ''}
-          {' · '}
-          {window}
-          {task.startedAtTime !== null ? ` · Iniciada ${task.startedAtTime}` : ''}
-        </Text>
-        {task.requiresPhoto && task.status !== 'DONE' && (
-          <Text tone="secondary">Exige registro de foto.</Text>
-        )}
-        {task.correctionReason !== null && (
-          <Alert status="warning" title="Motivo da devolução">
-            {task.correctionReason}
-          </Alert>
-        )}
-        {task.syncLabel !== null && (
-          <Text role="data" tone="secondary">
-            {task.syncLabel}
-          </Text>
-        )}
-        {primaryAction(task, actions)}
-      </Stack>
-    </Card>
+    <OperationalTaskCard
+      title={task.title}
+      state={state}
+      isUnassigned={task.isUnassigned}
+      dueState={task.dueState}
+      dueLabel={task.dueLabel}
+      timeCaption={task.startTime !== null ? `${task.startTime} →` : 'até'}
+      timePrimary={task.dueTime}
+      meta={responsibilityLine(task)}
+      requirementLabel={
+        task.requiresPhoto && task.status !== 'DONE' ? '📷 Exige registro de foto' : null
+      }
+      extraBadges={
+        task.evidenceCount > 0 ? (
+          <Badge status="neutral">{`📷 ${task.evidenceCount} evidência${task.evidenceCount > 1 ? 's' : ''}`}</Badge>
+        ) : undefined
+      }
+      correctionReason={task.correctionReason}
+      syncLabel={task.syncLabel}
+      action={primaryAction(task, actions)}
+    />
   );
 }
 
@@ -216,28 +203,28 @@ function ActionPinDialog({
     >
       <Stack gap={200}>
         {/* employeeId IDENTIFICA; o PIN VERIFICA (ADR-021). A seleção não é
-            autorização: o que cada um pode fazer vem da autorização efetiva. */}
-        <Field label="Quem está executando?">
-          <Select
-            value={employeeId}
-            onChange={(event) => {
-              setEmployeeId(event.target.value);
-              // trocar de pessoa NUNCA reaproveita dígitos ocultos do PIN
-              // anterior (as células remontam vazias pela key abaixo)
-              setPin('');
-            }}
-            disabled={request?.busy === true}
-          >
-            <option value="" disabled>
-              Selecione o colaborador
-            </option>
-            {(request?.candidates ?? []).map((candidate) => (
-              <option key={candidate.employeeId} value={candidate.employeeId}>
-                {candidate.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
+            autorização: o que cada um pode fazer vem da autorização efetiva.
+            V2 glove-first: RadioGroup do DS (alvos de 64px) no lugar do
+            dropdown nativo do SO — a interação mais frequente do produto. */}
+        <RadioGroup
+          label="Quem está executando?"
+          value={employeeId}
+          onValueChange={(value) => {
+            setEmployeeId(value);
+            // trocar de pessoa NUNCA reaproveita dígitos ocultos do PIN
+            // anterior (as células remontam vazias pela key abaixo)
+            setPin('');
+          }}
+        >
+          {(request?.candidates ?? []).map((candidate) => (
+            <Radio
+              key={candidate.employeeId}
+              value={candidate.employeeId}
+              label={candidate.name}
+              disabled={request?.busy === true}
+            />
+          ))}
+        </RadioGroup>
         <PinInput
           key={`${String(openSeq)}:${String(attemptSeq)}:${employeeId}`}
           length={pinLength}
@@ -394,6 +381,72 @@ function PhotoCapture({
   );
 }
 
+/**
+ * Miniaturas de evidência AMPLIÁVEIS: 96–160px não permitem julgar uma foto
+ * em tablet — o toque abre a imagem em tamanho real num Modal (conferência
+ * de verdade). Leitura pura; nada é persistido aqui.
+ */
+function EvidenceGallery({
+  items,
+  altLabel,
+}: {
+  readonly items: readonly { readonly id: string; readonly url: string | null }[];
+  readonly altLabel: string;
+}): ReactElement {
+  const [expanded, setExpanded] = useState<string | null>(null);
+  return (
+    <>
+      <Flex gap={100} wrap>
+        {items.map((item, index) =>
+          item.url !== null ? (
+            // alvo glove-first mesmo para foto estreita + rótulo que distingue
+            // as miniaturas para leitor de tela
+            <button
+              key={item.id}
+              type="button"
+              aria-label={`Ampliar foto ${String(index + 1)} de ${String(items.length)}`}
+              onClick={() => setExpanded(item.url)}
+              style={{
+                padding: 0,
+                border: 0,
+                background: 'none',
+                cursor: 'pointer',
+                minWidth: cssVar('size-control-min'),
+                minHeight: cssVar('size-control-min'),
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <img
+                src={item.url}
+                alt={altLabel}
+                style={{ maxWidth: '160px', maxHeight: '160px', borderRadius: '4px' }}
+              />
+            </button>
+          ) : (
+            <Badge key={item.id} status="neutral">
+              📷 aguardando sincronização
+            </Badge>
+          ),
+        )}
+      </Flex>
+      <Modal
+        open={expanded !== null}
+        title="Foto da evidência"
+        closeLabel="Fechar"
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setExpanded(null);
+        }}
+      >
+        {expanded !== null && (
+          <img src={expanded} alt={altLabel} style={{ maxWidth: '100%', height: 'auto' }} />
+        )}
+      </Modal>
+    </>
+  );
+}
+
 /** Finalização: medição/foto/observação → concluir ou enviar p/ conferência. */
 function SubmitDrawer({
   view,
@@ -402,7 +455,7 @@ function SubmitDrawer({
   readonly view: SharedOperationsView;
   readonly actions: SharedOperationsActions;
 }): ReactElement {
-  const [measure, setMeasure] = useState('');
+  const [measure, setMeasure] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
   const form = view.submitForm;
   const open = form !== null;
@@ -411,9 +464,12 @@ function SubmitDrawer({
   // operador digitou (mesmo contrato dos demais drawers do app)
   useEffect(() => {
     if (open) return;
-    setMeasure('');
+    setMeasure(null);
     setNotes('');
   }, [open]);
+  const range = form?.expectedRange ?? null;
+  const rangeLabel =
+    range === null ? undefined : `Faixa esperada: ${range.min ?? '—'} a ${range.max ?? '—'}`;
   return (
     <Drawer
       open={open}
@@ -427,7 +483,7 @@ function SubmitDrawer({
       closeLabel="Fechar"
       onOpenChange={(isOpen) => {
         if (!isOpen) {
-          setMeasure('');
+          setMeasure(null);
           setNotes('');
           actions.cancelSubmit();
         }
@@ -435,11 +491,15 @@ function SubmitDrawer({
     >
       <Stack gap={200}>
         {form?.expectedRange != null && (
-          <Field label="Medição registrada">
-            <Input
-              inputMode="decimal"
+          <Field
+            label="Medição registrada"
+            {...(rangeLabel !== undefined ? { description: rangeLabel } : {})}
+          >
+            {/* NumberInput do DS: vírgula pt-BR nativa — fim do parse manual */}
+            <NumberInput
               value={measure}
-              onChange={(event) => setMeasure(event.target.value)}
+              onValueChange={(change) => setMeasure(change.value)}
+              allowNegative
               disabled={form.busy}
             />
           </Field>
@@ -449,24 +509,20 @@ function SubmitDrawer({
           <Text role="label">
             {form?.requiresPhoto === true ? 'Foto da tarefa (obrigatória)' : 'Foto da tarefa'}
           </Text>
-          {form !== null && form.evidence.length > 0 && (
-            <Flex gap={100} wrap>
-              {form.evidence.map((item) =>
-                item.url !== null ? (
-                  <img
-                    key={item.id}
-                    src={item.url}
-                    alt="Evidência registrada"
-                    style={{ maxWidth: '96px', maxHeight: '96px', borderRadius: '4px' }}
-                  />
-                ) : (
-                  <Badge key={item.id} status="neutral">
-                    📷 aguardando sincronização
-                  </Badge>
-                ),
-              )}
-            </Flex>
-          )}
+          {/* o operador SEMPRE sabe se a evidência já vale: estado explícito,
+              nunca deduzido da presença de miniatura */}
+          {form !== null && form.evidence.length > 0 ? (
+            <Stack gap={100}>
+              <Badge status="success">
+                {`Foto adicionada${form.evidence.length > 1 ? ` (${form.evidence.length})` : ''}`}
+              </Badge>
+              <EvidenceGallery items={form.evidence} altLabel="Evidência registrada" />
+            </Stack>
+          ) : form?.requiresPhoto === true ? (
+            <Text role="caption" tone="secondary">
+              Nenhuma foto adicionada ainda.
+            </Text>
+          ) : null}
           <PhotoCapture
             disabled={form?.busy === true}
             onConfirm={(file) => void actions.addEvidence(file)}
@@ -491,11 +547,7 @@ function SubmitDrawer({
           fullWidth
           disabled={form?.busy === true}
           onClick={() => {
-            const parsed = measure.trim() === '' ? null : Number(measure.replace(',', '.'));
-            void actions.submitExecution({
-              numericValue: parsed !== null && Number.isFinite(parsed) ? parsed : null,
-              notes,
-            });
+            void actions.submitExecution({ numericValue: measure, notes });
           }}
         >
           {form?.busy === true
@@ -542,40 +594,40 @@ function ReviewDrawer({
       }}
     >
       <Stack gap={200}>
-        <Card>
-          <Stack gap={100}>
-            <Text role="data">Executor: {detail?.executorName ?? '—'}</Text>
-            <Text role="data">Posição: {detail?.positionName ?? '—'}</Text>
-            <Text role="data">Planejado: {detail?.plannedWindow ?? '—'}</Text>
-            <Text role="data">
-              Início real: {detail?.startedAtTime ?? '—'} · Fim real:{' '}
-              {detail?.finishedAtTime ?? '—'}
-            </Text>
-            {detail?.notes != null && <Text role="data">Observação: {detail.notes}</Text>}
-          </Stack>
-        </Card>
+        {/* decisão gerencial: os FATOS primeiro, sem card-dentro-de-painel
+            (informação > contêiner) — rótulo e valor em linhas escaneáveis */}
+        <Stack gap={50}>
+          {(
+            [
+              ['Executor', detail?.executorName ?? '—'],
+              ['Posição', detail?.positionName ?? '—'],
+              ['Planejado', detail?.plannedWindow ?? '—'],
+              ['Executado', `${detail?.startedAtTime ?? '—'} → ${detail?.finishedAtTime ?? '—'}`],
+            ] as const
+          ).map(([label, value]) => (
+            <Flex key={label} gap={100} justify="between" align="baseline">
+              <Text role="caption" tone="secondary">
+                {label}
+              </Text>
+              <Text role="data">{value}</Text>
+            </Flex>
+          ))}
+          {detail?.notes != null && (
+            <Flex gap={100} justify="between" align="baseline">
+              <Text role="caption" tone="secondary">
+                Observação
+              </Text>
+              <Text role="data">{detail.notes}</Text>
+            </Flex>
+          )}
+        </Stack>
 
         <Stack gap={100}>
           <Text role="label">Evidências</Text>
           {detail !== null && detail.evidence.length === 0 ? (
             <Text tone="secondary">Nenhuma evidência anexada.</Text>
           ) : (
-            <Flex gap={100} wrap>
-              {detail?.evidence.map((item) =>
-                item.url !== null ? (
-                  <img
-                    key={item.id}
-                    src={item.url}
-                    alt="Evidência da execução"
-                    style={{ maxWidth: '160px', maxHeight: '160px', borderRadius: '4px' }}
-                  />
-                ) : (
-                  <Badge key={item.id} status="neutral">
-                    📷 aguardando sincronização
-                  </Badge>
-                ),
-              )}
-            </Flex>
+            <EvidenceGallery items={detail?.evidence ?? []} altLabel="Evidência da execução" />
           )}
         </Stack>
 
@@ -593,24 +645,32 @@ function ReviewDrawer({
             {detail.error}
           </Alert>
         )}
-        <Flex gap={100} wrap>
+        {/* consequências opostas NUNCA lado a lado (mis-tap com luva):
+            Aprovar é a primária em linha própria; Devolver vem abaixo */}
+        <Stack gap={100}>
+          <Button fullWidth disabled={detail?.busy === true} onClick={() => void actions.approve()}>
+            Aprovar
+          </Button>
           <Button
+            fullWidth
             variant="secondary"
             disabled={detail?.busy === true}
             onClick={() => void actions.sendBack(reason)}
           >
             Devolver para correção
           </Button>
-          <Button disabled={detail?.busy === true} onClick={() => void actions.approve()}>
-            Aprovar
-          </Button>
-        </Flex>
+        </Stack>
       </Stack>
     </Drawer>
   );
 }
 
-/** Região compacta de atenção operacional (§12) — visível e acionável, nunca modal. */
+/**
+ * Região de atenção do cockpit (V2) — exceções acionáveis num único lugar:
+ * atraso, prazo, conferência, devolução e distribuição. Cada tile filtra o
+ * quadro ao toque (leitura pura). Zero = tile ausente; tudo em dia = faixa
+ * ausente (exceção > normalidade).
+ */
 function DueAlerts({
   view,
   actions,
@@ -618,35 +678,50 @@ function DueAlerts({
   readonly view: SharedOperationsView;
   readonly actions: SharedOperationsActions;
 }): ReactElement | null {
-  if (view.counts.late === 0 && view.counts.dueSoon === 0 && view.counts.needsCorrection === 0)
-    return null;
   return (
-    <Flex gap={100} wrap role="group" aria-label="Alertas de prazo">
-      {view.counts.late > 0 && (
-        <Chip
-          selected={view.dueFilter === 'overdue'}
-          onClick={() => actions.setDueFilter(view.dueFilter === 'overdue' ? null : 'overdue')}
-        >
-          {`🔴 ${String(view.counts.late)} ${view.counts.late === 1 ? 'tarefa atrasada' : 'tarefas atrasadas'}`}
-        </Chip>
-      )}
-      {view.counts.dueSoon > 0 && (
-        <Chip
-          selected={view.dueFilter === 'due-soon'}
-          onClick={() => actions.setDueFilter(view.dueFilter === 'due-soon' ? null : 'due-soon')}
-        >
-          {`⚠ ${String(view.counts.dueSoon)} ${view.counts.dueSoon === 1 ? 'próxima do prazo' : 'próximas do prazo'}`}
-        </Chip>
-      )}
-      {view.counts.needsCorrection > 0 && (
-        <Chip
-          selected={view.filter === 'returned'}
-          onClick={() => actions.setFilter(view.filter === 'returned' ? 'all' : 'returned')}
-        >
-          {`↩ ${String(view.counts.needsCorrection)} ${view.counts.needsCorrection === 1 ? 'devolvida' : 'devolvidas'}`}
-        </Chip>
-      )}
-    </Flex>
+    <AttentionStrip
+      groupLabel="Alertas da operação"
+      tiles={[
+        {
+          key: 'late',
+          count: view.counts.late,
+          label: plural(view.counts.late, 'tarefa atrasada', 'tarefas atrasadas'),
+          selected: view.dueFilter === 'overdue',
+          onToggle: () => actions.setDueFilter(view.dueFilter === 'overdue' ? null : 'overdue'),
+        },
+        {
+          key: 'due-soon',
+          count: view.counts.dueSoon,
+          label: plural(view.counts.dueSoon, 'próxima do prazo', 'próximas do prazo'),
+          selected: view.dueFilter === 'due-soon',
+          onToggle: () => actions.setDueFilter(view.dueFilter === 'due-soon' ? null : 'due-soon'),
+        },
+        {
+          key: 'review',
+          count: view.counts.awaitingReview,
+          label: plural(view.counts.awaitingReview, 'para conferir', 'para conferir'),
+          selected: view.filter === 'review',
+          onToggle: () => actions.setFilter(view.filter === 'review' ? 'all' : 'review'),
+        },
+        {
+          key: 'returned',
+          count: view.counts.needsCorrection,
+          label: plural(view.counts.needsCorrection, 'devolvida', 'devolvidas'),
+          selected: view.filter === 'returned',
+          onToggle: () => actions.setFilter(view.filter === 'returned' ? 'all' : 'returned'),
+        },
+        {
+          key: 'unassigned',
+          count: view.unassignedCount,
+          label: plural(view.unassignedCount, 'sem responsável', 'sem responsável'),
+          selected: view.assignmentFilter?.kind === 'unassigned',
+          onToggle: () =>
+            actions.setAssignmentFilter(
+              view.assignmentFilter?.kind === 'unassigned' ? null : { kind: 'unassigned' },
+            ),
+        },
+      ]}
+    />
   );
 }
 
@@ -695,12 +770,13 @@ function ActiveFilters({
   return (
     <Flex gap={100} wrap role="group" aria-label="Filtros ativos">
       {chips.map((chip) => (
+        // glove-first: o CHIP INTEIRO (64px) remove o filtro — nunca um ×
+        // de 24px; o rótulo acessível declara a ação
         <Chip
           key={chip.key}
           selected
+          aria-label={`Remover filtro ${chip.label}`}
           onClick={chip.clear}
-          onRemove={chip.clear}
-          removeLabel={`Remover filtro ${chip.label}`}
         >
           {chip.label}
         </Chip>
@@ -852,6 +928,28 @@ function TeamStrip({
   );
 }
 
+/** Alternador de situação — fonte única (corpo mobile e região sticky). */
+function situationControl(
+  view: SharedOperationsView,
+  actions: SharedOperationsActions,
+): ReactElement {
+  return (
+    <SegmentedControl
+      aria-label="Filtrar tarefas da operação"
+      value={view.filter}
+      onValueChange={(value) => actions.setFilter(value as SharedOperationsView['filter'])}
+      options={[
+        { value: 'all', label: 'Todas' },
+        { value: 'pending', label: 'Pendentes' },
+        { value: 'in-progress', label: 'Em execução' },
+        { value: 'review', label: 'Conferir' },
+        { value: 'returned', label: 'Devolvidas' },
+        { value: 'done', label: 'Concluídas' },
+      ]}
+    />
+  );
+}
+
 export function SharedOperationsScreen({
   view,
   actions,
@@ -870,27 +968,13 @@ export function SharedOperationsScreen({
     view.dueFilter !== null;
   return (
     <Page id="conteudo">
+      {/* conexão e navegação vivem no chrome global (AppChrome) — o header
+          da tela carrega só a identidade dela e a data operacional */}
       <PageHeader
         title="Operação de Hoje"
         eyebrow="Quadro da loja"
         description="Toque na ação e identifique-se com seu PIN"
-        status={
-          view.readyToSync ? (
-            <Badge status="success">Conectado</Badge>
-          ) : (
-            <Badge status="warn">Sem conexão — operação local segura</Badge>
-          )
-        }
-        actions={
-          <Button
-            variant="secondary"
-            onClick={() => {
-              managementLink.navigate?.();
-            }}
-          >
-            Gestão
-          </Button>
-        }
+        status={<Text role="data">{operationalDateLabel(view.operationalDate)}</Text>}
       />
 
       {!view.readyToSync && view.phase === 'ready' && (
@@ -906,7 +990,9 @@ export function SharedOperationsScreen({
         </div>
       )}
 
-      {view.phase === 'loading' && <LoadingState label="Carregando a operação de hoje" />}
+      {view.phase === 'loading' && (
+        <LoadingState label="Carregando a operação de hoje" variant="skeleton" lines={4} />
+      )}
       {view.phase === 'error' && (
         <ErrorState
           title="Não foi possível carregar a operação"
@@ -933,10 +1019,18 @@ export function SharedOperationsScreen({
               : 'Tarefas da loja'
           }
           actions={
-            view.readyToSync && view.pendingSyncCount > 0 ? (
-              <Button variant="secondary" onClick={() => void actions.syncNow()}>
-                Sincronizar agora
-              </Button>
+            view.pendingSyncCount > 0 ? (
+              // o tamanho da fila é visível SEMPRE que houver pendência —
+              // offline o botão não aparece, mas o número continua contando
+              view.readyToSync ? (
+                <Button variant="secondary" onClick={() => void actions.syncNow()}>
+                  {`Sincronizar ${String(view.pendingSyncCount)} ${view.pendingSyncCount === 1 ? 'registro' : 'registros'}`}
+                </Button>
+              ) : (
+                <Text role="caption" tone="secondary">
+                  {`${String(view.pendingSyncCount)} ${view.pendingSyncCount === 1 ? 'registro aguardando' : 'registros aguardando'} conexão`}
+                </Text>
+              )
             ) : undefined
           }
         >
@@ -954,26 +1048,14 @@ export function SharedOperationsScreen({
 
             <ActiveFilters view={view} actions={actions} />
 
-            <Card>
-              <Text role="data">
-                Atrasadas: {view.counts.late} · Em execução: {view.counts.inProgress} · Aguardando
-                conferência: {view.counts.awaitingReview} · Concluídas: {view.counts.done}
-              </Text>
-            </Card>
-
-            <SegmentedControl
-              aria-label="Filtrar tarefas da operação"
-              value={view.filter}
-              onValueChange={(value) => actions.setFilter(value as SharedOperationsView['filter'])}
-              options={[
-                { value: 'all', label: 'Todas' },
-                { value: 'pending', label: 'Pendentes' },
-                { value: 'in-progress', label: 'Em execução' },
-                { value: 'review', label: 'Conferir' },
-                { value: 'returned', label: 'Devolvidas' },
-                { value: 'done', label: 'Concluídas' },
-              ]}
-            />
+            {/* triagem por situação persiste durante o scroll do quadro
+                (tablet/desktop); no mobile ela rola junto — 2 linhas fixas
+                custariam caro em 390px */}
+            {isMobile ? (
+              situationControl(view, actions)
+            ) : (
+              <StickyRegion position="top">{situationControl(view, actions)}</StickyRegion>
+            )}
 
             {view.tasks.length === 0 ? (
               hasFilters ? (
@@ -1007,11 +1089,13 @@ export function SharedOperationsScreen({
                 />
               )
             ) : (
-              <Stack gap={200}>
+              /* linhas de operação em grade responsiva: 2–3 por linha no
+                 tablet landscape, 1 no portrait/mobile — zero JS de viewport */
+              <ResponsiveGrid itemSize="lg" gap={200}>
                 {view.tasks.map((task) => (
                   <TaskCard key={task.id} task={task} actions={actions} />
                 ))}
-              </Stack>
+              </ResponsiveGrid>
             )}
           </Stack>
         </Section>

@@ -4,7 +4,7 @@
 
 'use client';
 
-import { useState, type ReactElement } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 
 import {
   Alert,
@@ -15,22 +15,20 @@ import {
   Checkbox,
   ConfirmDialog,
   DatePicker,
+  Divider,
   Drawer,
   EmptyState,
   ErrorState,
   Field,
   Flex,
-  Heading,
   Input,
   LoadingState,
   Page,
   PageHeader,
-  Panel,
-  PanelBody,
-  PanelHeader,
   PinInput,
   Radio,
   RadioGroup,
+  ResponsiveGrid,
   Section,
   SegmentedControl,
   Select,
@@ -40,7 +38,6 @@ import {
   TimePicker,
 } from '@tauros/ui-primitives';
 
-import type { NavigationLinkAdapter } from '@tauros/ui-primitives';
 import { ALL_WEEKDAYS, type TaskRecurrence, type Weekday } from '@tauros/contracts';
 
 import type {
@@ -52,6 +49,9 @@ import type {
   TeamManagementActions,
   TeamManagementView,
 } from '../controllers/use-team-management.js';
+import { AttentionStrip, plural } from './attention-strip.js';
+import { shortDateLabel } from './format.js';
+import { OperationalTaskCard } from './operational-task-card.js';
 import { TeamManagementSection } from './team-management-section.js';
 
 const WEEKDAY_LABEL: Readonly<Record<Weekday, string>> = {
@@ -63,16 +63,6 @@ const WEEKDAY_LABEL: Readonly<Record<Weekday, string>> = {
   SAT: 'Sáb',
   SUN: 'Dom',
 };
-
-function stateBadge(task: SupervisorTaskView): ReactElement {
-  if (task.state === 'done') return <Badge status="success">Concluída</Badge>;
-  if (task.state === 'skipped') return <Badge status="neutral">Adiada</Badge>;
-  if (task.state === 'overdue') return <Badge status="warn">Atrasada</Badge>;
-  if (task.state === 'in-progress') return <Badge status="info">Em execução</Badge>;
-  if (task.state === 'awaiting-review') return <Badge status="info">Aguardando conferência</Badge>;
-  if (task.state === 'needs-correction') return <Badge status="warn">Correção necessária</Badge>;
-  return <Badge status="info">Pendente</Badge>;
-}
 
 function syncLine(task: SupervisorTaskView): string | null {
   if (task.syncStatus === 'queued') return 'Aguardando sincronização';
@@ -91,6 +81,10 @@ function IdentifyStep({
 }): ReactElement {
   const [employeeId, setEmployeeId] = useState('');
   const [pin, setPin] = useState('');
+  // as células remontam a cada TENTATIVA (contador — dois erros idênticos
+  // seguidos também limpam); a SELEÇÃO persiste: errar o PIN não obriga a
+  // reescolher quem você é (mesmo contrato do PIN contextual da /operacao)
+  const [attemptSeq, setAttemptSeq] = useState(0);
   const pinLength = view.pinLength;
   return (
     <Section
@@ -100,23 +94,28 @@ function IdentifyStep({
       <Card>
         <Stack gap={200}>
           {/* employeeId IDENTIFICA; o painel de gestão só abre se a AUTORIZAÇÃO
-              trouxer a capacidade — ninguém é encarregado por nome (ADR-021). */}
-          <Field label="Quem está assumindo a gestão?">
-            <Select value={employeeId} onChange={(event) => setEmployeeId(event.target.value)}>
-              <option value="" disabled>
-                Selecione o colaborador
-              </option>
-              {view.operators.map((candidate) => (
-                <option key={candidate.employeeId} value={candidate.employeeId}>
-                  {candidate.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
+              trouxer a capacidade — ninguém é encarregado por nome (ADR-021).
+              V2 glove-first: RadioGroup (alvos 64px), não dropdown do SO. */}
+          <RadioGroup
+            label="Quem está assumindo a gestão?"
+            value={employeeId}
+            onValueChange={(value) => {
+              setEmployeeId(value);
+              setPin('');
+            }}
+          >
+            {view.operators.map((candidate) => (
+              <Radio
+                key={candidate.employeeId}
+                value={candidate.employeeId}
+                label={candidate.name}
+              />
+            ))}
+          </RadioGroup>
           <Stack gap={100}>
             <Text role="label">Digite seu PIN</Text>
             <PinInput
-              key={`${employeeId}:${view.identifyError ?? 'pin'}`}
+              key={`${employeeId}:${String(attemptSeq)}`}
               length={pinLength}
               label="PIN do encarregado"
               mask
@@ -132,11 +131,10 @@ function IdentifyStep({
             fullWidth
             disabled={employeeId === '' || pin.length < pinLength}
             onClick={() => {
-              const selected = employeeId;
               const value = pin;
-              setEmployeeId('');
               setPin('');
-              void actions.identify(selected, value);
+              setAttemptSeq((sequence) => sequence + 1);
+              void actions.identify(employeeId, value);
             }}
           >
             Entrar
@@ -171,18 +169,11 @@ function CreateTaskDrawer({
   const open = view.creation.status !== 'idle';
   const submitting = view.creation.status === 'submitting';
 
-  // "Definir no dia" não conhece posição alvo — "Quando estiver escalado" fica
-  // indisponível (não há como perguntar "está escalado?" sem posição).
-  const scheduledAvailable = responsibleMode === 'now';
-  const effectiveRepeatMode: RepeatMode = scheduledAvailable ? repeatMode : 'weekdays';
-
-  function toggleWeekday(day: Weekday): void {
-    setWeekdays((current) =>
-      current.includes(day) ? current.filter((d) => d !== day) : [...current, day],
-    );
-  }
-
-  function reset(): void {
+  // mesmo contrato dos drawers da Gestão de Equipe: formulário limpo a cada
+  // ABERTURA; erro de validação NUNCA apaga o que o encarregado digitou
+  // (o antigo `.then(reset)` apagava — a promise resolve também no erro)
+  useEffect(() => {
+    if (open) return;
     setTitle('');
     setResponsibleMode('now');
     setPositionId('');
@@ -194,6 +185,17 @@ function CreateTaskDrawer({
     setRepeat(false);
     setRepeatMode('weekdays');
     setWeekdays(ALL_WEEKDAYS);
+  }, [open, view.operationalDate]);
+
+  // "Definir no dia" não conhece posição alvo — "Quando estiver escalado" fica
+  // indisponível (não há como perguntar "está escalado?" sem posição).
+  const scheduledAvailable = responsibleMode === 'now';
+  const effectiveRepeatMode: RepeatMode = scheduledAvailable ? repeatMode : 'weekdays';
+
+  function toggleWeekday(day: Weekday): void {
+    setWeekdays((current) =>
+      current.includes(day) ? current.filter((d) => d !== day) : [...current, day],
+    );
   }
 
   function submit(): void {
@@ -202,18 +204,16 @@ function CreateTaskDrawer({
       : effectiveRepeatMode === 'when_scheduled'
         ? { kind: 'WHEN_SCHEDULED' }
         : { kind: 'WEEKDAYS', weekdays };
-    void actions
-      .createTask({
-        title,
-        positionId: responsibleMode === 'now' ? positionId : '',
-        effectiveFrom,
-        startTime,
-        endTime,
-        requiresPhoto,
-        requiresReview,
-        recurrence,
-      })
-      .then(reset);
+    void actions.createTask({
+      title,
+      positionId: responsibleMode === 'now' ? positionId : '',
+      effectiveFrom,
+      startTime,
+      endTime,
+      requiresPhoto,
+      requiresReview,
+      recurrence,
+    });
   }
 
   return (
@@ -227,124 +227,151 @@ function CreateTaskDrawer({
         if (!isOpen) actions.closeCreate();
       }}
     >
-      <Stack gap={200}>
-        <Field label="Título da tarefa">
-          <Input
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            disabled={submitting}
-          />
-        </Field>
-
-        <RadioGroup
-          label="Responsável"
-          value={responsibleMode}
-          onValueChange={(value) => setResponsibleMode(value as ResponsibleMode)}
-          orientation="horizontal"
-        >
-          <Radio value="now" label="Definir agora" disabled={submitting} />
-          <Radio value="later" label="Definir no dia" disabled={submitting} />
-        </RadioGroup>
-
-        {responsibleMode === 'now' && (
-          <Field label="Posição responsável">
-            <Select
-              value={positionId}
-              onChange={(event) => setPositionId(event.target.value)}
+      {/* V2: o formulário conta uma história em 4 grupos — O QUE / QUEM /
+          QUANDO / CONTROLE — em vez de ~19 controles numa pilha plana.
+          Progressive disclosure: recorrência só expande com "Repetir". */}
+      <Stack gap={300}>
+        <Stack gap={100}>
+          <Text role="caption" tone="secondary">
+            O que
+          </Text>
+          <Field label="Título da tarefa">
+            <Input
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
               disabled={submitting}
-            >
-              <option value="">Escolha o responsável</option>
-              {view.positions.map((position) => (
-                <option key={position.id} value={position.id}>
-                  {position.name}
-                  {position.memberNames.length > 0 ? ` — ${position.memberNames.join(', ')}` : ''}
-                </option>
-              ))}
-            </Select>
+            />
           </Field>
-        )}
+        </Stack>
 
-        <Field label="Data inicial">
-          <DatePicker
-            value={effectiveFrom}
-            onValueChange={setEffectiveFrom}
+        <Divider />
+        <Stack gap={100}>
+          <Text role="caption" tone="secondary">
+            Quem
+          </Text>
+          <RadioGroup
+            label="Responsável"
+            value={responsibleMode}
+            onValueChange={(value) => setResponsibleMode(value as ResponsibleMode)}
+            orientation="horizontal"
+          >
+            <Radio value="now" label="Definir agora" disabled={submitting} />
+            <Radio value="later" label="Definir no dia" disabled={submitting} />
+          </RadioGroup>
+
+          {responsibleMode === 'now' && (
+            <Field label="Posição responsável">
+              <Select
+                value={positionId}
+                onChange={(event) => setPositionId(event.target.value)}
+                disabled={submitting}
+              >
+                <option value="">Escolha o responsável</option>
+                {view.positions.map((position) => (
+                  <option key={position.id} value={position.id}>
+                    {position.name}
+                    {position.memberNames.length > 0 ? ` — ${position.memberNames.join(', ')}` : ''}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
+        </Stack>
+
+        <Divider />
+        <Stack gap={100}>
+          <Text role="caption" tone="secondary">
+            Quando
+          </Text>
+          <Field label="Data inicial">
+            <DatePicker
+              value={effectiveFrom}
+              onValueChange={setEffectiveFrom}
+              disabled={submitting}
+            />
+          </Field>
+          <Flex gap={100} wrap>
+            <Field label="Início">
+              <TimePicker value={startTime} onValueChange={setStartTime} disabled={submitting} />
+            </Field>
+            <Field label="Fim máximo">
+              <TimePicker value={endTime} onValueChange={setEndTime} disabled={submitting} />
+            </Field>
+          </Flex>
+
+          <Switch
+            label="Repetir"
+            checked={repeat}
+            onChange={(event) => setRepeat(event.target.checked)}
             disabled={submitting}
           />
-        </Field>
-        <Field label="Início">
-          <TimePicker value={startTime} onValueChange={setStartTime} disabled={submitting} />
-        </Field>
-        <Field label="Fim máximo">
-          <TimePicker value={endTime} onValueChange={setEndTime} disabled={submitting} />
-        </Field>
 
-        <Checkbox
-          label="Exigir foto para concluir"
-          checked={requiresPhoto}
-          onChange={(event) => setRequiresPhoto(event.target.checked)}
-          disabled={submitting}
-        />
+          {repeat && (
+            <>
+              <RadioGroup
+                label="Repetir"
+                value={effectiveRepeatMode}
+                onValueChange={(value) => setRepeatMode(value as RepeatMode)}
+              >
+                <Radio value="weekdays" label="Dias da semana" disabled={submitting} />
+                <Radio
+                  value="when_scheduled"
+                  label="Quando estiver escalado"
+                  disabled={submitting || !scheduledAvailable}
+                />
+              </RadioGroup>
 
-        <Checkbox
-          label="Exigir conferência do encarregado"
-          checked={requiresReview}
-          onChange={(event) => setRequiresReview(event.target.checked)}
-          disabled={submitting}
-        />
+              {effectiveRepeatMode === 'weekdays' && (
+                <Stack gap={100} role="group" aria-label="Dias da semana">
+                  <Text role="label">Dias da semana</Text>
+                  <Flex gap={100} wrap>
+                    {ALL_WEEKDAYS.map((day) => (
+                      <Checkbox
+                        key={day}
+                        label={WEEKDAY_LABEL[day]}
+                        checked={weekdays.includes(day)}
+                        onChange={() => toggleWeekday(day)}
+                        disabled={submitting}
+                      />
+                    ))}
+                  </Flex>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setWeekdays(ALL_WEEKDAYS)}
+                    disabled={submitting}
+                  >
+                    Selecionar todos
+                  </Button>
+                </Stack>
+              )}
 
-        <Switch
-          label="Repetir"
-          checked={repeat}
-          onChange={(event) => setRepeat(event.target.checked)}
-          disabled={submitting}
-        />
+              {effectiveRepeatMode === 'when_scheduled' && (
+                <Text tone="secondary">
+                  A tarefa será criada nos dias em que o responsável estiver na escala.
+                </Text>
+              )}
+            </>
+          )}
+        </Stack>
 
-        {repeat && (
-          <>
-            <RadioGroup
-              label="Repetir"
-              value={effectiveRepeatMode}
-              onValueChange={(value) => setRepeatMode(value as RepeatMode)}
-            >
-              <Radio value="weekdays" label="Dias da semana" disabled={submitting} />
-              <Radio
-                value="when_scheduled"
-                label="Quando estiver escalado"
-                disabled={submitting || !scheduledAvailable}
-              />
-            </RadioGroup>
-
-            {effectiveRepeatMode === 'weekdays' && (
-              <Stack gap={100} aria-label="Dias da semana">
-                <Text role="label">Dias da semana</Text>
-                <Flex gap={100} wrap>
-                  {ALL_WEEKDAYS.map((day) => (
-                    <Checkbox
-                      key={day}
-                      label={WEEKDAY_LABEL[day]}
-                      checked={weekdays.includes(day)}
-                      onChange={() => toggleWeekday(day)}
-                      disabled={submitting}
-                    />
-                  ))}
-                </Flex>
-                <Button
-                  variant="secondary"
-                  onClick={() => setWeekdays(ALL_WEEKDAYS)}
-                  disabled={submitting}
-                >
-                  Selecionar todos
-                </Button>
-              </Stack>
-            )}
-
-            {effectiveRepeatMode === 'when_scheduled' && (
-              <Text tone="secondary">
-                A tarefa será criada nos dias em que o responsável estiver na escala.
-              </Text>
-            )}
-          </>
-        )}
+        <Divider />
+        <Stack gap={100}>
+          <Text role="caption" tone="secondary">
+            Controle
+          </Text>
+          <Checkbox
+            label="Exigir foto para concluir"
+            checked={requiresPhoto}
+            onChange={(event) => setRequiresPhoto(event.target.checked)}
+            disabled={submitting}
+          />
+          <Checkbox
+            label="Exigir conferência do encarregado"
+            checked={requiresReview}
+            onChange={(event) => setRequiresReview(event.target.checked)}
+            disabled={submitting}
+          />
+        </Stack>
 
         {view.creation.status === 'error' && (
           <Alert status="error" live="polite" title="Tarefa não criada">
@@ -403,7 +430,7 @@ function ShiftSection({
           {isOpen && (
             <>
               <div role="status">
-                <Text>Turno aberto em {session.operationalDate}.</Text>
+                <Text>Turno aberto em {shortDateLabel(session.operationalDate)}.</Text>
               </div>
               {session.syncStatus === 'synced' ? (
                 <Badge status="success">Confirmado pelo servidor</Badge>
@@ -435,6 +462,16 @@ function ShiftSection({
               </div>
               {session.closeSyncStatus === 'synced' ? (
                 <Text tone="secondary">Confirmado pelo servidor.</Text>
+              ) : session.closeSyncStatus === 'failed' ? (
+                // estado TERMINAL da fila: prometer envio automático mentiria
+                <>
+                  <Text tone="secondary">
+                    O registro está seguro neste aparelho, mas o envio falhou. Tente de novo.
+                  </Text>
+                  <Button variant="secondary" onClick={() => void actions.retrySync()}>
+                    Tentar sincronizar agora
+                  </Button>
+                </>
               ) : (
                 <>
                   <Text tone="secondary">
@@ -470,12 +507,28 @@ function ShiftSection({
         {/* RESUMO DO TURNO: o encarregado fecha SABENDO o que fica para trás.
             Avisar ≠ impedir — nenhuma regra de bloqueio foi aprovada. */}
         <Stack gap={100}>
-          <Text role="data">
-            Concluídas: {view.counts.done} · Pendentes: {view.counts.pending} · Atrasadas:{' '}
-            {view.counts.overdue} · Em conferência: {view.counts.awaitingReview} · Devolvidas:{' '}
-            {view.counts.needsCorrection} · Adiadas: {view.counts.skipped} · Sem responsável:{' '}
-            {view.counts.unassigned}
-          </Text>
+          {/* no momento de maior consequência, os números são LINHAS
+              escaneáveis — exceções primeiro, nunca texto corrido */}
+          <Stack gap={50}>
+            {(
+              [
+                ['Atrasadas', view.counts.overdue],
+                ['Pendentes', view.counts.pending],
+                ['Em conferência', view.counts.awaitingReview],
+                ['Devolvidas', view.counts.needsCorrection],
+                ['Sem responsável', view.counts.unassigned],
+                ['Concluídas', view.counts.done],
+                ['Adiadas', view.counts.skipped],
+              ] as const
+            ).map(([label, count]) => (
+              <Flex key={label} gap={100} justify="between" align="baseline">
+                <Text role="caption" tone="secondary">
+                  {label}
+                </Text>
+                <Text role="data">{count}</Text>
+              </Flex>
+            ))}
+          </Stack>
           {view.counts.pending +
             view.counts.overdue +
             view.counts.awaitingReview +
@@ -507,6 +560,9 @@ function AssignControl({
   readonly onAssign: SupervisorDashboardActions['assignTask'];
 }): ReactElement {
   const [positionId, setPositionId] = useState('');
+  // V2 progressive disclosure: o formulário só expande sob demanda — num
+  // quadro de 15 tarefas, 15 selects permanentemente abertos eram ruído
+  const [expanded, setExpanded] = useState(false);
   if (positions.length === 0) {
     return (
       <Text tone="secondary">
@@ -515,6 +571,13 @@ function AssignControl({
     );
   }
   const reassigning = !task.isUnassigned;
+  if (!expanded) {
+    return (
+      <Button variant="secondary" onClick={() => setExpanded(true)}>
+        {reassigning ? 'Passar para outra posição' : 'Atribuir responsável'}
+      </Button>
+    );
+  }
   return (
     <Stack gap={100}>
       <Field label={reassigning ? 'Passar para' : 'Atribuir a'}>
@@ -528,13 +591,24 @@ function AssignControl({
           ))}
         </Select>
       </Field>
-      <Button
-        variant="secondary"
-        disabled={positionId === ''}
-        onClick={() => void onAssign(task.id, positionId)}
-      >
-        {reassigning ? 'Reatribuir' : 'Atribuir'}
-      </Button>
+      <Flex gap={100} wrap>
+        <Button
+          variant="secondary"
+          disabled={positionId === ''}
+          onClick={() => void onAssign(task.id, positionId)}
+        >
+          {reassigning ? 'Reatribuir' : 'Atribuir'}
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setExpanded(false);
+            setPositionId('');
+          }}
+        >
+          Cancelar
+        </Button>
+      </Flex>
     </Stack>
   );
 }
@@ -548,40 +622,32 @@ function TaskItem({
   readonly positions: SupervisorDashboardView['assignablePositions'];
   readonly onAssign: SupervisorDashboardActions['assignTask'];
 }): ReactElement {
-  const sync = syncLine(task);
-  const window =
-    task.startTime !== null ? `${task.startTime}–${task.dueTime}` : `até ${task.dueTime}`;
+  // MESMA linha de operação dos outros quadros (vocabulário canônico +
+  // régua + hora âncora): o encarregado não gerencia num "outro sistema"
   return (
-    <Card>
-      <Stack gap={100}>
-        <Heading level={3}>{task.title}</Heading>
-        <Flex gap={100} wrap>
-          {stateBadge(task)}
-          {task.isUnassigned && <Badge status="warn">Sem responsável</Badge>}
-        </Flex>
-        <Text role="data" tone="secondary">
-          {task.assigneeNames.length > 0
-            ? `${task.positionName} — ${task.assigneeNames.join(', ')}`
-            : task.positionName}
-          {' · '}
-          {window}
-        </Text>
-        {task.requiresPhoto && <Text tone="secondary">Exige registro de foto.</Text>}
-        {sync !== null && (
-          <Text role="data" tone="secondary">
-            {sync}
-          </Text>
-        )}
-        {/* distribuição/REdistribuição: só enquanto ninguém pôs a mão —
-            execução viva e trabalho entregue não se redistribuem (domínio
-            rejeita TASK_IN_EXECUTION; a UI nem oferece) */}
-        {(task.state === 'pending' ||
-          task.state === 'overdue' ||
-          task.state === 'needs-correction') && (
-          <AssignControl task={task} positions={positions} onAssign={onAssign} />
-        )}
-      </Stack>
-    </Card>
+    <OperationalTaskCard
+      title={task.title}
+      state={task.state}
+      isUnassigned={task.isUnassigned}
+      timeCaption={task.startTime !== null ? `${task.startTime} →` : 'até'}
+      timePrimary={task.dueTime}
+      meta={
+        task.assigneeNames.length > 0
+          ? `${task.positionName} — ${task.assigneeNames.join(', ')}`
+          : task.positionName
+      }
+      requirementLabel={task.requiresPhoto ? '📷 Exige registro de foto' : null}
+      syncLabel={syncLine(task)}
+    >
+      {/* distribuição/REdistribuição: só enquanto ninguém pôs a mão —
+          execução viva e trabalho entregue não se redistribuem (domínio
+          rejeita TASK_IN_EXECUTION; a UI nem oferece) */}
+      {(task.state === 'pending' ||
+        task.state === 'overdue' ||
+        task.state === 'needs-correction') && (
+        <AssignControl task={task} positions={positions} onAssign={onAssign} />
+      )}
+    </OperationalTaskCard>
   );
 }
 
@@ -590,15 +656,11 @@ export function SupervisorDashboardScreen({
   actions,
   teamView,
   teamActions,
-  turnoLink,
-  operationsLink,
 }: {
   readonly view: SupervisorDashboardView;
   readonly actions: SupervisorDashboardActions;
   readonly teamView: TeamManagementView;
   readonly teamActions: TeamManagementActions;
-  readonly turnoLink: NavigationLinkAdapter;
-  readonly operationsLink: NavigationLinkAdapter;
 }): ReactElement {
   return (
     <Page id="conteudo">
@@ -608,41 +670,16 @@ export function SupervisorDashboardScreen({
             ? `${view.greeting}, ${view.supervisorName}`
             : 'Área do Encarregado'
         }
-        eyebrow="Gestão do dia"
+        eyebrow={view.phase === 'ready' ? 'Área do Encarregado' : 'Gestão do dia'}
         description={
           view.phase === 'ready'
             ? 'Equipe de hoje · Tarefas do dia · Pendências'
             : 'Acompanhe e organize as tarefas da equipe'
         }
-        status={
-          view.readyToSync ? (
-            <Badge status="success">Conectado</Badge>
-          ) : (
-            <Badge status="warn">Sem conexão — operação local segura</Badge>
-          )
-        }
         actions={
-          <>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                operationsLink.navigate?.();
-              }}
-            >
-              Operação de Hoje
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                turnoLink.navigate?.();
-              }}
-            >
-              Voltar ao turno
-            </Button>
-            {view.phase === 'ready' && view.permissions.canCreateTask && (
-              <Button onClick={actions.openCreate}>+ Nova tarefa</Button>
-            )}
-          </>
+          view.phase === 'ready' && view.permissions.canCreateTask ? (
+            <Button onClick={actions.openCreate}>+ Nova tarefa</Button>
+          ) : undefined
         }
       />
 
@@ -664,13 +701,16 @@ export function SupervisorDashboardScreen({
       )}
 
       {view.phase === 'bootstrapping' && <LoadingState label="Preparando a área do encarregado" />}
-      {view.phase === 'loading' && <LoadingState label="Carregando o quadro da equipe" />}
+      {view.phase === 'loading' && (
+        <LoadingState label="Carregando o quadro da equipe" variant="skeleton" lines={4} />
+      )}
 
       {view.phase === 'identify' && <IdentifyStep view={view} actions={actions} />}
 
       {view.phase === 'denied' && (
         <Alert status="warning" title="Acesso restrito">
-          Você não possui permissão para acessar esta área.
+          Você não possui permissão para acessar esta área. Procure o responsável pela unidade para
+          ajustar o acesso.
         </Alert>
       )}
 
@@ -701,6 +741,11 @@ export function SupervisorDashboardScreen({
 
       {view.phase === 'ready' && (
         <>
+          {/* HOJE primeiro (turno + exceções + quadro da equipe);
+              CONFIGURAÇÃO (equipe/posições/escala) vem depois — a página
+              conta o dia do encarregado, não um formulário administrativo */}
+          <ShiftSection view={view} actions={actions} />
+
           <Section
             title="Tarefas do dia"
             actions={
@@ -711,87 +756,130 @@ export function SupervisorDashboardScreen({
               ) : undefined
             }
           >
-            <Card>
-              <Text role="data">
-                Pendentes: {view.counts.pending} · Atrasadas: {view.counts.overdue} · Sem
-                responsável: {view.counts.unassigned} · Em conferência: {view.counts.awaitingReview}{' '}
-                · Devolvidas: {view.counts.needsCorrection} · Concluídas: {view.counts.done} ·
-                Adiadas: {view.counts.skipped}
-              </Text>
-            </Card>
-          </Section>
-
-          <Section title="Tarefas da equipe">
-            {view.assignError !== null && (
-              <Alert status="error" live="polite" title="Atribuição não realizada">
-                {view.assignError}
-              </Alert>
-            )}
-            <Panel>
-              <PanelHeader>
-                <Stack gap={200}>
-                  <SegmentedControl
-                    aria-label="Filtrar tarefas por situação"
-                    value={view.filter}
-                    onValueChange={(value) =>
-                      actions.setFilter(value as SupervisorDashboardView['filter'])
-                    }
-                    options={[
-                      { value: 'all', label: 'Todas' },
-                      { value: 'unassigned', label: 'Sem responsável' },
-                      { value: 'pending', label: 'Pendentes' },
-                      { value: 'overdue', label: 'Atrasadas' },
-                      { value: 'awaiting-review', label: 'Conferir' },
-                      { value: 'needs-correction', label: 'Devolvidas' },
-                      { value: 'done', label: 'Concluídas' },
-                    ]}
-                  />
-                  <Field label="Por funcionário">
-                    <Select
-                      value={view.positionFilter ?? ''}
-                      onChange={(event) =>
-                        actions.setPositionFilter(
-                          event.target.value === '' ? null : event.target.value,
-                        )
-                      }
-                    >
-                      <option value="">Toda a equipe</option>
-                      {view.positions.map((position) => (
-                        <option key={position.id} value={position.id}>
-                          {position.memberNames.length > 0
-                            ? position.memberNames.join(', ')
-                            : position.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                </Stack>
-              </PanelHeader>
-              <PanelBody>
-                {view.tasks.length === 0 ? (
-                  <EmptyState
-                    title="Nenhuma tarefa aqui"
-                    description="Não há tarefas nesta situação para hoje. Crie uma nova tarefa se necessário."
-                  />
-                ) : (
-                  <Stack gap={200}>
-                    {view.tasks.map((task) => (
-                      <TaskItem
-                        key={task.id}
-                        task={task}
-                        positions={view.assignablePositions}
-                        onAssign={actions.assignTask}
-                      />
-                    ))}
+            {/* UMA região para as tarefas do dia: exceções acionáveis, números
+                calmos, filtros e o próprio quadro — a strip filtra o que está
+                logo abaixo dela (mesma composição da /operacao) */}
+            <Stack gap={200}>
+              <AttentionStrip
+                groupLabel="Alertas do dia"
+                tiles={[
+                  {
+                    key: 'overdue',
+                    count: view.counts.overdue,
+                    label: plural(view.counts.overdue, 'tarefa atrasada', 'tarefas atrasadas'),
+                    selected: view.filter === 'overdue',
+                    onToggle: () =>
+                      actions.setFilter(view.filter === 'overdue' ? 'all' : 'overdue'),
+                  },
+                  {
+                    key: 'unassigned',
+                    count: view.counts.unassigned,
+                    label: plural(view.counts.unassigned, 'sem responsável', 'sem responsável'),
+                    selected: view.filter === 'unassigned',
+                    onToggle: () =>
+                      actions.setFilter(view.filter === 'unassigned' ? 'all' : 'unassigned'),
+                  },
+                  {
+                    key: 'review',
+                    count: view.counts.awaitingReview,
+                    label: plural(view.counts.awaitingReview, 'para conferir', 'para conferir'),
+                    selected: view.filter === 'awaiting-review',
+                    onToggle: () =>
+                      actions.setFilter(
+                        view.filter === 'awaiting-review' ? 'all' : 'awaiting-review',
+                      ),
+                  },
+                  {
+                    key: 'returned',
+                    count: view.counts.needsCorrection,
+                    label: plural(view.counts.needsCorrection, 'devolvida', 'devolvidas'),
+                    selected: view.filter === 'needs-correction',
+                    onToggle: () =>
+                      actions.setFilter(
+                        view.filter === 'needs-correction' ? 'all' : 'needs-correction',
+                      ),
+                  },
+                ]}
+              />
+              {/* números calmos no padrão de tile (caption sobre número) */}
+              <Flex gap={300} wrap>
+                {(
+                  [
+                    ['Pendentes', view.counts.pending],
+                    ['Concluídas', view.counts.done],
+                    ['Adiadas', view.counts.skipped],
+                  ] as const
+                ).map(([label, count]) => (
+                  <Stack key={label} gap={0}>
+                    <Text role="caption" tone="secondary">
+                      {label}
+                    </Text>
+                    <Text role="data">{count}</Text>
                   </Stack>
-                )}
-              </PanelBody>
-            </Panel>
+                ))}
+              </Flex>
+
+              {view.assignError !== null && (
+                <Alert status="error" live="polite" title="Atribuição não realizada">
+                  {view.assignError}
+                </Alert>
+              )}
+
+              <SegmentedControl
+                aria-label="Filtrar tarefas por situação"
+                value={view.filter}
+                onValueChange={(value) =>
+                  actions.setFilter(value as SupervisorDashboardView['filter'])
+                }
+                options={[
+                  { value: 'all', label: 'Todas' },
+                  { value: 'unassigned', label: 'Sem responsável' },
+                  { value: 'pending', label: 'Pendentes' },
+                  { value: 'overdue', label: 'Atrasadas' },
+                  { value: 'awaiting-review', label: 'Conferir' },
+                  { value: 'needs-correction', label: 'Devolvidas' },
+                  { value: 'done', label: 'Concluídas' },
+                ]}
+              />
+              <Field label="Por funcionário">
+                <Select
+                  value={view.positionFilter ?? ''}
+                  onChange={(event) =>
+                    actions.setPositionFilter(event.target.value === '' ? null : event.target.value)
+                  }
+                >
+                  <option value="">Toda a equipe</option>
+                  {view.positions.map((position) => (
+                    <option key={position.id} value={position.id}>
+                      {position.memberNames.length > 0
+                        ? position.memberNames.join(', ')
+                        : position.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              {view.tasks.length === 0 ? (
+                <EmptyState
+                  title="Nenhuma tarefa aqui"
+                  description="Não há tarefas nesta situação para hoje. Crie uma nova tarefa se necessário."
+                />
+              ) : (
+                <ResponsiveGrid itemSize="lg" gap={200}>
+                  {view.tasks.map((task) => (
+                    <TaskItem
+                      key={task.id}
+                      task={task}
+                      positions={view.assignablePositions}
+                      onAssign={actions.assignTask}
+                    />
+                  ))}
+                </ResponsiveGrid>
+              )}
+            </Stack>
           </Section>
 
           {teamView.enabled && <TeamManagementSection view={teamView} actions={teamActions} />}
-
-          <ShiftSection view={view} actions={actions} />
 
           <CreateTaskDrawer view={view} actions={actions} />
         </>

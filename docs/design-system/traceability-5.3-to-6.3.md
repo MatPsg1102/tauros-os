@@ -1292,3 +1292,89 @@ execução". Diagnóstico fechado antes de qualquer alteração de código.
 **Pendência mantida (não regride)**: o bridge continua sendo ponte de piloto;
 a resolução real de permissões efetivas (ADR-018) substitui os dois caminhos
 quando o backend de identidade/membership existir.
+
+## Frontend Experience V2 — redesign de composição do produto inteiro
+
+**Missão**: transformar o frontend numa experiência de "Sistema Operacional da
+Loja" — profissional, coerente, densa e glove-first — SEM re-arquitetar: DS
+congelado consumido pela API pública, zero hardcode, comportamento funcional
+preservado. Auditoria prévia por 8 agentes (telas, shell, vocabulário do DS,
+estados, acoplamento de testes) e revisão adversarial por 5 revisores
+independentes ao final; jornadas reais validadas em Chromium (CDP).
+
+**Direção visual**: a assinatura é a LINHA DE OPERAÇÃO — cards com régua de
+estado na borda esquerda (cor semântica SÓ para exceção; normalidade calma) e
+horário-limite como âncora tipográfica (fonte de dados + ênfase). O quadro
+lê-se como rail de expedição: hora → tarefa → responsável → ação. Paleta e
+tipografia 100% dos tokens congelados.
+
+- **Chrome global** (`app-chrome.tsx`): TopBar sticky com navegação por área
+  (Operação · Turno · Gestão, aria-current) + NavigationBar inferior no mobile
+  (slot do AppShell) + status de conexão UMA vez. Fim dos becos sem saída
+  (P0: /turno não voltava à /operacao) e dos botões ad-hoc de navegação.
+- **Vocabulário único de estado** (`task-status.tsx`): os 3 quadros divergiam
+  (PENDING neutral×info; OVERDUE warn + segundo badge error). Agora: badge
+  canônico + régua, um único sinal de atraso ("Atrasada há X" em error).
+- **/operacao (cockpit)**: attention strip acionável (atrasadas/prazo/
+  conferir/devolvidas/sem responsável — tile zerado some) funde DueAlerts +
+  card de contadores; quadro em ResponsiveGrid (2–3 linhas de operação por
+  viewport no tablet); triagem por situação em StickyRegion; partição
+  aberta/resolvida sobre a ordem aprovada por dueAt (DONE não fura fila);
+  rail da sidebar aplica filtro no toque; fila de sync com contagem.
+- **Identidade glove-first**: TODA identificação (PIN contextual da /operacao,
+  /turno, /encarregado) trocou Select nativo por RadioGroup do DS (alvos
+  64px); sem pré-seleção de operador em tablet compartilhado; seleção
+  persiste no erro de PIN; células remontam por TENTATIVA (P0: a key usava a
+  string do erro — dois erros idênticos travavam as células cheias).
+- **/encarregado**: página conta o DIA (Turno → exceções → quadro da equipe)
+  antes da CONFIGURAÇÃO; drawer Nova tarefa em grupos O QUE/QUEM/QUANDO/
+  CONTROLE; P0 corrigido (`.then(reset)` apagava campos no erro de
+  validação); atribuição situacional com progressive disclosure; quadro da
+  equipe na MESMA linha de operação dos demais (era o último "outro sistema",
+  pego pela revisão adversarial); resumo de fechamento em linhas.
+- **/turno + /turno/tarefas**: estados pós-fechamento exclusivos; resumo do
+  dia no ConfirmDialog de fechamento (leitura pura; avisar ≠ impedir);
+  'failed' de sync não promete mais envio automático (honestidade de estado
+  terminal); denied ganha "Identificar outro operador"; datas dd/mm
+  (formatador comum — fim do ISO cru); quadro individual com hora âncora,
+  NumberInput pt-BR, erro junto do quadro, exceções no topo, processamento
+  no card certo (Button loading).
+- **Evidência**: estado explícito ("Foto adicionada"/"Nenhuma ainda");
+  miniaturas AMPLIÁVEIS em Modal (a conferência julga a foto de verdade),
+  alvo 64px e rótulo indexado por leitor de tela.
+- **Transversal**: skeleton loading nos quadros; empty/denied com próximo
+  passo; jargão de arquitetura ("autorização offline") eliminado; timeOfDay
+  deduplicado em helper comum (3 cópias → 1, formatters cacheados).
+
+**Validação**: 189 testes web (183 pré-existentes migrados semanticamente —
+combobox→radio, closest(div)→article com Card as="article"+aria-labelledby —
++6 novos: Modal de evidência, tiles, partição, resumo, formatadores); 10
+chamadas axe preservadas; zero overflow horizontal em 12 combinações
+rota×viewport (390/834/1280/1600); jornadas completas de operador e
+encarregado em Chromium real; performance com 100 tarefas: carga ~640ms,
+troca de filtro ~46ms, nenhum re-render por segundo.
+
+**Decisões registradas**:
+
+- `app-chrome.tsx` importa useRouter em src/ui (exceção consciente à
+  convenção router-neutro de src/ui: o chrome É a composição de navegação;
+  packages ui-* seguem proibidos de router pela regra mecânica).
+- Navegação do TopBar usa Buttons com aria-current (semântica de link real
+  ficaria dependente de estilização não testada do NavigationItem fora de
+  Sidebar/NavigationBar — candidato a evolução do DS).
+- EvidenceGallery usa <button> nativo (não existe primitive de thumbnail
+  clicável no DS — lacuna registrada; promover via processo formal se o
+  padrão se repetir).
+
+**Dívidas UX (V3)**: unificação total do vocabulário de sync (5 redações de
+'queued' viraram 3); "Registrar foto" do quadro individual segue toggle
+honesto-mas-manual (câmera real = pendência do backlog de evidência);
+SegmentedControl de 7 opções no /encarregado quebra em 2 linhas no mobile;
+ToastProvider do DS segue não montado (notices como role=status); rail de
+ícones ainda usa emoji (decisão de biblioteca de ícones é lacuna formal do
+DS); EmptyStates da TeamStrip consomem espaço vertical do cockpit quando a
+escala está vazia.
+
+**Fora do escopo (registrado)**: advisory novo de `pnpm audit` em
+deepmerge-ts <8 via prisma (devDependency, pré-existente na main, CI não
+bloqueia) — corrigir na faixa de manutenção de dependências, não neste PR.
