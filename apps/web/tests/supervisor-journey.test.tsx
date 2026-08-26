@@ -75,11 +75,8 @@ describe('jornada vertical do encarregado', () => {
 
     // 1) identificação por PIN (fixture dev — descartado após comparação)
     await screen.findByText('Digite seu PIN');
-    fireEvent.change(screen.getByRole('combobox'), {
-      target: {
-        value: (screen.getByRole('option', { name: 'Elber' }) as HTMLOptionElement).value,
-      },
-    });
+    // V2 glove-first: identificação por RadioGroup (alvos 64px), não Select
+    fireEvent.click(screen.getByRole('radio', { name: 'Elber' }));
     const cells = screen.getAllByLabelText(/Dígito \d de 6/);
     ['1', '2', '3', '4', '5', '6'].forEach((digit, index) => {
       fireEvent.keyDown(cells[index] as HTMLElement, { key: digit });

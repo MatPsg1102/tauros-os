@@ -17,6 +17,7 @@ import {
   Divider,
   Drawer,
   EmptyState,
+  ErrorState,
   Field,
   Flex,
   Heading,
@@ -164,8 +165,9 @@ function RegisterEmployeeDrawer({
         <Divider />
         <Heading level={3}>Identidade operacional</Heading>
         <Text tone="secondary">
-          Configure um PIN de {view.pinLength} dígitos para que o colaborador possa se identificar.
-          Disponível neste dispositivo e sincronizado depois.
+          Opcional agora: configure um PIN de {view.pinLength} dígitos para que o colaborador possa
+          se identificar e executar tarefas. Sem PIN, o cadastro vale — dá para definir depois na
+          lista de colaboradores.
         </Text>
         <Field label="PIN">
           <PinInput
@@ -557,7 +559,13 @@ export function TeamManagementSection({
             </Stack>
           ))}
 
-        {view.tab === 'teams' && (
+        {view.tab === 'teams' && view.groups.length === 0 && (
+          <EmptyState
+            title="Nenhuma equipe cadastrada"
+            description="As equipes organizam a escala de trabalho. Elas aparecem aqui assim que a loja as configurar."
+          />
+        )}
+        {view.tab === 'teams' && view.groups.length > 0 && (
           <Stack gap={200}>
             {view.groups.map((group) => (
               <Card key={group.id}>
@@ -584,9 +592,12 @@ export function TeamManagementSection({
         {view.tab === 'schedule' && (
           <Stack gap={200}>
             {view.scheduleDays.length === 0 ? (
-              <EmptyState
+              <ErrorState
                 title="Escala indisponível"
                 description="Não foi possível resolver a escala desta loja agora."
+                retryAction={
+                  <Button onClick={() => void actions.reload()}>Tentar novamente</Button>
+                }
               />
             ) : (
               <>

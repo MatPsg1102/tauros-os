@@ -63,9 +63,8 @@ function app(route: 'encarregado' | 'turno' = 'encarregado'): ReactElement {
 }
 
 function selectSupervisor(name: string): void {
-  const select = screen.getByRole('combobox');
-  const option = (screen.getByRole('option', { name }) as HTMLOptionElement).value;
-  fireEvent.change(select, { target: { value: option } });
+  // V2 glove-first: identificação por RadioGroup (alvos 64px), não Select
+  fireEvent.click(screen.getByRole('radio', { name }));
 }
 
 async function enterPin(pin: readonly string[], supervisorName = 'Elber'): Promise<void> {
