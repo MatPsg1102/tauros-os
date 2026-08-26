@@ -140,7 +140,7 @@ function TaskCard({
       isUnassigned={task.isUnassigned}
       dueState={task.dueState}
       dueLabel={task.dueLabel}
-      timeCaption={task.startTime !== null ? `${task.startTime} → até` : 'até'}
+      timeCaption={task.startTime !== null ? `${task.startTime} →` : 'até'}
       timePrimary={task.dueTime}
       meta={responsibilityLine(task)}
       requirementLabel={
