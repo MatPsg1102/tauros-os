@@ -40,7 +40,6 @@ import {
   TimePicker,
 } from '@tauros/ui-primitives';
 
-import type { NavigationLinkAdapter } from '@tauros/ui-primitives';
 import { ALL_WEEKDAYS, type TaskRecurrence, type Weekday } from '@tauros/contracts';
 
 import type {
@@ -590,15 +589,11 @@ export function SupervisorDashboardScreen({
   actions,
   teamView,
   teamActions,
-  turnoLink,
-  operationsLink,
 }: {
   readonly view: SupervisorDashboardView;
   readonly actions: SupervisorDashboardActions;
   readonly teamView: TeamManagementView;
   readonly teamActions: TeamManagementActions;
-  readonly turnoLink: NavigationLinkAdapter;
-  readonly operationsLink: NavigationLinkAdapter;
 }): ReactElement {
   return (
     <Page id="conteudo">
@@ -614,35 +609,10 @@ export function SupervisorDashboardScreen({
             ? 'Equipe de hoje · Tarefas do dia · Pendências'
             : 'Acompanhe e organize as tarefas da equipe'
         }
-        status={
-          view.readyToSync ? (
-            <Badge status="success">Conectado</Badge>
-          ) : (
-            <Badge status="warn">Sem conexão — operação local segura</Badge>
-          )
-        }
         actions={
-          <>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                operationsLink.navigate?.();
-              }}
-            >
-              Operação de Hoje
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                turnoLink.navigate?.();
-              }}
-            >
-              Voltar ao turno
-            </Button>
-            {view.phase === 'ready' && view.permissions.canCreateTask && (
-              <Button onClick={actions.openCreate}>+ Nova tarefa</Button>
-            )}
-          </>
+          view.phase === 'ready' && view.permissions.canCreateTask ? (
+            <Button onClick={actions.openCreate}>+ Nova tarefa</Button>
+          ) : undefined
         }
       />
 

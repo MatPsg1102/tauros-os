@@ -5,12 +5,12 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { AppShell, TopBar } from '@tauros/ui-primitives';
 import type { OperatorSessionRecord } from '@tauros/contracts';
 
 import { useDailyTasks } from '../../../controllers/use-daily-tasks.js';
 import { useOperatorSession } from '../../../controllers/operator-session-context.js';
 import { appLink } from '../../../navigation/links.js';
+import { AppChrome } from '../../../ui/app-chrome.js';
 import { DailyTasksScreen } from '../../../ui/daily-tasks-screen.js';
 import { FIXTURE_STORE } from '../../../wiring/fixtures.js';
 import { useAppContainer } from '../../providers.js';
@@ -41,11 +41,8 @@ export default function TarefasPage(): ReactElement {
   const [view, actions] = useDailyTasks(container, session);
 
   return (
-    <AppShell
-      skipLink={{ label: 'Ir para o conteúdo', targetId: 'conteudo' }}
-      topBar={<TopBar title="Tauros OS" />}
-    >
+    <AppChrome current="turno" connected={view.readyToSync}>
       <DailyTasksScreen view={view} actions={actions} shiftLink={appLink(router, '/turno')} />
-    </AppShell>
+    </AppChrome>
   );
 }

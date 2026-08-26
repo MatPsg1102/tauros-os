@@ -133,10 +133,11 @@ describe('navegação integrada /turno ↔ /encarregado (identidade compartilhad
     await screen.findByRole('heading', { name: /Bom dia, Elber/ });
     expect(screen.queryByText('Digite seu PIN')).toBeNull();
     expect(screen.getByRole('button', { name: '+ Nova tarefa' })).toBeTruthy();
-    expect(screen.getByText('Turno')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Turno' })).toBeTruthy();
 
-    // "Voltar ao turno" navega e /turno restaura a identificação sem novo PIN
-    fireEvent.click(screen.getByRole('button', { name: 'Voltar ao turno' }));
+    // a navegação global do chrome leva ao /turno, que restaura a
+    // identificação sem novo PIN (V2: destino único, sem botão ad-hoc)
+    fireEvent.click(screen.getByRole('button', { name: 'Turno' }));
     expect(navigations()).toContain('/turno');
     rerender(app('turno'));
     await screen.findByRole('button', { name: 'Abrir turno' });

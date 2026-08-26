@@ -39,6 +39,7 @@ import {
 import type { NavigationLinkAdapter } from '@tauros/ui-primitives';
 
 import { useIsMobile } from '../controllers/use-is-mobile.js';
+import { operationalDateLabel } from './format.js';
 import type {
   SharedOperationsActions,
   SharedOperationsView,
@@ -870,27 +871,13 @@ export function SharedOperationsScreen({
     view.dueFilter !== null;
   return (
     <Page id="conteudo">
+      {/* conexão e navegação vivem no chrome global (AppChrome) — o header
+          da tela carrega só a identidade dela e a data operacional */}
       <PageHeader
         title="Operação de Hoje"
         eyebrow="Quadro da loja"
         description="Toque na ação e identifique-se com seu PIN"
-        status={
-          view.readyToSync ? (
-            <Badge status="success">Conectado</Badge>
-          ) : (
-            <Badge status="warn">Sem conexão — operação local segura</Badge>
-          )
-        }
-        actions={
-          <Button
-            variant="secondary"
-            onClick={() => {
-              managementLink.navigate?.();
-            }}
-          >
-            Gestão
-          </Button>
-        }
+        status={<Text role="data">{operationalDateLabel(view.operationalDate)}</Text>}
       />
 
       {!view.readyToSync && view.phase === 'ready' && (

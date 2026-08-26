@@ -8,10 +8,9 @@
 import type { ReactElement } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { AppShell, TopBar } from '@tauros/ui-primitives';
-
 import { useSharedOperations } from '../../controllers/use-shared-operations.js';
 import { appLink } from '../../navigation/links.js';
+import { AppChrome } from '../../ui/app-chrome.js';
 import { OperationsSidebar } from '../../ui/operations-sidebar.js';
 import { SharedOperationsScreen } from '../../ui/shared-operations-screen.js';
 import { useAppContainer } from '../providers.js';
@@ -21,20 +20,20 @@ export default function OperacaoPage(): ReactElement {
   const router = useRouter();
   const [view, actions] = useSharedOperations(container);
   return (
-    <AppShell
-      skipLink={{ label: 'Ir para o conteúdo', targetId: 'conteudo' }}
-      topBar={<TopBar title="Tauros OS" />}
+    <AppChrome
+      current="operacao"
+      connected={view.readyToSync}
       // triagem persistente no tablet/desktop; some no mobile via CSS do DS
       // (o quadro oferece o Drawer "Filtros e equipe" nesse caso)
-      sidebar={
-        view.phase === 'ready' ? <OperationsSidebar view={view} actions={actions} /> : undefined
-      }
+      {...(view.phase === 'ready'
+        ? { sidebar: <OperationsSidebar view={view} actions={actions} /> }
+        : {})}
     >
       <SharedOperationsScreen
         view={view}
         actions={actions}
         managementLink={appLink(router, '/encarregado')}
       />
-    </AppShell>
+    </AppChrome>
   );
 }

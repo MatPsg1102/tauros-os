@@ -223,13 +223,6 @@ export function ShiftOpeningScreen({
             ? 'Identifique-se para iniciar o turno de trabalho'
             : `Operador: ${view.operator.name}`
         }
-        status={
-          view.connectivity.readyToSync ? (
-            <Badge status="success">Conectado</Badge>
-          ) : (
-            <Badge status="warn">Sem conexão — operação local segura</Badge>
-          )
-        }
       />
 
       {!view.connectivity.readyToSync && view.phase !== 'bootstrapping' && (

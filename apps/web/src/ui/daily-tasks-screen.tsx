@@ -194,23 +194,6 @@ export function DailyTasksScreen({
         description={
           view.operatorName === null ? 'Quadro do dia' : `Operador: ${view.operatorName}`
         }
-        status={
-          view.readyToSync ? (
-            <Badge status="success">Conectado</Badge>
-          ) : (
-            <Badge status="warn">Sem conexão — operação local segura</Badge>
-          )
-        }
-        actions={
-          <Button
-            variant="secondary"
-            onClick={() => {
-              shiftLink.navigate?.();
-            }}
-          >
-            Voltar ao turno
-          </Button>
-        }
       />
 
       {!view.readyToSync && view.phase === 'ready' && (

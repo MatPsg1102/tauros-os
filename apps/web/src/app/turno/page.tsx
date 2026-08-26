@@ -5,12 +5,12 @@
 import { useCallback, useState, type ReactElement } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { AppShell, TopBar } from '@tauros/ui-primitives';
 import type { OperatorSessionRecord } from '@tauros/contracts';
 
 import { useShiftClosing } from '../../controllers/use-shift-closing.js';
 import { useShiftOpening } from '../../controllers/use-shift-opening.js';
 import { appLink } from '../../navigation/links.js';
+import { AppChrome } from '../../ui/app-chrome.js';
 import { ShiftOpeningScreen } from '../../ui/shift-opening-screen.js';
 import { useAppContainer } from '../providers.js';
 
@@ -27,10 +27,7 @@ export default function TurnoPage(): ReactElement {
   const [closing, closingActions] = useShiftClosing(container, session, onSessionChanged);
 
   return (
-    <AppShell
-      skipLink={{ label: 'Ir para o conteúdo', targetId: 'conteudo' }}
-      topBar={<TopBar title="Tauros OS" />}
-    >
+    <AppChrome current="turno" connected={view.connectivity.readyToSync}>
       <ShiftOpeningScreen
         view={view}
         actions={actions}
@@ -39,6 +36,6 @@ export default function TurnoPage(): ReactElement {
         tasksLink={appLink(router, '/turno/tarefas')}
         supervisorLink={appLink(router, '/encarregado')}
       />
-    </AppShell>
+    </AppChrome>
   );
 }
