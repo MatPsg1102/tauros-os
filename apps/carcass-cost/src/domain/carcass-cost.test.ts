@@ -1,5 +1,6 @@
-// Testes do domínio de custo de carcaça — vetores canônicos do spec do
-// produto (exemplo rápido R$ 7,1875/kg e lote real de 110 suínos → R$ 6,38/kg).
+// Testes do domínio de custo de carcaça — vetores canônicos do modelo v2:
+// físico 100×115 kg → 9.545 → 9.306,375 kg (80,925%) e econômico
+// 5,20 ÷ 0,83 ÷ 0,975 × 1,07 ≈ 6,88/kg; lote real 65.212 → 6,38/kg.
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -7,6 +8,7 @@ import {
   calculatePaidWeight,
   calculateQuickEstimate,
   calculateRealLot,
+  calculateTotalLiveWeight,
   calculateYieldAfterSlaughter,
   whatIfPrices,
   type QuickEstimateInput,
@@ -15,9 +17,10 @@ import {
 
 describe('calculateYieldAfterSlaughter / calculateFinalYield', () => {
   it('aplica as quebras sequencialmente, nunca somadas', () => {
-    expect(calculateYieldAfterSlaughter(20)).toBeCloseTo(0.8, 12);
-    // 20% + 7% sequencial = 74,40% (a soma simplista daria 73%).
-    expect(calculateFinalYield(20, 7)).toBeCloseTo(0.744, 12);
+    expect(calculateYieldAfterSlaughter(17)).toBeCloseTo(0.83, 12);
+    // 17% + 2,5% sequencial = 80,925% (a soma simplista daria 80,5%).
+    expect(calculateFinalYield(17, 2.5)).toBeCloseTo(0.80925, 12);
+    expect(calculateFinalYield(17, 2.5)).not.toBeCloseTo(0.805, 4);
   });
 
   it('quebra zero preserva o peso', () => {
@@ -25,80 +28,104 @@ describe('calculateYieldAfterSlaughter / calculateFinalYield', () => {
   });
 });
 
-const QUICK_BASE: QuickEstimateInput = {
-  animals: 110,
-  liveWeightKg: 12_340,
-  livePricePerKg: 5,
-  slaughterLossPct: 20,
-  coolingLossPct: 7,
-  transformationPct: 7,
-  costs: {
-    slaughterFee: { kind: 'perKg', amountPerKg: 0.5 },
-    servicePerHead: 0,
-    freight: 0,
-  },
-};
-
-describe('calculateQuickEstimate', () => {
-  it('reproduz o exemplo canônico: 5,00 ÷ 0,80 × 1,07 + 0,50 = 7,1875', () => {
-    const result = calculateQuickEstimate(QUICK_BASE);
-    expect(result.basePerKg).toBeCloseTo(6.6875, 12);
-    expect(result.costPerKg).toBeCloseTo(7.1875, 12);
-  });
-
-  it('não arredonda valores intermediários (6,6875 permanece exato)', () => {
-    const result = calculateQuickEstimate(QUICK_BASE);
-    // Se o intermediário fosse arredondado para 6,69, o total seria 7,19 exato.
-    expect(result.costPerKg).not.toBeCloseTo(7.19, 12);
-    expect(result.costPerKg).toBeCloseTo(7.1875, 12);
-  });
-
-  it('estima peso e rendimento pelo caminho físico sequencial', () => {
-    const result = calculateQuickEstimate(QUICK_BASE);
-    expect(result.yieldAfterSlaughter).toBeCloseTo(0.8, 12);
-    expect(result.finalYield).toBeCloseTo(0.744, 12);
-    expect(result.totalLossPct).toBeCloseTo(0.256, 12);
-    expect(result.estimatedCarcassKg).toBeCloseTo(9_180.96, 6);
-  });
-
-  it('transformação afeta só o preço; quebra de frio afeta só o peso', () => {
-    const semFrio = calculateQuickEstimate({ ...QUICK_BASE, coolingLossPct: 0 });
-    expect(semFrio.basePerKg).toBeCloseTo(6.6875, 12);
-    expect(semFrio.estimatedCarcassKg).toBeCloseTo(12_340 * 0.8, 6);
-
-    const semTransformacao = calculateQuickEstimate({ ...QUICK_BASE, transformationPct: 0 });
-    expect(semTransformacao.basePerKg).toBeCloseTo(6.25, 12);
-    expect(semTransformacao.estimatedCarcassKg).toBeCloseTo(9_180.96, 6);
-  });
-
-  it('rateia serviço e frete pelo peso estimado da carcaça', () => {
-    const result = calculateQuickEstimate({
-      ...QUICK_BASE,
-      costs: { ...QUICK_BASE.costs, servicePerHead: 3, freight: 150 },
-    });
-    // (110 × 3 + 150) ÷ 9.180,96 = 0,052282…
-    expect(result.servicePerKg).toBeCloseTo(330 / 9_180.96, 12);
-    expect(result.freightPerKg).toBeCloseTo(150 / 9_180.96, 12);
-    expect(result.additionalPerKg).toBeCloseTo(0.5 + 480 / 9_180.96, 12);
-    expect(result.costPerKg).toBeCloseTo(7.1875 + 480 / 9_180.96, 12);
-  });
-
-  it('taxa de abate por cabeça é rateada pelo peso estimado', () => {
-    const result = calculateQuickEstimate({
-      ...QUICK_BASE,
-      costs: { ...QUICK_BASE.costs, slaughterFee: { kind: 'perHead', amountPerHead: 50 } },
-    });
-    expect(result.slaughterPerKg).toBeCloseTo(5_500 / 9_180.96, 12);
-  });
-
-  it('custo total e custo por suíno derivam do custo/kg × peso estimado', () => {
-    const result = calculateQuickEstimate(QUICK_BASE);
-    expect(result.totalCost).toBeCloseTo(result.costPerKg * result.estimatedCarcassKg, 6);
-    expect(result.costPerAnimal).toBeCloseTo(result.totalCost / 110, 6);
+describe('calculateTotalLiveWeight', () => {
+  it('total = animais × peso médio', () => {
+    expect(calculateTotalLiveWeight(100, 115)).toBe(11_500);
   });
 });
 
-// Lote real canônico do spec: 110 suínos, balança 12.560 kg, graxaria 220 kg,
+const ZERO_COSTS = {
+  slaughterFee: { kind: 'perKg', amountPerKg: 0 },
+  servicePerHead: 0,
+  freight: 0,
+} as const;
+
+const QUICK_BASE: QuickEstimateInput = {
+  animals: 100,
+  avgLiveWeightKg: 115,
+  livePricePerKg: 5.2,
+  slaughterLossPct: 17,
+  coolingLossPct: 2.5,
+  commercialAdjustmentPct: 7,
+  costs: ZERO_COSTS,
+};
+
+describe('calculateQuickEstimate — cadeia física', () => {
+  it('115 kg × 100 animais → 11.500 → 9.545 → 9.306,375 kg', () => {
+    const result = calculateQuickEstimate(QUICK_BASE);
+    expect(result.totalLiveWeightKg).toBeCloseTo(11_500, 9);
+    // quebra de abate (17%) sobre o peso VIVO
+    expect(result.weightAfterSlaughterKg).toBeCloseTo(9_545, 9);
+    // quebra de frio (2,5%) sobre o peso APÓS o abate — nunca sobre o vivo
+    expect(result.estimatedCarcassKg).toBeCloseTo(9_306.375, 9);
+    expect(result.yieldAfterSlaughter).toBeCloseTo(0.83, 12);
+    expect(result.finalYield).toBeCloseTo(0.80925, 12);
+    expect(result.totalLossPct).toBeCloseTo(0.19075, 12);
+  });
+});
+
+describe('calculateQuickEstimate — cadeia econômica', () => {
+  it('5,20 ÷ 0,83 ÷ 0,975 × 1,07 ≈ 6,88/kg (sem custos adicionais)', () => {
+    const result = calculateQuickEstimate(QUICK_BASE);
+    expect(result.baseCarcassPerKg).toBeCloseTo(5.2 / 0.83 / 0.975, 12);
+    expect(result.equivalentPerKg).toBeCloseTo((5.2 / 0.83 / 0.975) * 1.07, 12);
+    expect(Math.round(result.equivalentPerKg * 100) / 100).toBe(6.88);
+    // sem abate/serviço/frete, o custo final é o próprio equivalente
+    expect(result.costPerKg).toBeCloseTo(result.equivalentPerKg, 12);
+  });
+
+  it('ajuste comercial incide SÓ sobre a matéria-prima, nunca sobre os custos', () => {
+    const withCosts: QuickEstimateInput = {
+      ...QUICK_BASE,
+      costs: { slaughterFee: { kind: 'perKg', amountPerKg: 0.5 }, servicePerHead: 3, freight: 150 },
+    };
+    const result = calculateQuickEstimate(withCosts);
+    const noAdjustment = calculateQuickEstimate({ ...withCosts, commercialAdjustmentPct: 0 });
+    // custos adicionais idênticos com e sem ajuste (o 7% não os multiplica)
+    expect(result.additionalPerKg).toBeCloseTo(noAdjustment.additionalPerKg, 12);
+    // identidade exata: final = equivalente + adicionais
+    expect(result.costPerKg).toBeCloseTo(result.equivalentPerKg + result.additionalPerKg, 12);
+    // sem ajuste, equivalente = base
+    expect(noAdjustment.equivalentPerKg).toBeCloseTo(noAdjustment.baseCarcassPerKg, 12);
+  });
+
+  it('quebra de frio afeta o peso E a conversão do preço; ajuste só o preço', () => {
+    const semFrio = calculateQuickEstimate({ ...QUICK_BASE, coolingLossPct: 0 });
+    expect(semFrio.estimatedCarcassKg).toBeCloseTo(9_545, 9);
+    expect(semFrio.baseCarcassPerKg).toBeCloseTo(5.2 / 0.83, 12);
+
+    const semAjuste = calculateQuickEstimate({ ...QUICK_BASE, commercialAdjustmentPct: 0 });
+    expect(semAjuste.estimatedCarcassKg).toBeCloseTo(9_306.375, 9);
+    expect(semAjuste.equivalentPerKg).toBeCloseTo(5.2 / 0.83 / 0.975, 12);
+  });
+
+  it('rateia abate/serviço/frete pelo peso final da carcaça', () => {
+    const result = calculateQuickEstimate({
+      ...QUICK_BASE,
+      costs: { slaughterFee: { kind: 'perKg', amountPerKg: 0.5 }, servicePerHead: 3, freight: 150 },
+    });
+    expect(result.slaughterPerKg).toBeCloseTo(0.5, 12);
+    expect(result.servicePerKg).toBeCloseTo(300 / 9_306.375, 12);
+    expect(result.freightPerKg).toBeCloseTo(150 / 9_306.375, 12);
+    expect(result.additionalPerKg).toBeCloseTo(0.5 + 300 / 9_306.375 + 150 / 9_306.375, 12);
+  });
+
+  it('taxa de abate por cabeça é rateada pelo peso final', () => {
+    const result = calculateQuickEstimate({
+      ...QUICK_BASE,
+      costs: { ...ZERO_COSTS, slaughterFee: { kind: 'perHead', amountPerHead: 50 } },
+    });
+    expect(result.slaughterPerKg).toBeCloseTo(5_000 / 9_306.375, 12);
+  });
+
+  it('custo total e custo por suíno derivam do custo/kg × peso final', () => {
+    const result = calculateQuickEstimate(QUICK_BASE);
+    expect(result.totalCost).toBeCloseTo(result.costPerKg * result.estimatedCarcassKg, 6);
+    expect(result.costPerAnimal).toBeCloseTo(result.totalCost / 100, 6);
+  });
+});
+
+// Lote real canônico: 110 suínos, balança 12.560 kg, graxaria 220 kg,
 // abatido 10.513,50 kg, após frio 10.217,20 kg, vivo R$ 4,80/kg,
 // abate R$ 50/cabeça, serviço R$ 3/cabeça, frete R$ 150.
 const REAL_LOT: RealLotInput = {

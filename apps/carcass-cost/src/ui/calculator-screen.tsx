@@ -1,7 +1,9 @@
 // Tela principal — Custo da Carcaça. Hierarquia: resultado dominante no topo
 // (decisão nos primeiros 30% da tela), resumo executivo, comparação de preço,
 // entradas grandes para edição com uma mão. A tela só apresenta: todo cálculo
-// vem do domínio via controller.
+// vem do domínio via controller. Na estimativa a cadeia é visível: peso médio
+// → total → após abate → carcaça final → custo base → ajuste comercial →
+// equivalente → custos adicionais → CUSTO FINAL EQUIVALENTE.
 
 import { cssVar } from '@tauros/tokens';
 import {
@@ -27,9 +29,8 @@ import { useState, type ReactElement } from 'react';
 
 import {
   calculateFinalYield,
+  calculateTotalLiveWeight,
   calculateYieldAfterSlaughter,
-  type QuickEstimateResult,
-  type RealLotResult,
 } from '../domain/carcass-cost.js';
 import type { ValidationIssue } from '../domain/validation.js';
 import type { CalculatorController } from '../state/use-calculator.js';
@@ -49,25 +50,12 @@ export interface CalculatorScreenProps {
   readonly onOpenHistory: () => void;
 }
 
-/** Visão comum do resultado dominante — mesmos campos nos dois modos. */
+/** Números compartilhados do resultado dominante nos dois modos. */
 interface HeadlineView {
   readonly costPerKg: number;
   readonly costPerAnimal: number;
   readonly totalCost: number;
-  readonly finalWeightKg: number;
-  readonly basePerKg: number;
-  readonly slaughterPerKg: number;
-  readonly servicePerKg: number;
-  readonly freightPerKg: number;
   readonly additionalPerKg: number;
-}
-
-function headlineFromQuick(result: QuickEstimateResult): HeadlineView {
-  return { ...result, finalWeightKg: result.estimatedCarcassKg };
-}
-
-function headlineFromReal(result: RealLotResult): HeadlineView {
-  return result;
 }
 
 interface SummaryTileProps {
@@ -122,28 +110,30 @@ export function CalculatorScreen({
   const alreadySaved = savedKey === lotKey;
   const isReal = state.mode === 'real';
   const issues = isReal ? realIssues : quickIssues;
-  const headline = isReal
-    ? realResult === null
-      ? null
-      : headlineFromReal(realResult)
-    : quickResult === null
-      ? null
-      : headlineFromQuick(quickResult);
+  const headline: HeadlineView | null = isReal ? realResult : quickResult;
 
-  // Rendimentos do modo estimativa dependem só dos percentuais — visíveis
-  // mesmo com o peso ainda em branco (funções do domínio, nunca refeitas aqui).
-  const { slaughterLossPct, coolingTransformPct } = state.quick;
+  // Rendimentos da estimativa dependem só dos percentuais — visíveis mesmo
+  // com o peso ainda em branco (funções do domínio, nunca refeitas aqui).
+  const { animals, avgLiveWeightKg, slaughterLossPct, coolingLossPct } = state.quick;
   const yieldsAvailable =
     slaughterLossPct !== null &&
-    coolingTransformPct !== null &&
+    coolingLossPct !== null &&
     !hasIssue(quickIssues, 'slaughterLossPct') &&
-    !hasIssue(quickIssues, 'coolingTransformPct');
+    !hasIssue(quickIssues, 'coolingLossPct');
   const yieldAfterSlaughter = yieldsAvailable
     ? calculateYieldAfterSlaughter(slaughterLossPct)
     : null;
   const finalYieldPreview = yieldsAvailable
-    ? calculateFinalYield(slaughterLossPct, coolingTransformPct)
+    ? calculateFinalYield(slaughterLossPct, coolingLossPct)
     : null;
+  // Peso vivo total derivado (animais × peso médio) — nunca digitado.
+  const totalLivePreview =
+    animals !== null &&
+    avgLiveWeightKg !== null &&
+    !hasIssue(quickIssues, 'animals') &&
+    !hasIssue(quickIssues, 'avgLiveWeightKg')
+      ? calculateTotalLiveWeight(animals, avgLiveWeightKg)
+      : null;
 
   const modeBadge = isReal ? (
     <Badge status="info">LOTE REAL</Badge>
@@ -189,7 +179,7 @@ export function CalculatorScreen({
         <Stack gap={200}>
           <Flex justify="between" gap={100}>
             <Text role="label" tone="secondary">
-              Custo final
+              {isReal ? 'Custo final' : 'Custo final equivalente'}
             </Text>
             {modeBadge}
           </Flex>
@@ -225,19 +215,55 @@ export function CalculatorScreen({
               </Flex>
               <Divider />
               <Stack gap={50} role="group" aria-label="Composição do custo por kg">
-                <BreakdownRow
-                  label="Animal (vivo → carcaça)"
-                  value={formatPerKg(headline.basePerKg)}
-                />
-                <BreakdownRow
-                  label="Taxa de abate"
-                  value={`+ ${formatPerKg(headline.slaughterPerKg)}`}
-                />
-                <BreakdownRow label="Serviço" value={`+ ${formatPerKg(headline.servicePerKg)}`} />
-                <BreakdownRow
-                  label="Frete / diária"
-                  value={`+ ${formatPerKg(headline.freightPerKg)}`}
-                />
+                {!isReal && quickResult !== null ? (
+                  <>
+                    <BreakdownRow
+                      label="Carcaça antes do ajuste"
+                      value={formatPerKg(quickResult.baseCarcassPerKg)}
+                    />
+                    <BreakdownRow
+                      label={`Ajuste comercial (+${formatPct(
+                        (state.quick.commercialAdjustmentPct ?? 0) / 100,
+                      )})`}
+                      value={`+ ${formatPerKg(quickResult.commercialAdjustmentPerKg)}`}
+                    />
+                    <BreakdownRow
+                      label="Custo equivalente"
+                      value={formatPerKg(quickResult.equivalentPerKg)}
+                    />
+                    <BreakdownRow
+                      label="Taxa de abate"
+                      value={`+ ${formatPerKg(quickResult.slaughterPerKg)}`}
+                    />
+                    <BreakdownRow
+                      label="Serviço"
+                      value={`+ ${formatPerKg(quickResult.servicePerKg)}`}
+                    />
+                    <BreakdownRow
+                      label="Frete / diária"
+                      value={`+ ${formatPerKg(quickResult.freightPerKg)}`}
+                    />
+                  </>
+                ) : realResult !== null ? (
+                  <>
+                    <BreakdownRow
+                      label="Animal (vivo → carcaça)"
+                      value={formatPerKg(realResult.basePerKg)}
+                    />
+                    <BreakdownRow
+                      label="Taxa de abate"
+                      value={`+ ${formatPerKg(realResult.slaughterPerKg)}`}
+                    />
+                    <BreakdownRow
+                      label="Serviço"
+                      value={`+ ${formatPerKg(realResult.servicePerKg)}`}
+                    />
+                    <BreakdownRow
+                      label="Frete / diária"
+                      value={`+ ${formatPerKg(realResult.freightPerKg)}`}
+                    />
+                  </>
+                ) : null}
               </Stack>
             </>
           )}
@@ -270,13 +296,26 @@ export function CalculatorScreen({
               </>
             ) : quickResult !== null ? (
               <>
-                <SummaryTile label="Peso vivo" value={formatKg(quickResult.liveWeightKg)} />
+                <SummaryTile
+                  label="Peso vivo total"
+                  value={formatKg(quickResult.totalLiveWeightKg)}
+                />
+                <SummaryTile
+                  label="Peso após abate"
+                  value={formatKg(quickResult.weightAfterSlaughterKg)}
+                  detail={formatPct(quickResult.yieldAfterSlaughter)}
+                />
                 <SummaryTile
                   label="Carcaça estimada"
                   value={formatKg(quickResult.estimatedCarcassKg)}
+                  detail={formatPct(quickResult.finalYield)}
                 />
-                <SummaryTile label="Rendimento final" value={formatPct(quickResult.finalYield)} />
                 <SummaryTile label="Quebra total" value={formatPct(quickResult.totalLossPct)} />
+                <SummaryTile
+                  label="Custo equivalente"
+                  value={formatPerKg(quickResult.equivalentPerKg)}
+                  detail="Matéria-prima + ajuste comercial"
+                />
               </>
             ) : null}
             <SummaryTile
@@ -393,13 +432,19 @@ export function CalculatorScreen({
                   }}
                 />
               </Field>
-              <Field label="Peso vivo total (kg)" {...errorProp(issues, 'liveWeightKg')}>
+              <Field
+                label="Peso vivo médio por suíno (kg)"
+                {...(totalLivePreview !== null
+                  ? { description: `Peso vivo total: ${formatKg(totalLivePreview)}` }
+                  : {})}
+                {...errorProp(issues, 'avgLiveWeightKg')}
+              >
                 <NumberInput
                   size="lg"
                   endAdornment="kg"
-                  value={state.quick.liveWeightKg}
+                  value={state.quick.avgLiveWeightKg}
                   onValueChange={(change) => {
-                    actions.patchQuick({ liveWeightKg: change.value });
+                    actions.patchQuick({ avgLiveWeightKg: change.value });
                   }}
                 />
               </Field>
@@ -419,7 +464,11 @@ export function CalculatorScreen({
 
           <Section title="Rendimento">
             <Stack gap={200}>
-              <Field label="Quebra de abate (%)" {...errorProp(issues, 'slaughterLossPct')}>
+              <Field
+                label="Quebra de abate (%)"
+                description="Sobre o peso vivo."
+                {...errorProp(issues, 'slaughterLossPct')}
+              >
                 <NumberInput
                   size="lg"
                   endAdornment="%"
@@ -430,16 +479,16 @@ export function CalculatorScreen({
                 />
               </Field>
               <Field
-                label="Quebra de frio / transformação (%)"
-                description="Perda física no resfriamento; na estimativa também entra como acréscimo econômico sobre o preço."
-                {...errorProp(issues, 'coolingTransformPct')}
+                label="Quebra de frio (%)"
+                description="Sobre o peso que restou após o abate — nunca sobre o vivo."
+                {...errorProp(issues, 'coolingLossPct')}
               >
                 <NumberInput
                   size="lg"
                   endAdornment="%"
-                  value={state.quick.coolingTransformPct}
+                  value={state.quick.coolingLossPct}
                   onValueChange={(change) => {
-                    actions.patchQuick({ coolingTransformPct: change.value });
+                    actions.patchQuick({ coolingLossPct: change.value });
                   }}
                 />
               </Field>
@@ -454,6 +503,25 @@ export function CalculatorScreen({
                 />
               </ResponsiveGrid>
             </Stack>
+          </Section>
+
+          <Section
+            title="Ajuste comercial"
+            description="Compara a carcaça recebida com a referência de exportação (mãozinha, rabinho, banha etc.). Não é quebra física: incide só sobre o custo da matéria-prima."
+          >
+            <Field
+              label="Ajuste comercial / exportação (%)"
+              {...errorProp(issues, 'commercialAdjustmentPct')}
+            >
+              <NumberInput
+                size="lg"
+                endAdornment="%"
+                value={state.quick.commercialAdjustmentPct}
+                onValueChange={(change) => {
+                  actions.patchQuick({ commercialAdjustmentPct: change.value });
+                }}
+              />
+            </Field>
           </Section>
         </>
       )}

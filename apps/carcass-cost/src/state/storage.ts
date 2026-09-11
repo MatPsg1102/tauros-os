@@ -16,7 +16,10 @@ import {
 export const STATE_STORAGE_KEY = 'tauros.carcass-cost.state.v1';
 export const HISTORY_STORAGE_KEY = 'tauros.carcass-cost.history.v1';
 export const HISTORY_LIMIT = 50;
-const STORAGE_VERSION = 1;
+// v2: modelo novo da estimativa (quebra de abate × quebra de frio × ajuste
+// comercial separados; peso vivo médio). Envelope v1 é rejeitado — sem
+// migração implícita (o app volta aos padrões).
+const STORAGE_VERSION = 2;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -43,10 +46,14 @@ function sanitizeQuick(value: unknown, fallback: QuickForm): QuickForm {
   const raw = isRecord(value) ? value : {};
   return {
     animals: numberOrNull(raw['animals'], fallback.animals),
-    liveWeightKg: numberOrNull(raw['liveWeightKg'], fallback.liveWeightKg),
+    avgLiveWeightKg: numberOrNull(raw['avgLiveWeightKg'], fallback.avgLiveWeightKg),
     livePricePerKg: numberOrNull(raw['livePricePerKg'], fallback.livePricePerKg),
     slaughterLossPct: numberOrNull(raw['slaughterLossPct'], fallback.slaughterLossPct),
-    coolingTransformPct: numberOrNull(raw['coolingTransformPct'], fallback.coolingTransformPct),
+    coolingLossPct: numberOrNull(raw['coolingLossPct'], fallback.coolingLossPct),
+    commercialAdjustmentPct: numberOrNull(
+      raw['commercialAdjustmentPct'],
+      fallback.commercialAdjustmentPct,
+    ),
   };
 }
 
@@ -79,9 +86,10 @@ function sanitizeSettings(value: unknown): DefaultSettings {
     animals: finiteNumber(raw['animals'], DEFAULT_SETTINGS.animals),
     livePricePerKg: finiteNumber(raw['livePricePerKg'], DEFAULT_SETTINGS.livePricePerKg),
     slaughterLossPct: finiteNumber(raw['slaughterLossPct'], DEFAULT_SETTINGS.slaughterLossPct),
-    coolingTransformPct: finiteNumber(
-      raw['coolingTransformPct'],
-      DEFAULT_SETTINGS.coolingTransformPct,
+    coolingLossPct: finiteNumber(raw['coolingLossPct'], DEFAULT_SETTINGS.coolingLossPct),
+    commercialAdjustmentPct: finiteNumber(
+      raw['commercialAdjustmentPct'],
+      DEFAULT_SETTINGS.commercialAdjustmentPct,
     ),
     slaughterFeeKind: feeKind(raw['slaughterFeeKind'], DEFAULT_SETTINGS.slaughterFeeKind),
     slaughterFeePerKg: finiteNumber(raw['slaughterFeePerKg'], DEFAULT_SETTINGS.slaughterFeePerKg),

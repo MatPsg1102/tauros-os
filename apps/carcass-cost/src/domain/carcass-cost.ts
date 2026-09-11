@@ -1,9 +1,12 @@
 // Domínio puro do Custo da Carcaça — a matemática é a fonte de verdade:
 // nenhum arredondamento interno (arredonda-se só na apresentação, ui/format)
 // e quebras aplicadas SEQUENCIALMENTE, nunca somadas de forma simplista.
-// "Quebra de frio" (perda física de peso) e "transformação" (acréscimo
-// econômico do modo rápido) são conceitos DISTINTOS: a transformação afeta
-// apenas o preço estimado; a quebra de frio afeta apenas o peso.
+// Três conceitos distintos na estimativa:
+// - quebra de ABATE (física, % sobre o peso vivo);
+// - quebra de FRIO (física, % sobre o peso que restou APÓS o abate);
+// - AJUSTE COMERCIAL/exportação (econômico, ex.: mãozinha/rabinho/banha) —
+//   aplicado SOMENTE sobre o custo da matéria-prima convertido para carcaça,
+//   nunca sobre abate/serviço/frete e nunca sobre o rendimento físico.
 
 export type SlaughterFeeModel =
   | { readonly kind: 'perKg'; readonly amountPerKg: number }
@@ -19,31 +22,35 @@ export interface LotCosts {
 
 export interface QuickEstimateInput {
   readonly animals: number;
-  readonly liveWeightKg: number;
+  /** Peso vivo MÉDIO por suíno (kg) — o total é derivado, nunca digitado. */
+  readonly avgLiveWeightKg: number;
   readonly livePricePerKg: number;
-  /** Quebra de abate, em % (0 ≤ x < 100). */
+  /** Quebra de abate, em % sobre o peso vivo (0 ≤ x < 100). */
   readonly slaughterLossPct: number;
-  /** Quebra de frio FÍSICA, em % — só afeta o peso estimado. */
+  /** Quebra de frio, em % sobre o peso APÓS o abate (0 ≤ x < 100). */
   readonly coolingLossPct: number;
-  /** Transformação ECONÔMICA, em % — só afeta o preço estimado. */
-  readonly transformationPct: number;
+  /** Ajuste comercial/exportação, em % — só afeta o custo da matéria-prima. */
+  readonly commercialAdjustmentPct: number;
   readonly costs: LotCosts;
 }
 
 export interface QuickEstimateResult {
-  /** Eco da entrada — peso vivo usado na estimativa. */
-  readonly liveWeightKg: number;
+  /** Cadeia física de pesos. */
+  readonly totalLiveWeightKg: number;
+  readonly weightAfterSlaughterKg: number;
+  readonly estimatedCarcassKg: number;
   /** Frações 0–1 (a UI formata como %). */
   readonly yieldAfterSlaughter: number;
   readonly finalYield: number;
   readonly totalLossPct: number;
-  readonly estimatedCarcassKg: number;
-  /** Vivo → carcaça (quebra de abate + transformação), R$/kg. */
-  readonly basePerKg: number;
+  /** Cadeia econômica por kg de carcaça. */
+  readonly baseCarcassPerKg: number;
+  readonly commercialAdjustmentPerKg: number;
+  readonly equivalentPerKg: number;
   readonly slaughterPerKg: number;
   readonly servicePerKg: number;
   readonly freightPerKg: number;
-  /** Abate + serviço + frete, R$/kg — o quanto os custos além do animal pesam. */
+  /** Abate + serviço + frete, R$/kg — SEM ajuste comercial por cima. */
   readonly additionalPerKg: number;
   readonly costPerKg: number;
   readonly totalCost: number;
@@ -78,7 +85,7 @@ export interface RealLotResult {
   readonly serviceCost: number;
   readonly freightCost: number;
   readonly totalCost: number;
-  /** Decomposição por kg final — mesma transparência do modo rápido. */
+  /** Decomposição por kg final — mesma transparência do modo estimativa. */
   readonly basePerKg: number;
   readonly slaughterPerKg: number;
   readonly servicePerKg: number;
@@ -92,11 +99,19 @@ function fraction(pct: number): number {
   return pct / 100;
 }
 
+export function calculateTotalLiveWeight(animals: number, avgLiveWeightKg: number): number {
+  return animals * avgLiveWeightKg;
+}
+
 export function calculateYieldAfterSlaughter(slaughterLossPct: number): number {
   return 1 - fraction(slaughterLossPct);
 }
 
-/** Rendimento final = (1 − quebra de abate) × (1 − quebra de frio), sequencial. */
+/**
+ * Rendimento final = (1 − quebra de abate) × (1 − quebra de frio) —
+ * sequencial: a quebra de frio incide sobre o peso que RESTOU do abate,
+ * nunca sobre o peso vivo (17% + 2,5% ⇒ 80,925%, não 80,5%).
+ */
 export function calculateFinalYield(slaughterLossPct: number, coolingLossPct: number): number {
   return calculateYieldAfterSlaughter(slaughterLossPct) * (1 - fraction(coolingLossPct));
 }
@@ -106,18 +121,31 @@ export function calculatePaidWeight(scaleWeightKg: number, discountsKg: number):
 }
 
 /**
- * Modo rápido (Estimativa): premissas configuradas.
- * Preço: vivo ÷ (1 − quebra abate) × (1 + transformação) + custos rateados.
- * Peso: vivo × rendimento sequencial (quebra abate, depois quebra de frio).
+ * Modo estimativa: premissas configuradas.
+ * Física: total = animais × peso médio; após abate = total × (1 − q_abate);
+ * carcaça final = após abate × (1 − q_frio).
+ * Econômica: base = vivo ÷ (1 − q_abate) ÷ (1 − q_frio);
+ * equivalente = base × (1 + ajuste comercial);
+ * custo final = equivalente + (abate + serviço + frete) ÷ carcaça final.
+ * O ajuste comercial NUNCA incide sobre os custos adicionais.
  * Pré-condição: entrada validada (validation.ts) — pesos > 0, animais ≥ 1.
  */
 export function calculateQuickEstimate(input: QuickEstimateInput): QuickEstimateResult {
   const yieldAfterSlaughter = calculateYieldAfterSlaughter(input.slaughterLossPct);
+  const coolingYield = 1 - fraction(input.coolingLossPct);
   const finalYield = calculateFinalYield(input.slaughterLossPct, input.coolingLossPct);
-  const estimatedCarcassKg = input.liveWeightKg * finalYield;
 
-  const basePerKg =
-    (input.livePricePerKg / yieldAfterSlaughter) * (1 + fraction(input.transformationPct));
+  const totalLiveWeightKg = calculateTotalLiveWeight(input.animals, input.avgLiveWeightKg);
+  // Passo a passo, na ordem física real (não total × rendimento composto):
+  // além de espelhar o processo, evita erro de meio-ulp na apresentação
+  // (11.500 × 0,80925 cairia um hair abaixo de 9.306,375).
+  const weightAfterSlaughterKg = totalLiveWeightKg * yieldAfterSlaughter;
+  const estimatedCarcassKg = weightAfterSlaughterKg * coolingYield;
+
+  const baseCarcassPerKg = input.livePricePerKg / yieldAfterSlaughter / coolingYield;
+  const commercialAdjustmentPerKg = baseCarcassPerKg * fraction(input.commercialAdjustmentPct);
+  const equivalentPerKg = baseCarcassPerKg + commercialAdjustmentPerKg;
+
   const slaughterPerKg =
     input.costs.slaughterFee.kind === 'perKg'
       ? input.costs.slaughterFee.amountPerKg
@@ -125,16 +153,20 @@ export function calculateQuickEstimate(input: QuickEstimateInput): QuickEstimate
   const servicePerKg = (input.costs.servicePerHead * input.animals) / estimatedCarcassKg;
   const freightPerKg = input.costs.freight / estimatedCarcassKg;
   const additionalPerKg = slaughterPerKg + servicePerKg + freightPerKg;
-  const costPerKg = basePerKg + additionalPerKg;
+
+  const costPerKg = equivalentPerKg + additionalPerKg;
   const totalCost = costPerKg * estimatedCarcassKg;
 
   return {
-    liveWeightKg: input.liveWeightKg,
+    totalLiveWeightKg,
+    weightAfterSlaughterKg,
+    estimatedCarcassKg,
     yieldAfterSlaughter,
     finalYield,
     totalLossPct: 1 - finalYield,
-    estimatedCarcassKg,
-    basePerKg,
+    baseCarcassPerKg,
+    commercialAdjustmentPerKg,
+    equivalentPerKg,
     slaughterPerKg,
     servicePerKg,
     freightPerKg,
@@ -146,7 +178,8 @@ export function calculateQuickEstimate(input: QuickEstimateInput): QuickEstimate
 }
 
 /**
- * Modo lote real: pesos efetivamente registrados.
+ * Modo lote real: pesos efetivamente registrados (custo físico real — sem
+ * ajuste comercial).
  * Pré-condição: entrada validada — peso pago > 0, abatido > 0, final > 0,
  * animais ≥ 1 e ordenação pago ≥ abatido ≥ final.
  */

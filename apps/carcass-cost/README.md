@@ -30,27 +30,38 @@ pnpm --filter @tauros/carcass-cost build    # SPA estática em dist/ (PWA)
   network-first para navegação, cache-first para assets com hash). O service
   worker só registra em produção.
 
-## Decisões de domínio
+## Decisões de domínio (modelo v2)
 
-- **Quebras são sequenciais**, nunca somadas: 20% de abate + 7% de frio ⇒
-  rendimento final 74,40% (0,80 × 0,93), não 73%.
-- **"Quebra de frio" ≠ "transformação"**: a quebra de frio é perda física (só
-  afeta peso); a transformação é acréscimo econômico do modo rápido (só afeta
-  preço: `vivo ÷ (1 − quebra abate) × (1 + transformação)`). O campo único
-  "Quebra de frio / transformação" alimenta os dois conceitos — separados no
-  domínio e documentados na própria tela.
-- **O custo final headline inclui TODOS os custos** (animal + abate + serviço +
-  frete), com a composição por kg exibida logo abaixo — nenhum custo escondido.
+- **Três conceitos separados na estimativa**:
+  - **Quebra de abate** (física, padrão 17%): sobre o peso VIVO.
+  - **Quebra de frio** (física, padrão 2,5%): sobre o peso que restou APÓS o
+    abate — nunca sobre o vivo. Sequencial: 17% + 2,5% ⇒ rendimento 80,925%
+    (0,83 × 0,975), não 80,5%.
+  - **Ajuste comercial/exportação** (econômico, padrão 7%): compara a carcaça
+    recebida com a referência de exportação (mãozinha, rabinho, banha etc.).
+    Incide SÓ sobre o custo da matéria-prima convertido — nunca sobre
+    abate/serviço/frete e nunca sobre o rendimento físico.
+- **Cadeia econômica da estimativa**:
+  `base = vivo ÷ (1 − q_abate) ÷ (1 − q_frio)`;
+  `equivalente = base × (1 + ajuste)`;
+  `custo final = equivalente + (abate + serviço + frete) ÷ peso final`.
+- **Peso vivo médio**: na estimativa o usuário informa nº de suínos + peso
+  vivo MÉDIO por suíno; o total (animais × médio) é derivado e exibido, nunca
+  digitado.
+- **O custo final headline inclui TODOS os custos** com a composição por kg
+  exibida logo abaixo — nenhum custo escondido.
 - **Taxa de abate**: um modelo por vez — R$/kg (sobre o peso final) ou
   R$/cabeça — nunca os dois.
-- Modo Lote Real: peso pago = balança − descontos; % quebra de abate sobre o
-  peso pago; % quebra de frio sobre o peso abatido; custo/kg = custo total ÷
-  peso após frio.
+- Modo Lote Real: custo físico real (sem ajuste comercial); peso pago =
+  balança − descontos; % quebra de abate sobre o peso pago; % quebra de frio
+  sobre o peso abatido; custo/kg = custo total ÷ peso após frio.
 
-## Vetores de teste canônicos (do spec do produto)
+## Vetores de teste canônicos
 
-- Estimativa: vivo R$ 5,00, quebra 20%, transformação 7%, abate R$ 0,50/kg ⇒
-  **R$ 7,1875/kg** (exibe R$ 7,19; com serviço/frete padrão ⇒ R$ 7,24).
+- Física da estimativa: 100 suínos × 115 kg = 11.500 kg → ×0,83 = 9.545 kg →
+  ×0,975 = **9.306,375 kg** (rendimento 80,925%).
+- Econômica da estimativa: vivo R$ 5,20 ⇒ 5,20 ÷ 0,83 ÷ 0,975 × 1,07 ≈
+  **R$ 6,88/kg** (antes de abate/serviço/frete, rateados pelo peso final).
 - Lote real: 110 suínos, balança 12.560 kg, graxaria 220 kg, abatido
   10.513,50 kg, após frio 10.217,20 kg, vivo R$ 4,80, abate R$ 50/cabeça,
   serviço R$ 3, frete R$ 150 ⇒ total R$ 65.212,00 ⇒ **R$ 6,38/kg**.

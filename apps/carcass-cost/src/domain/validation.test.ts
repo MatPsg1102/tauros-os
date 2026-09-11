@@ -26,10 +26,11 @@ const VALID_COSTS: CostsForm = {
 
 const VALID_QUICK: QuickForm = {
   animals: 110,
-  liveWeightKg: 12_340,
+  avgLiveWeightKg: 115,
   livePricePerKg: 5,
-  slaughterLossPct: 20,
-  coolingTransformPct: 7,
+  slaughterLossPct: 17,
+  coolingLossPct: 2.5,
+  commercialAdjustmentPct: 7,
 };
 
 const VALID_REAL: RealForm = {
@@ -69,8 +70,8 @@ describe('validateQuick', () => {
   });
 
   it('exige valor preenchido', () => {
-    expect(validateQuick({ ...VALID_QUICK, liveWeightKg: null }, VALID_COSTS)).toEqual([
-      { field: 'liveWeightKg', code: 'REQUIRED' },
+    expect(validateQuick({ ...VALID_QUICK, avgLiveWeightKg: null }, VALID_COSTS)).toEqual([
+      { field: 'avgLiveWeightKg', code: 'REQUIRED' },
     ]);
   });
 
@@ -83,9 +84,9 @@ describe('validateQuick', () => {
     ]);
   });
 
-  it('rejeita peso zero ou negativo', () => {
-    expect(validateQuick({ ...VALID_QUICK, liveWeightKg: 0 }, VALID_COSTS)).toEqual([
-      { field: 'liveWeightKg', code: 'NOT_POSITIVE' },
+  it('rejeita peso médio zero ou negativo', () => {
+    expect(validateQuick({ ...VALID_QUICK, avgLiveWeightKg: 0 }, VALID_COSTS)).toEqual([
+      { field: 'avgLiveWeightKg', code: 'NOT_POSITIVE' },
     ]);
   });
 
@@ -96,15 +97,19 @@ describe('validateQuick', () => {
     expect(validateQuick({ ...VALID_QUICK, livePricePerKg: 0 }, VALID_COSTS)).toEqual([]);
   });
 
-  it('percentual fora de [0, 100) é rejeitado nas duas bordas', () => {
+  it('percentual fora de [0, 100) é rejeitado nas duas bordas (três campos)', () => {
     expect(validateQuick({ ...VALID_QUICK, slaughterLossPct: -0.01 }, VALID_COSTS)).toEqual([
       { field: 'slaughterLossPct', code: 'PCT_OUT_OF_RANGE' },
     ]);
-    expect(validateQuick({ ...VALID_QUICK, coolingTransformPct: 100 }, VALID_COSTS)).toEqual([
-      { field: 'coolingTransformPct', code: 'PCT_OUT_OF_RANGE' },
+    expect(validateQuick({ ...VALID_QUICK, coolingLossPct: 100 }, VALID_COSTS)).toEqual([
+      { field: 'coolingLossPct', code: 'PCT_OUT_OF_RANGE' },
+    ]);
+    expect(validateQuick({ ...VALID_QUICK, commercialAdjustmentPct: -1 }, VALID_COSTS)).toEqual([
+      { field: 'commercialAdjustmentPct', code: 'PCT_OUT_OF_RANGE' },
     ]);
     expect(validateQuick({ ...VALID_QUICK, slaughterLossPct: 0 }, VALID_COSTS)).toEqual([]);
-    expect(validateQuick({ ...VALID_QUICK, coolingTransformPct: 99.99 }, VALID_COSTS)).toEqual([]);
+    expect(validateQuick({ ...VALID_QUICK, coolingLossPct: 99.99 }, VALID_COSTS)).toEqual([]);
+    expect(validateQuick({ ...VALID_QUICK, commercialAdjustmentPct: 0 }, VALID_COSTS)).toEqual([]);
   });
 });
 
@@ -167,14 +172,16 @@ describe('validateReal', () => {
 
 describe('buildQuickInput', () => {
   it('retorna null enquanto houver problema de validação', () => {
-    expect(buildQuickInput({ ...VALID_QUICK, liveWeightKg: null }, VALID_COSTS)).toBeNull();
+    expect(buildQuickInput({ ...VALID_QUICK, avgLiveWeightKg: null }, VALID_COSTS)).toBeNull();
   });
 
-  it('alimenta quebra de frio e transformação com o mesmo valor do formulário', () => {
+  it('constrói a entrada com os três conceitos separados', () => {
     const input = buildQuickInput(VALID_QUICK, VALID_COSTS);
     expect(input).not.toBeNull();
-    expect(input?.coolingLossPct).toBe(7);
-    expect(input?.transformationPct).toBe(7);
+    expect(input?.avgLiveWeightKg).toBe(115);
+    expect(input?.slaughterLossPct).toBe(17);
+    expect(input?.coolingLossPct).toBe(2.5);
+    expect(input?.commercialAdjustmentPct).toBe(7);
     expect(input?.costs.slaughterFee).toEqual({ kind: 'perKg', amountPerKg: 0.5 });
   });
 });

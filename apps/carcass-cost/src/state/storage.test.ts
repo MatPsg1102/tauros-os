@@ -25,7 +25,7 @@ describe('loadState / saveState', () => {
     const state: CalculatorState = {
       ...initialState(),
       mode: 'real',
-      quick: { ...initialState().quick, liveWeightKg: 12_340, livePricePerKg: 4.8 },
+      quick: { ...initialState().quick, avgLiveWeightKg: 115, livePricePerKg: 4.8 },
     };
     saveState(state);
     expect(loadState()).toEqual(state);
@@ -39,6 +39,21 @@ describe('loadState / saveState', () => {
     expect(loadState()).toEqual(initialState());
   });
 
+  it('envelope v1 (modelo antigo) é rejeitado — volta aos padrões novos', () => {
+    localStorage.setItem(
+      STATE_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        data: { mode: 'real', quick: { liveWeightKg: 12_340, coolingTransformPct: 7 } },
+      }),
+    );
+    const loaded = loadState();
+    expect(loaded).toEqual(initialState());
+    expect(loaded.settings.slaughterLossPct).toBe(17);
+    expect(loaded.settings.coolingLossPct).toBe(2.5);
+    expect(loaded.settings.commercialAdjustmentPct).toBe(7);
+  });
+
   it('JSON corrompido cai no estado inicial', () => {
     localStorage.setItem(STATE_STORAGE_KEY, '{corrompido');
     expect(loadState()).toEqual(initialState());
@@ -49,12 +64,12 @@ describe('loadState / saveState', () => {
     const raw = JSON.parse(localStorage.getItem(STATE_STORAGE_KEY) ?? '{}') as {
       data: { quick: Record<string, unknown>; costs: Record<string, unknown> };
     };
-    raw.data.quick['liveWeightKg'] = 'doze mil';
+    raw.data.quick['avgLiveWeightKg'] = 'cento e quinze';
     raw.data.costs['slaughterFeeKind'] = 'perTruck';
-    localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify({ version: 1, data: raw.data }));
+    localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify({ version: 2, data: raw.data }));
 
     const loaded = loadState();
-    expect(loaded.quick.liveWeightKg).toBeNull();
+    expect(loaded.quick.avgLiveWeightKg).toBeNull();
     expect(loaded.costs.slaughterFeeKind).toBe('perKg');
     // Campos íntegros sobrevivem.
     expect(loaded.quick.animals).toBe(110);
@@ -87,7 +102,7 @@ describe('loadHistory / saveHistory', () => {
   it('entradas inválidas são descartadas sem derrubar as demais', () => {
     localStorage.setItem(
       HISTORY_STORAGE_KEY,
-      JSON.stringify({ version: 1, data: [entry('a'), { id: 42 }, 'lixo'] }),
+      JSON.stringify({ version: 2, data: [entry('a'), { id: 42 }, 'lixo'] }),
     );
     const history = loadHistory();
     expect(history).toHaveLength(1);
