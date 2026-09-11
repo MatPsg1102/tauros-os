@@ -61,25 +61,14 @@ describe('Calculadora — modo estimativa', () => {
     expect(screen.getAllByText(/0,06\/kg/).length).toBeGreaterThan(0);
   });
 
-  it('“E se eu pagar…” aplica o preço tocado e recalcula na hora', async () => {
+  it('a seção “E se eu pagar…” não existe mais', async () => {
     const user = userEvent.setup();
     renderApp();
     await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
-    // 4,50 ÷ 0,83 ÷ 0,975 × 1,07 + adicionais + acréscimos fixos = 6,5941…
-    await user.click(await screen.findByRole('button', { name: /4,50/ }));
-    const matches = await screen.findAllByText(/6,59\/kg/);
-    expect(matches.length).toBeGreaterThan(0);
-  });
-
-  it('a lista de preços fica ancorada no preço digitado — não re-centra a cada toque', async () => {
-    const user = userEvent.setup();
-    renderApp();
-    await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
-    await user.click(await screen.findByRole('button', { name: /4,50/ }));
-    // O preço original (R$ 5,00, âncora) continua disponível como chip…
-    expect(screen.getByRole('button', { name: /5,00/ })).toBeDefined();
-    // …e o chip tocado passa a ser o atual (aria-pressed).
-    expect(screen.getByRole('button', { name: /4,50/ }).getAttribute('aria-pressed')).toBe('true');
+    await screen.findAllByText(/7,26\/kg/);
+    expect(screen.queryByText('E se eu pagar…')).toBeNull();
+    expect(screen.queryByRole('button', { name: /4,50/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /5,50/ })).toBeNull();
   });
 
   it('salvar dá feedback e não duplica o mesmo lote', async () => {
@@ -90,8 +79,12 @@ describe('Calculadora — modo estimativa', () => {
     const savedButton = screen.getByRole('button', { name: 'Lote salvo no histórico' });
     expect((savedButton as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText('Lote salvo. Altere algum valor para salvar de novo.')).toBeDefined();
-    // Alterar o lote reabilita o salvar.
-    await user.click(screen.getByRole('button', { name: /5,50/ }));
+    // Alterar o lote (preço via Ajuste rápido) reabilita o salvar.
+    const ajuste = within(screen.getByRole('region', { name: 'Ajuste rápido' })).getByLabelText(
+      'Preço do suíno vivo (R$/kg)',
+    );
+    await user.clear(ajuste);
+    await user.type(ajuste, '5,50');
     expect(screen.getByRole('button', { name: 'Salvar lote no histórico' })).toBeDefined();
   });
 

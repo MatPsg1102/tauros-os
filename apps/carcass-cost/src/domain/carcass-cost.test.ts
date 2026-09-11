@@ -13,7 +13,6 @@ import {
   calculateRealLot,
   calculateTotalLiveWeight,
   calculateYieldAfterSlaughter,
-  whatIfPrices,
   type QuickEstimateInput,
   type RealLotInput,
 } from './carcass-cost.js';
@@ -302,15 +301,5 @@ describe('calculateRealLot', () => {
 describe('calculatePaidWeight', () => {
   it('peso pago = balança − descontos', () => {
     expect(calculatePaidWeight(12_560, 220)).toBeCloseTo(12_340, 12);
-  });
-});
-
-describe('whatIfPrices', () => {
-  it('gera 4,50 / 4,80 / 5,00 / 5,20 / 5,50 a partir de 5,00', () => {
-    expect(whatIfPrices(5)).toEqual([4.5, 4.8, 5, 5.2, 5.5]);
-  });
-
-  it('nunca gera preço negativo', () => {
-    expect(whatIfPrices(0.3)).toEqual([0.1, 0.3, 0.5, 0.8]);
   });
 });

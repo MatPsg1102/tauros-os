@@ -1513,3 +1513,13 @@ Motor V2 e Lote Real intactos (o pedido nomeia custo_final_equivalente —
 aplicado só à Estimativa; estender ao Lote Real fica como pergunta aberta).
 Vetores: lote padrão 7,46 → 7,52 (exemplo do pedido); 11.500 kg + 5.980 →
 7,58; realista 7,49 → 7,55; validações individuais (+0,05 / +0,01 / +0,06).
+
+## Custo da Carcaça V2.4 — remoção do "E se eu pagar…" (feat/carcass-remove-whatif)
+
+Removida por completo a seção de chips de preços rápidos (título, descrição,
+botões e toda a cadeia exclusiva: whatIf/âncora/applyPrice no controller e
+whatIfPrices no domínio, com seus testes). O "Ajuste rápido" do preço do vivo
+na tela de resultado PERMANECE como o caminho de simulação (mesmo estado das
+Entradas, recálculo imediato). Motor V2, custos, +7% e acréscimos fixos
+intactos. Teste novo garante a ausência da seção; teste do salvar passou a
+alterar o preço pelo Ajuste rápido. 69 testes.

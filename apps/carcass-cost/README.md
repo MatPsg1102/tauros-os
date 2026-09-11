@@ -17,7 +17,7 @@ pnpm --filter @tauros/carcass-cost build    # SPA estática em dist/ (PWA)
 
 - **`src/domain/`** — fonte de verdade matemática, TypeScript puro sem React.
   `calculateQuickEstimate` (modo Estimativa), `calculateRealLot` (modo Lote
-  Real), `whatIfPrices` (comparação de preço) e a validação (`validation.ts`).
+  Real) e a validação (`validation.ts`).
   Nenhuma fórmula vive na UI; nada é arredondado internamente (apresentação em
   2 casas só em `ui/format.ts`).
 - **`src/state/`** — estado + persistência: `use-calculator.ts` (controller,

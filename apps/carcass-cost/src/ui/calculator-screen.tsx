@@ -1,7 +1,7 @@
 // Tela principal — Custo da Carcaça. Hierarquia: resultado dominante no topo
-// (decisão nos primeiros 30% da tela), resumo executivo, comparação de preço,
-// entradas grandes para edição com uma mão. A tela só apresenta: todo cálculo
-// vem do domínio via controller. Na estimativa a cadeia é visível: peso médio
+// (decisão nos primeiros 30% da tela), resumo executivo, entradas grandes
+// para edição com uma mão. A tela só apresenta: todo cálculo vem do domínio
+// via controller. Na estimativa a cadeia é visível: peso médio
 // → total → após abate → carcaça final → custo base → ajuste comercial →
 // equivalente → custos adicionais → CUSTO FINAL EQUIVALENTE.
 
@@ -10,7 +10,6 @@ import {
   Badge,
   Button,
   Card,
-  Chip,
   CurrencyInput,
   Divider,
   Field,
@@ -118,7 +117,7 @@ export function CalculatorScreen({
   onOpenSettings,
   onOpenHistory,
 }: CalculatorScreenProps): ReactElement {
-  const { state, quickIssues, realIssues, quickResult, realResult, whatIf, actions } = calc;
+  const { state, quickIssues, realIssues, quickResult, realResult, actions } = calc;
   // Feedback do salvar: o mesmo snapshot não é salvo duas vezes por engano —
   // o botão confirma visivelmente e só reabilita quando algo muda no lote.
   const [savedKey, setSavedKey] = useState<string | null>(null);
@@ -366,29 +365,6 @@ export function CalculatorScreen({
               detail="Abate + serviço + viagem"
             />
           </ResponsiveGrid>
-        </Section>
-      )}
-
-      {whatIf.length > 0 && (
-        <Section
-          title="E se eu pagar…"
-          description="Toque em um preço do vivo para aplicá-lo ao lote."
-        >
-          <Flex gap={100} wrap>
-            {whatIf.map((entry) => (
-              <Chip
-                key={entry.price}
-                selected={entry.current}
-                onClick={() => {
-                  actions.applyPrice(entry.price);
-                }}
-              >
-                {`${formatBRL(entry.price)} → ${
-                  entry.costPerKg === null ? '—' : formatPerKg(entry.costPerKg)
-                }`}
-              </Chip>
-            ))}
-          </Flex>
         </Section>
       )}
 

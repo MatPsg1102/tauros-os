@@ -234,14 +234,3 @@ export function calculateRealLot(input: RealLotInput): RealLotResult {
     costPerAnimal: totalCost / input.animals,
   };
 }
-
-/**
- * "E se eu pagar…": preço atual ±0,50 e ±0,20 (com o atual no centro),
- * arredondado ao centavo; nunca gera preço negativo.
- */
-export function whatIfPrices(currentPricePerKg: number): readonly number[] {
-  const offsets = [-0.5, -0.2, 0, 0.2, 0.5];
-  return offsets
-    .map((offset) => Math.round((currentPricePerKg + offset) * 100) / 100)
-    .filter((price) => price >= 0);
-}
