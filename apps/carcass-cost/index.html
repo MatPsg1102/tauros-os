@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Custo da Carcaça</title>
+    <meta
+      name="description"
+      content="Calculadora operacional do custo real do suíno vivo transformado em carcaça."
+    />
+    <meta name="theme-color" content="#ffffff" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <style>
+      /* Reset estrutural do host (apenas estrutura; cores vêm dos tokens).
+         overflow hidden: o AppShell é a única região de scroll — sem isso os
+         radios visually-hidden do SegmentedControl (position:absolute sem
+         ancestral posicionado na folha do DS) esticam o html e criam um
+         scroll fantasma da página inteira (achado registrado na
+         traceability como pendência do DS). */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./src/main.tsx"></script>
+  </body>
+</html>

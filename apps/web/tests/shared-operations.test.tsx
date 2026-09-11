@@ -300,7 +300,9 @@ describe('FLUXO A — tarefa simples no quadro compartilhado', () => {
     expect(serialized.includes('"1234"')).toBe(false);
     expect(serialized.toLowerCase().includes('pin')).toBe(false);
     expect(JSON.stringify({ ...window.localStorage })).not.toContain('224466');
-  });
+    // Timeout como no FLUXO C: o runner do CI é ~2× mais lento que local e o
+    // fluxo completo (assumir → iniciar → concluir → reload) passa de 5s lá.
+  }, 15_000);
 });
 
 describe('FLUXO B — foto obrigatória + conferência', () => {
@@ -375,7 +377,8 @@ describe('FLUXO B — foto obrigatória + conferência', () => {
       outcome: 'APPROVED',
       reviewedByEmployeeId: 'emp-0004',
     });
-  });
+    // Timeout como no FLUXO C: runner do CI ~2× mais lento que local.
+  }, 15_000);
 
   it('FLUXO C — devolução com motivo, correção preservando histórico e aprovação final', async () => {
     await seedFixtureWorkforceLinks();
@@ -480,5 +483,6 @@ describe('FLUXO D — segurança da conferência', () => {
     expect(serra?.status).toBe('AWAITING_REVIEW');
 
     expect((await axe(container)).violations).toEqual([]);
-  });
+    // Timeout como no FLUXO C: runner do CI ~2× mais lento que local.
+  }, 15_000);
 });
