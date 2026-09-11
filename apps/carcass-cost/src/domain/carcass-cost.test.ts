@@ -158,6 +158,40 @@ describe('calculateQuickEstimate — cadeia econômica', () => {
     }
   });
 
+  it('vetor de validação do responsável: 11.500 kg + R$ 5.980 adicionais ⇒ ≈ 7,52/kg', () => {
+    // 100 × 115 = 11.500 kg → final 9.306,375 kg; equivalente 5,20÷0,83÷0,975×1,07;
+    // adicionais 5.000 (abate) + 300 (serviço) + 150 + 530 (viagem) = 5.980
+    // ⇒ 5.980 ÷ 9.306,375 = 0,6426/kg ⇒ 6,8755 + 0,6426 = 7,5181 → R$ 7,52.
+    const result = calculateQuickEstimate({
+      ...QUICK_BASE,
+      costs: { slaughterFeePerHead: 50, servicePerHead: 3, driverDailyRate: 150, fuelCost: 530 },
+    });
+    expect(result.totalLiveWeightKg).toBeCloseTo(11_500, 9);
+    expect(result.estimatedCarcassKg).toBeCloseTo(9_306.375, 9);
+    expect(result.additionalCostsTotal).toBeCloseTo(5_980, 9);
+    // o denominador dos adicionais é o peso FINAL da carcaça
+    expect(result.additionalPerKg).toBeCloseTo(5_980 / 9_306.375, 12);
+    expect(result.costPerKg).toBeCloseTo((5.2 / 0.83 / 0.975) * 1.07 + 5_980 / 9_306.375, 12);
+    expect(Math.round(result.costPerKg * 100) / 100).toBe(7.52);
+  });
+
+  it('lote padrão do app (110 suínos): os MESMOS R$ 5.980 sobre 12.650 kg dão 7,46/kg', () => {
+    // Explica o 7,46 do relatório do PR #44: com 110 animais os adicionais
+    // também somam 5.980 (110×50 + 110×3 + 150), mas o peso vivo é
+    // 110 × 115 = 12.650 kg → final 10.237,0125 kg → impacto 0,5842/kg.
+    const result = calculateQuickEstimate({
+      ...QUICK_BASE,
+      animals: 110,
+      costs: { slaughterFeePerHead: 50, servicePerHead: 3, driverDailyRate: 150, fuelCost: 0 },
+    });
+    expect(result.totalLiveWeightKg).toBeCloseTo(12_650, 9);
+    expect(result.estimatedCarcassKg).toBeCloseTo(10_237.0125, 6);
+    expect(result.additionalCostsTotal).toBeCloseTo(5_980, 9);
+    expect(result.additionalPerKg).toBeCloseTo(5_980 / 10_237.0125, 12);
+    expect(result.costPerKg).toBeCloseTo((5.2 / 0.83 / 0.975) * 1.07 + 5_980 / 10_237.0125, 12);
+    expect(Math.round(result.costPerKg * 100) / 100).toBe(7.46);
+  });
+
   it('custo total e custo por suíno derivam do custo/kg × peso final', () => {
     const result = calculateQuickEstimate(QUICK_BASE);
     expect(result.totalCost).toBeCloseTo(result.costPerKg * result.estimatedCarcassKg, 6);
