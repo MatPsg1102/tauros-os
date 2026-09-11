@@ -28,6 +28,9 @@ import {
 import { useState, type ReactElement } from 'react';
 
 import {
+  CENAR_TAX_PER_KG,
+  FIXED_SURCHARGES_PER_KG,
+  OPPORTUNITY_COST_PER_KG,
   calculateFinalYield,
   calculateTotalLiveWeight,
   calculateYieldAfterSlaughter,
@@ -82,12 +85,25 @@ function SummaryTile({ label, value, detail }: SummaryTileProps): ReactElement {
   );
 }
 
-function BreakdownRow({ label, value }: { label: string; value: string }): ReactElement {
+interface BreakdownRowProps {
+  readonly label: string;
+  readonly value: string;
+  readonly detail?: string;
+}
+
+function BreakdownRow({ label, value, detail }: BreakdownRowProps): ReactElement {
   return (
     <Flex justify="between" gap={100}>
-      <Text role="caption" tone="secondary">
-        {label}
-      </Text>
+      <Stack gap={25}>
+        <Text role="caption" tone="secondary">
+          {label}
+        </Text>
+        {detail !== undefined && (
+          <Text role="caption" tone="tertiary">
+            {detail}
+          </Text>
+        )}
+      </Stack>
       <Text role="data">{value}</Text>
     </Flex>
   );
@@ -259,6 +275,19 @@ export function CalculatorScreen({
                     <BreakdownRow
                       label="Impacto dos custos adicionais"
                       value={`+ ${formatPerKg(quickResult.additionalPerKg)}`}
+                    />
+                    <BreakdownRow
+                      label="Custo de oportunidade"
+                      detail="Descarga não realizada"
+                      value={`+ ${formatPerKg(OPPORTUNITY_COST_PER_KG)}`}
+                    />
+                    <BreakdownRow
+                      label="Imposto CENAR"
+                      value={`+ ${formatPerKg(CENAR_TAX_PER_KG)}`}
+                    />
+                    <BreakdownRow
+                      label="Impacto total dos acréscimos"
+                      value={`+ ${formatPerKg(FIXED_SURCHARGES_PER_KG)}`}
                     />
                   </>
                 ) : realResult !== null ? (

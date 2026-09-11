@@ -96,6 +96,14 @@ export interface RealLotResult {
   readonly costPerAnimal: number;
 }
 
+// Acréscimos FIXOS por kg do custo final equivalente — somados UMA única vez,
+// sem rateio por peso/viagem/cabeça e sem o ajuste comercial por cima.
+/** Custo de oportunidade (descarga não realizada). */
+export const OPPORTUNITY_COST_PER_KG = 0.05;
+/** Imposto CENAR. */
+export const CENAR_TAX_PER_KG = 0.01;
+export const FIXED_SURCHARGES_PER_KG = OPPORTUNITY_COST_PER_KG + CENAR_TAX_PER_KG;
+
 function fraction(pct: number): number {
   return pct / 100;
 }
@@ -127,8 +135,10 @@ export function calculatePaidWeight(scaleWeightKg: number, discountsKg: number):
  * carcaça final = após abate × (1 − q_frio).
  * Econômica: base = vivo ÷ (1 − q_abate) ÷ (1 − q_frio);
  * equivalente = base × (1 + ajuste comercial);
- * custo final = equivalente + (abate + serviço + frete) ÷ carcaça final.
- * O ajuste comercial NUNCA incide sobre os custos adicionais.
+ * custo final = equivalente + (abate + serviço + viagem) ÷ carcaça final
+ *   + acréscimos fixos (oportunidade R$ 0,05 + CENAR R$ 0,01, uma vez).
+ * O ajuste comercial NUNCA incide sobre os custos adicionais nem sobre os
+ * acréscimos fixos.
  * Pré-condição: entrada validada (validation.ts) — pesos > 0, animais ≥ 1.
  */
 export function calculateQuickEstimate(input: QuickEstimateInput): QuickEstimateResult {
@@ -156,7 +166,7 @@ export function calculateQuickEstimate(input: QuickEstimateInput): QuickEstimate
   const additionalCostsTotal = slaughterCost + serviceCost + tripCost;
   const additionalPerKg = additionalCostsTotal / estimatedCarcassKg;
 
-  const costPerKg = equivalentPerKg + additionalPerKg;
+  const costPerKg = equivalentPerKg + additionalPerKg + FIXED_SURCHARGES_PER_KG;
   const totalCost = costPerKg * estimatedCarcassKg;
 
   return {
