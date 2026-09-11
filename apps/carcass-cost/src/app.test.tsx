@@ -93,6 +93,67 @@ describe('Calculadora — modo estimativa', () => {
   });
 });
 
+describe('Ajuste rápido (tela de resultado da estimativa)', () => {
+  const ajusteField = () =>
+    within(screen.getByRole('region', { name: 'Ajuste rápido' })).getByLabelText(
+      'Preço do suíno vivo (R$/kg)',
+    );
+
+  it('recalcula na hora para 5,00 / 5,20 / 5,50 / 6,00 sem tocar nos demais parâmetros', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
+    await screen.findAllByText(/7,20\/kg/);
+
+    const ajuste = ajusteField();
+    const cases: ReadonlyArray<readonly [string, RegExp]> = [
+      ['5,20', /7,46\/kg/],
+      ['5,50', /7,86\/kg/],
+      ['6,00', /8,52\/kg/],
+      ['5,00', /7,20\/kg/],
+    ];
+    for (const [price, expected] of cases) {
+      await user.clear(ajuste);
+      await user.type(ajuste, price);
+      expect((await screen.findAllByText(expected)).length).toBeGreaterThan(0);
+    }
+
+    // Demais parâmetros intocados: pesos, quebras e custos seguem os mesmos.
+    expect((screen.getByLabelText('Quebra de abate (%)') as HTMLInputElement).value).toBe('17');
+    expect((screen.getByLabelText('Quebra de frio (%)') as HTMLInputElement).value).toBe('2,5');
+    expect(
+      (screen.getByLabelText('Peso vivo médio por suíno (kg)') as HTMLInputElement).value,
+    ).toBe('115');
+    // Adicionais fixos (R$ 5.980,00) e impacto inalterado — o preço não os move.
+    expect(screen.getAllByText(/5\.980,00/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/0,58\/kg/).length).toBeGreaterThan(0);
+  });
+
+  it('fica sincronizado com o campo de preço das Entradas (mesmo estado)', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    const form = within(screen.getByRole('region', { name: 'Entradas do lote' })).getByLabelText(
+      'Preço do suíno vivo (R$/kg)',
+    );
+
+    const ajuste = ajusteField();
+    await user.clear(ajuste);
+    await user.type(ajuste, '5,50');
+    expect((form as HTMLInputElement).value).toContain('5,50');
+
+    await user.clear(form);
+    await user.type(form, '6,00');
+    expect((ajusteField() as HTMLInputElement).value).toContain('6,00');
+  });
+
+  it('não existe na aba Lote Real', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.click(screen.getByRole('radio', { name: 'Lote Real' }));
+    expect(screen.queryByRole('region', { name: 'Ajuste rápido' })).toBeNull();
+  });
+});
+
 describe('Calculadora — modo lote real (teste de integração do spec)', () => {
   it('reproduz o lote canônico: 110 suínos → R$ 6,38/kg', async () => {
     const user = userEvent.setup();

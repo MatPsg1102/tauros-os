@@ -1490,3 +1490,14 @@ implícita). Vetores: canônico real 65.212 → 6,38 preservado; realista da
 estimativa 5.700 ÷ 9.306,375 = 0,6125/kg ⇒ ≈7,49/kg; dobrar suínos dobra
 abate/serviço mas não a viagem. Defaults da estimativa passam de 7,20/kg
 (antes 7,16 com abate 0,50/kg — modelo por kg extinto).
+
+## Custo da Carcaça V2.2 — Ajuste rápido de preço na tela de resultado (feat/carcass-quick-price)
+
+Atalho de simulação na Estimativa: seção "Ajuste rápido" antes do card de
+resultado com o campo de preço do vivo (CurrencyInput do DS) ligado ao MESMO
+estado das Entradas (patchQuick.livePricePerKg) — nenhuma lógica duplicada,
+recálculo imediato pelo motor V2 (+7% só no custo-base; adicionais fixos
+diluídos pelo peso final). Só na Estimativa (Lote Real intocado). Testes:
+motor V2 nos preços 5,00/5,20/5,50/6,00 (domínio) + jornada UI dos quatro
+preços com parâmetros restantes intocados + sincronização bidirecional com o
+campo das Entradas + ausência na aba Lote Real.

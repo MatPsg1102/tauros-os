@@ -138,6 +138,26 @@ describe('calculateQuickEstimate — cadeia econômica', () => {
     expect(Math.round(result.costPerKg * 100) / 100).toBe(7.49);
   });
 
+  it('preços 5,00 / 5,20 / 5,50 / 6,00 passam pelo motor V2 com adicionais fixos', () => {
+    const additional = calculateQuickEstimate({
+      ...QUICK_BASE,
+      costs: REALISTIC_COSTS,
+    }).additionalPerKg;
+    for (const price of [5, 5.2, 5.5, 6]) {
+      const result = calculateQuickEstimate({
+        ...QUICK_BASE,
+        livePricePerKg: price,
+        costs: REALISTIC_COSTS,
+      });
+      // +7% só no custo-base; preço não mexe nos adicionais (diluídos pelo
+      // peso final, que também não muda com o preço).
+      expect(result.equivalentPerKg).toBeCloseTo((price / 0.83 / 0.975) * 1.07, 12);
+      expect(result.additionalPerKg).toBeCloseTo(additional, 12);
+      expect(result.costPerKg).toBeCloseTo(result.equivalentPerKg + additional, 12);
+      expect(result.estimatedCarcassKg).toBeCloseTo(9_306.375, 9);
+    }
+  });
+
   it('custo total e custo por suíno derivam do custo/kg × peso final', () => {
     const result = calculateQuickEstimate(QUICK_BASE);
     expect(result.totalCost).toBeCloseTo(result.costPerKg * result.estimatedCarcassKg, 6);
