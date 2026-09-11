@@ -29,13 +29,14 @@ describe('Calculadora — modo estimativa', () => {
     ).toBeDefined();
   });
 
-  it('reage imediatamente ao peso médio: defaults dão R$ 7,26/kg', async () => {
+  it('reage imediatamente ao peso médio: defaults dão R$ 7,25/kg', async () => {
     // Física: 110 × 115 = 12.650 kg → ×0,83 = 10.499,50 → ×0,975 = 10.237,0125.
-    // Econômica: 5,00 ÷ 0,83 ÷ 0,975 × 1,07 = 6,6111 + (5.500+330+150)/10.237 = 7,1952…
+    // Econômica: indicador 6,9705% (aba Transformação); 5,00 ÷ 0,83 ÷ 0,975 ×
+    // 1,069705 = 6,6092 + (5.980)/10.237 = 0,5842 + 0,06 (fixos) = 7,2534 → 7,25.
     const user = userEvent.setup();
     renderApp();
     await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
-    const matches = await screen.findAllByText(/7,26\/kg/);
+    const matches = await screen.findAllByText(/7,25\/kg/);
     expect(matches.length).toBeGreaterThan(0);
     // Peso vivo total derivado (nunca digitado) visível junto ao campo.
     expect(screen.getByText('Peso vivo total: 12.650,00 kg')).toBeDefined();
@@ -65,7 +66,7 @@ describe('Calculadora — modo estimativa', () => {
     const user = userEvent.setup();
     renderApp();
     await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
-    await screen.findAllByText(/7,26\/kg/);
+    await screen.findAllByText(/7,25\/kg/);
     expect(screen.queryByText('E se eu pagar…')).toBeNull();
     expect(screen.queryByRole('button', { name: /4,50/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /5,50/ })).toBeNull();
@@ -104,14 +105,14 @@ describe('Ajuste rápido (tela de resultado da estimativa)', () => {
     const user = userEvent.setup();
     renderApp();
     await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
-    await screen.findAllByText(/7,26\/kg/);
+    await screen.findAllByText(/7,25\/kg/);
 
     const ajuste = ajusteField();
     const cases: ReadonlyArray<readonly [string, RegExp]> = [
       ['5,20', /7,52\/kg/],
-      ['5,50', /7,92\/kg/],
+      ['5,50', /7,91\/kg/],
       ['6,00', /8,58\/kg/],
-      ['5,00', /7,26\/kg/],
+      ['5,00', /7,25\/kg/],
     ];
     for (const [price, expected] of cases) {
       await user.clear(ajuste);
@@ -210,11 +211,11 @@ describe('Persistência local', () => {
     const user = userEvent.setup();
     renderApp();
     await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
-    await screen.findAllByText(/7,26\/kg/);
+    await screen.findAllByText(/7,25\/kg/);
 
     cleanup();
     renderApp();
-    const matches = await screen.findAllByText(/7,26\/kg/);
+    const matches = await screen.findAllByText(/7,25\/kg/);
     expect(matches.length).toBeGreaterThan(0);
   });
 });
@@ -224,14 +225,14 @@ describe('Histórico', () => {
     const user = userEvent.setup();
     renderApp();
     await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
-    await screen.findAllByText(/7,26\/kg/);
+    await screen.findAllByText(/7,25\/kg/);
     await user.click(screen.getByRole('button', { name: 'Salvar lote no histórico' }));
 
     await user.click(screen.getByRole('button', { name: 'Histórico' }));
     expect(await screen.findByText(/110 suínos/)).toBeDefined();
 
     await user.click(screen.getByRole('button', { name: 'Abrir este lote' }));
-    const matches = await screen.findAllByText(/7,26\/kg/);
+    const matches = await screen.findAllByText(/7,25\/kg/);
     expect(matches.length).toBeGreaterThan(0);
   });
 
@@ -272,10 +273,10 @@ describe('Configurações', () => {
     ).toBeDefined();
 
     // Voltar e iniciar novo lote: o padrão vigente continua 20% (o inválido
-    // nunca persistiu) — com os defaults o resultado volta a ser R$ 7,26/kg.
+    // nunca persistiu) — com os defaults o resultado volta a ser R$ 7,25/kg.
     await user.click(screen.getByRole('button', { name: 'Voltar' }));
     await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
-    const matches = await screen.findAllByText(/7,26\/kg/);
+    const matches = await screen.findAllByText(/7,25\/kg/);
     expect(matches.length).toBeGreaterThan(0);
   });
 
@@ -290,8 +291,82 @@ describe('Configurações', () => {
     await user.click(screen.getByRole('button', { name: 'Iniciar novo lote com estes padrões' }));
 
     await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
-    // 4,50 ÷ 0,83 ÷ 0,975 × 1,07 + adicionais + acréscimos fixos = 6,5941… → R$ 6,59/kg
+    // 4,50 ÷ 0,83 ÷ 0,975 × 1,069705 + adicionais + acréscimos fixos ≈ 6,59/kg
     const matches = await screen.findAllByText(/6,59\/kg/);
     expect(matches.length).toBeGreaterThan(0);
+  });
+});
+
+describe('Transformação (indicador econômico dos subprodutos)', () => {
+  it('mostra indicador 6,97%, padrão 7,00% e diferença -0,03 p.p.', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.click(screen.getByRole('button', { name: 'Transformação' }));
+
+    expect(screen.getByRole('heading', { name: 'Transformação' })).toBeDefined();
+    // 7 subprodutos com os valores iniciais; papada = 2,5 × 12,99 = R$ 32,48.
+    expect(
+      within(screen.getByRole('group', { name: 'Papada' })).getByText(/R\$\s*32,48/),
+    ).toBeDefined();
+    // Resumo: total 8,00 kg / R$ 49,95; carcaça R$ 716,59; indicador 6,97%.
+    expect(screen.getByText('8,00 kg')).toBeDefined();
+    expect(screen.getAllByText(/49,95/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/716,59/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('6,97%').length).toBeGreaterThan(0);
+    expect(screen.getByText('7,00%')).toBeDefined();
+    expect(screen.getByText('-0,03 p.p.')).toBeDefined();
+  });
+
+  it('alterar o preço da papada recalcula o indicador e o custo da Estimativa', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    // Estimativa base: 115 kg, defaults → R$ 7,25/kg com indicador 6,97%.
+    await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
+    expect((await screen.findAllByText(/7,25\/kg/)).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Transformação' }));
+    const papada = within(screen.getByRole('group', { name: 'Papada' })).getByLabelText(
+      'Preço de venda (R$/kg)',
+    );
+    await user.clear(papada);
+    await user.type(papada, '15,00');
+    // 54,975 ÷ 716,590875 = 7,67% → indicador sobe.
+    expect((await screen.findAllByText('7,67%')).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Voltar' }));
+    // Estimativa passa a usar 7,6723% → base×1,076723 + adicionais + 0,06 = 7,30/kg.
+    expect((await screen.findAllByText(/7,30\/kg/)).length).toBeGreaterThan(0);
+    // Os acréscimos fixos NÃO recebem o indicador — seguem 0,05 / 0,01 / 0,06.
+    expect(screen.getAllByText(/0,05\/kg/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/0,01\/kg/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/0,06\/kg/).length).toBeGreaterThan(0);
+  });
+
+  it('o preço da carcaça de exportação é editável e altera o indicador', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.click(screen.getByRole('button', { name: 'Transformação' }));
+    const exportPrice = screen.getByLabelText('Preço da carcaça de exportação (R$/kg)');
+    await user.clear(exportPrice);
+    await user.type(exportPrice, '9,00');
+    // 49,95 ÷ (93,06375 × 9,00) = 5,96% → indicador cai abaixo de 7%.
+    expect((await screen.findAllByText('5,96%')).length).toBeGreaterThan(0);
+  });
+
+  it('a transformação persiste ao sair e voltar da aba', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.click(screen.getByRole('button', { name: 'Transformação' }));
+    const papada = within(screen.getByRole('group', { name: 'Papada' })).getByLabelText(
+      'Preço de venda (R$/kg)',
+    );
+    await user.clear(papada);
+    await user.type(papada, '15,00');
+    await user.click(screen.getByRole('button', { name: 'Voltar' }));
+    await user.click(screen.getByRole('button', { name: 'Transformação' }));
+    const papadaAgain = within(screen.getByRole('group', { name: 'Papada' })).getByLabelText(
+      'Preço de venda (R$/kg)',
+    );
+    expect((papadaAgain as HTMLInputElement).value).toContain('15,00');
   });
 });

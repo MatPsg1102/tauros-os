@@ -13,6 +13,17 @@ import {
   type RealLotResult,
 } from '../domain/carcass-cost.js';
 import {
+  REFERENCE_COOLING_LOSS_PCT,
+  REFERENCE_LIVE_WEIGHT_KG,
+  REFERENCE_SLAUGHTER_LOSS_PCT,
+  SUBPRODUCT_KEYS,
+  calculateTransformation,
+  resolveCommercialAdjustmentPct,
+  type SubproductKey,
+  type TransformationInput,
+  type TransformationResult,
+} from '../domain/transformation.js';
+import {
   buildQuickInput,
   buildRealInput,
   validateQuick,
@@ -28,6 +39,8 @@ import {
   type CalculatorState,
   type DefaultSettings,
   type HistoryEntry,
+  type SubproductForm,
+  type TransformationForm,
 } from './model.js';
 import { HISTORY_LIMIT, loadHistory, loadState, saveHistory, saveState } from './storage.js';
 
@@ -37,6 +50,8 @@ export interface CalculatorActions {
   readonly patchReal: (patch: Partial<RealForm>) => void;
   readonly patchCosts: (patch: Partial<CostsForm>) => void;
   readonly patchSettings: (patch: Partial<DefaultSettings>) => void;
+  readonly patchSubproduct: (key: SubproductKey, patch: Partial<SubproductForm>) => void;
+  readonly setExportCarcassPrice: (value: number | null) => void;
   /** Reinicia o lote atual a partir das premissas padrão configuradas. */
   readonly startNewLot: () => void;
   readonly saveToHistory: () => void;
@@ -50,8 +65,30 @@ export interface CalculatorController {
   readonly realIssues: readonly ValidationIssue[];
   readonly quickResult: QuickEstimateResult | null;
   readonly realResult: RealLotResult | null;
+  readonly transformation: TransformationResult;
+  /** Percentual efetivo do ajuste comercial usado pela Estimativa (indicador). */
+  readonly commercialAdjustmentPct: number;
   readonly history: readonly HistoryEntry[];
   readonly actions: CalculatorActions;
+}
+
+// Glue form→domínio: campo vazio (null) não contribui (peso/preço = 0). Usa a
+// referência física PADRÃO fixa (115 kg, 17%, 2,5%) — o indicador é uma
+// premissa econômica de referência, não segue os ajustes de lote/premissas.
+function buildTransformationInput(form: TransformationForm): TransformationInput {
+  const subproducts = Object.fromEntries(
+    SUBPRODUCT_KEYS.map((key) => {
+      const item = form.subproducts[key];
+      return [key, { weightKg: item.weightKg ?? 0, pricePerKg: item.pricePerKg ?? 0 }];
+    }),
+  ) as TransformationInput['subproducts'];
+  return {
+    subproducts,
+    exportCarcassPricePerKg: form.exportCarcassPricePerKg ?? 0,
+    referenceLiveWeightKg: REFERENCE_LIVE_WEIGHT_KG,
+    slaughterLossPct: REFERENCE_SLAUGHTER_LOSS_PCT,
+    coolingLossPct: REFERENCE_COOLING_LOSS_PCT,
+  };
 }
 
 export function useCalculator(): CalculatorController {
@@ -66,6 +103,13 @@ export function useCalculator(): CalculatorController {
     saveHistory(history);
   }, [history]);
 
+  const transformation = useMemo(
+    () => calculateTransformation(buildTransformationInput(state.transformation)),
+    [state.transformation],
+  );
+  // Indicador da aba Transformação = ajuste comercial da Estimativa (fallback 7%).
+  const commercialAdjustmentPct = resolveCommercialAdjustmentPct(transformation);
+
   const quickIssues = useMemo(
     () => validateQuick(state.quick, state.costs),
     [state.quick, state.costs],
@@ -76,9 +120,9 @@ export function useCalculator(): CalculatorController {
   );
 
   const quickResult = useMemo(() => {
-    const input = buildQuickInput(state.quick, state.costs);
+    const input = buildQuickInput(state.quick, state.costs, commercialAdjustmentPct);
     return input === null ? null : calculateQuickEstimate(input);
-  }, [state.quick, state.costs]);
+  }, [state.quick, state.costs, commercialAdjustmentPct]);
 
   const realResult = useMemo(() => {
     const input = buildRealInput(state.real, state.costs);
@@ -132,8 +176,30 @@ export function useCalculator(): CalculatorController {
     patchSettings: (patch) => {
       setState((current) => ({ ...current, settings: { ...current.settings, ...patch } }));
     },
+    patchSubproduct: (key, patch) => {
+      setState((current) => ({
+        ...current,
+        transformation: {
+          ...current.transformation,
+          subproducts: {
+            ...current.transformation.subproducts,
+            [key]: { ...current.transformation.subproducts[key], ...patch },
+          },
+        },
+      }));
+    },
+    setExportCarcassPrice: (value) => {
+      setState((current) => ({
+        ...current,
+        transformation: { ...current.transformation, exportCarcassPricePerKg: value },
+      }));
+    },
     startNewLot: () => {
-      setState((current) => ({ ...lotFromSettings(current.settings), settings: current.settings }));
+      setState((current) => ({
+        ...lotFromSettings(current.settings),
+        settings: current.settings,
+        transformation: current.transformation,
+      }));
     },
     saveToHistory,
     loadHistoryEntry: (id) => {
@@ -152,5 +218,15 @@ export function useCalculator(): CalculatorController {
     },
   };
 
-  return { state, quickIssues, realIssues, quickResult, realResult, history, actions };
+  return {
+    state,
+    quickIssues,
+    realIssues,
+    quickResult,
+    realResult,
+    transformation,
+    commercialAdjustmentPct,
+    history,
+    actions,
+  };
 }

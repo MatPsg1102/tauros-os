@@ -13,8 +13,9 @@ import { useCalculator } from './state/use-calculator.js';
 import { CalculatorScreen } from './ui/calculator-screen.js';
 import { HistoryScreen } from './ui/history-screen.js';
 import { SettingsScreen } from './ui/settings-screen.js';
+import { TransformationScreen } from './ui/transformation-screen.js';
 
-type View = 'calculator' | 'settings' | 'history';
+type View = 'calculator' | 'settings' | 'history' | 'transformation';
 
 export function App(): ReactElement {
   const calc = useCalculator();
@@ -51,9 +52,19 @@ export function App(): ReactElement {
                 onOpenHistory={() => {
                   setView('history');
                 }}
+                onOpenTransformation={() => {
+                  setView('transformation');
+                }}
               />
             ) : view === 'settings' ? (
               <SettingsScreen
+                calc={calc}
+                onBack={() => {
+                  setView('calculator');
+                }}
+              />
+            ) : view === 'transformation' ? (
+              <TransformationScreen
                 calc={calc}
                 onBack={() => {
                   setView('calculator');

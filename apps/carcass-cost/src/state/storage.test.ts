@@ -39,19 +39,20 @@ describe('loadState / saveState', () => {
     expect(loadState()).toEqual(initialState());
   });
 
-  it('envelope v1 (modelo antigo) é rejeitado — volta aos padrões novos', () => {
+  it('envelope antigo (v3) é rejeitado — volta aos padrões novos com transformação', () => {
     localStorage.setItem(
       STATE_STORAGE_KEY,
       JSON.stringify({
-        version: 1,
-        data: { mode: 'real', quick: { liveWeightKg: 12_340, coolingTransformPct: 7 } },
+        version: 3,
+        data: { mode: 'real', quick: { avgLiveWeightKg: 115 } },
       }),
     );
     const loaded = loadState();
     expect(loaded).toEqual(initialState());
     expect(loaded.settings.slaughterLossPct).toBe(17);
     expect(loaded.settings.coolingLossPct).toBe(2.5);
-    expect(loaded.settings.commercialAdjustmentPct).toBe(7);
+    expect(loaded.transformation.exportCarcassPricePerKg).toBe(7.7);
+    expect(loaded.transformation.subproducts.jowl).toEqual({ weightKg: 2.5, pricePerKg: 12.99 });
   });
 
   it('JSON corrompido cai no estado inicial', () => {
@@ -66,7 +67,7 @@ describe('loadState / saveState', () => {
     };
     raw.data.quick['avgLiveWeightKg'] = 'cento e quinze';
     raw.data.costs['fuelCost'] = 'um tanque';
-    localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify({ version: 3, data: raw.data }));
+    localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify({ version: 4, data: raw.data }));
 
     const loaded = loadState();
     expect(loaded.quick.avgLiveWeightKg).toBeNull();
@@ -75,6 +76,23 @@ describe('loadState / saveState', () => {
     // Campos íntegros sobrevivem.
     expect(loaded.quick.animals).toBe(110);
     expect(loaded.costs.driverDailyRate).toBe(150);
+  });
+
+  it('roundtrip preserva a transformação editada', () => {
+    const state = initialState();
+    const edited: typeof state = {
+      ...state,
+      transformation: {
+        ...state.transformation,
+        exportCarcassPricePerKg: 8.2,
+        subproducts: {
+          ...state.transformation.subproducts,
+          jowl: { weightKg: 2.5, pricePerKg: 15 },
+        },
+      },
+    };
+    saveState(edited);
+    expect(loadState().transformation).toEqual(edited.transformation);
   });
 });
 
@@ -104,7 +122,7 @@ describe('loadHistory / saveHistory', () => {
   it('entradas inválidas são descartadas sem derrubar as demais', () => {
     localStorage.setItem(
       HISTORY_STORAGE_KEY,
-      JSON.stringify({ version: 3, data: [entry('a'), { id: 42 }, 'lixo'] }),
+      JSON.stringify({ version: 4, data: [entry('a'), { id: 42 }, 'lixo'] }),
     );
     const history = loadHistory();
     expect(history).toHaveLength(1);
