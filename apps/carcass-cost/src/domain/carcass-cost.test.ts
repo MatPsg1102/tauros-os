@@ -4,6 +4,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CENAR_TAX_PER_KG,
+  FIXED_SURCHARGES_PER_KG,
+  OPPORTUNITY_COST_PER_KG,
   calculateFinalYield,
   calculatePaidWeight,
   calculateQuickEstimate,
@@ -80,8 +83,49 @@ describe('calculateQuickEstimate — cadeia econômica', () => {
     expect(result.baseCarcassPerKg).toBeCloseTo(5.2 / 0.83 / 0.975, 12);
     expect(result.equivalentPerKg).toBeCloseTo((5.2 / 0.83 / 0.975) * 1.07, 12);
     expect(Math.round(result.equivalentPerKg * 100) / 100).toBe(6.88);
-    // sem abate/serviço/frete, o custo final é o próprio equivalente
-    expect(result.costPerKg).toBeCloseTo(result.equivalentPerKg, 12);
+    // sem abate/serviço/viagem, o custo final é o equivalente + acréscimos fixos
+    expect(result.costPerKg).toBeCloseTo(result.equivalentPerKg + FIXED_SURCHARGES_PER_KG, 12);
+  });
+
+  it('acréscimos fixos: oportunidade R$ 0,05 + CENAR R$ 0,01, uma única vez', () => {
+    expect(OPPORTUNITY_COST_PER_KG).toBe(0.05);
+    expect(CENAR_TAX_PER_KG).toBe(0.01);
+    expect(FIXED_SURCHARGES_PER_KG).toBeCloseTo(0.06, 12);
+
+    const result = calculateQuickEstimate({ ...QUICK_BASE, costs: REALISTIC_COSTS });
+    // resultado SEM os acréscimos (equivalente + adicionais diluídos)
+    const semAcrescimos = result.equivalentPerKg + result.additionalPerKg;
+    // com oportunidade apenas: atual + 0,05
+    expect(result.costPerKg - CENAR_TAX_PER_KG).toBeCloseTo(semAcrescimos + 0.05, 12);
+    // com CENAR apenas: atual + 0,01
+    expect(result.costPerKg - OPPORTUNITY_COST_PER_KG).toBeCloseTo(semAcrescimos + 0.01, 12);
+    // com ambos: atual + 0,06 — valores absolutos, sem rateio por peso/viagem/cabeça
+    expect(result.costPerKg).toBeCloseTo(semAcrescimos + 0.06, 12);
+    // e nenhum deles recebe o +7%: mudar o ajuste não muda a soma fixa
+    const semAjuste = calculateQuickEstimate({
+      ...QUICK_BASE,
+      costs: REALISTIC_COSTS,
+      commercialAdjustmentPct: 0,
+    });
+    expect(semAjuste.costPerKg - semAjuste.equivalentPerKg - semAjuste.additionalPerKg).toBeCloseTo(
+      0.06,
+      12,
+    );
+  });
+
+  it('exemplo do pedido: lote padrão 7,46 passa a 7,52 com os acréscimos', () => {
+    // 110 × 115 kg, vivo 5,20, custos 50/3/150/0 — antes: 7,4597 → 7,46;
+    // agora: 7,4597 + 0,06 = 7,5197 → R$ 7,52.
+    const result = calculateQuickEstimate({
+      ...QUICK_BASE,
+      animals: 110,
+      costs: { slaughterFeePerHead: 50, servicePerHead: 3, driverDailyRate: 150, fuelCost: 0 },
+    });
+    expect(result.costPerKg - FIXED_SURCHARGES_PER_KG).toBeCloseTo(
+      (5.2 / 0.83 / 0.975) * 1.07 + 5_980 / 10_237.0125,
+      12,
+    );
+    expect(Math.round(result.costPerKg * 100) / 100).toBe(7.52);
   });
 
   it('ajuste comercial incide SÓ sobre a matéria-prima, nunca sobre os custos', () => {
@@ -91,8 +135,11 @@ describe('calculateQuickEstimate — cadeia econômica', () => {
     // custos adicionais idênticos com e sem ajuste (o 7% não os multiplica)
     expect(result.additionalCostsTotal).toBeCloseTo(noAdjustment.additionalCostsTotal, 12);
     expect(result.additionalPerKg).toBeCloseTo(noAdjustment.additionalPerKg, 12);
-    // identidade exata: final = equivalente + adicionais
-    expect(result.costPerKg).toBeCloseTo(result.equivalentPerKg + result.additionalPerKg, 12);
+    // identidade exata: final = equivalente + adicionais + acréscimos fixos
+    expect(result.costPerKg).toBeCloseTo(
+      result.equivalentPerKg + result.additionalPerKg + FIXED_SURCHARGES_PER_KG,
+      12,
+    );
     // sem ajuste, equivalente = base
     expect(noAdjustment.equivalentPerKg).toBeCloseTo(noAdjustment.baseCarcassPerKg, 12);
   });
@@ -131,11 +178,14 @@ describe('calculateQuickEstimate — cadeia econômica', () => {
   it('caso realista completo: adicionais diluídos pelo peso FINAL da carcaça', () => {
     // 100 × 115 kg, vivo 5,20 → carcaça final 9.306,375 kg;
     // adicionais = 5.000 + 300 + 150 + 250 = 5.700 → 5.700 ÷ 9.306,375 = 0,6125/kg;
-    // final = 6,8755 (equivalente) + 0,6125 = 7,4880 → R$ 7,49/kg.
+    // final = 6,8755 (equivalente) + 0,6125 + 0,06 (fixos) = 7,5480 → R$ 7,55/kg.
     const result = calculateQuickEstimate({ ...QUICK_BASE, costs: REALISTIC_COSTS });
     expect(result.additionalPerKg).toBeCloseTo(5_700 / 9_306.375, 12);
-    expect(result.costPerKg).toBeCloseTo((5.2 / 0.83 / 0.975) * 1.07 + 5_700 / 9_306.375, 12);
-    expect(Math.round(result.costPerKg * 100) / 100).toBe(7.49);
+    expect(result.costPerKg).toBeCloseTo(
+      (5.2 / 0.83 / 0.975) * 1.07 + 5_700 / 9_306.375 + FIXED_SURCHARGES_PER_KG,
+      12,
+    );
+    expect(Math.round(result.costPerKg * 100) / 100).toBe(7.55);
   });
 
   it('preços 5,00 / 5,20 / 5,50 / 6,00 passam pelo motor V2 com adicionais fixos', () => {
@@ -150,18 +200,22 @@ describe('calculateQuickEstimate — cadeia econômica', () => {
         costs: REALISTIC_COSTS,
       });
       // +7% só no custo-base; preço não mexe nos adicionais (diluídos pelo
-      // peso final, que também não muda com o preço).
+      // peso final, que também não muda com o preço) nem nos acréscimos fixos.
       expect(result.equivalentPerKg).toBeCloseTo((price / 0.83 / 0.975) * 1.07, 12);
       expect(result.additionalPerKg).toBeCloseTo(additional, 12);
-      expect(result.costPerKg).toBeCloseTo(result.equivalentPerKg + additional, 12);
+      expect(result.costPerKg).toBeCloseTo(
+        result.equivalentPerKg + additional + FIXED_SURCHARGES_PER_KG,
+        12,
+      );
       expect(result.estimatedCarcassKg).toBeCloseTo(9_306.375, 9);
     }
   });
 
-  it('vetor de validação do responsável: 11.500 kg + R$ 5.980 adicionais ⇒ ≈ 7,52/kg', () => {
+  it('vetor de validação do responsável: 11.500 kg + R$ 5.980 adicionais ⇒ ≈ 7,58/kg', () => {
     // 100 × 115 = 11.500 kg → final 9.306,375 kg; equivalente 5,20÷0,83÷0,975×1,07;
     // adicionais 5.000 (abate) + 300 (serviço) + 150 + 530 (viagem) = 5.980
-    // ⇒ 5.980 ÷ 9.306,375 = 0,6426/kg ⇒ 6,8755 + 0,6426 = 7,5181 → R$ 7,52.
+    // ⇒ 5.980 ÷ 9.306,375 = 0,6426/kg ⇒ 6,8755 + 0,6426 = 7,5181;
+    // + acréscimos fixos 0,06 ⇒ 7,5781 → R$ 7,58.
     const result = calculateQuickEstimate({
       ...QUICK_BASE,
       costs: { slaughterFeePerHead: 50, servicePerHead: 3, driverDailyRate: 150, fuelCost: 530 },
@@ -171,25 +225,11 @@ describe('calculateQuickEstimate — cadeia econômica', () => {
     expect(result.additionalCostsTotal).toBeCloseTo(5_980, 9);
     // o denominador dos adicionais é o peso FINAL da carcaça
     expect(result.additionalPerKg).toBeCloseTo(5_980 / 9_306.375, 12);
-    expect(result.costPerKg).toBeCloseTo((5.2 / 0.83 / 0.975) * 1.07 + 5_980 / 9_306.375, 12);
-    expect(Math.round(result.costPerKg * 100) / 100).toBe(7.52);
-  });
-
-  it('lote padrão do app (110 suínos): os MESMOS R$ 5.980 sobre 12.650 kg dão 7,46/kg', () => {
-    // Explica o 7,46 do relatório do PR #44: com 110 animais os adicionais
-    // também somam 5.980 (110×50 + 110×3 + 150), mas o peso vivo é
-    // 110 × 115 = 12.650 kg → final 10.237,0125 kg → impacto 0,5842/kg.
-    const result = calculateQuickEstimate({
-      ...QUICK_BASE,
-      animals: 110,
-      costs: { slaughterFeePerHead: 50, servicePerHead: 3, driverDailyRate: 150, fuelCost: 0 },
-    });
-    expect(result.totalLiveWeightKg).toBeCloseTo(12_650, 9);
-    expect(result.estimatedCarcassKg).toBeCloseTo(10_237.0125, 6);
-    expect(result.additionalCostsTotal).toBeCloseTo(5_980, 9);
-    expect(result.additionalPerKg).toBeCloseTo(5_980 / 10_237.0125, 12);
-    expect(result.costPerKg).toBeCloseTo((5.2 / 0.83 / 0.975) * 1.07 + 5_980 / 10_237.0125, 12);
-    expect(Math.round(result.costPerKg * 100) / 100).toBe(7.46);
+    expect(result.costPerKg).toBeCloseTo(
+      (5.2 / 0.83 / 0.975) * 1.07 + 5_980 / 9_306.375 + FIXED_SURCHARGES_PER_KG,
+      12,
+    );
+    expect(Math.round(result.costPerKg * 100) / 100).toBe(7.58);
   });
 
   it('custo total e custo por suíno derivam do custo/kg × peso final', () => {

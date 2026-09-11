@@ -1501,3 +1501,15 @@ diluídos pelo peso final). Só na Estimativa (Lote Real intocado). Testes:
 motor V2 nos preços 5,00/5,20/5,50/6,00 (domínio) + jornada UI dos quatro
 preços com parâmetros restantes intocados + sincronização bidirecional com o
 campo das Entradas + ausência na aba Lote Real.
+
+## Custo da Carcaça V2.3 — acréscimos fixos: oportunidade + CENAR (feat/carcass-fixed-surcharges)
+
+Dois acréscimos FIXOS somados UMA vez ao custo final equivalente da
+Estimativa (constantes no domínio, sem campos editáveis, sem rateio por
+peso/viagem/cabeça e sem o +7% por cima): custo de oportunidade R$ 0,05/kg
+(descarga não realizada) + imposto CENAR R$ 0,01/kg = +R$ 0,06/kg. Card
+exibe as três linhas (oportunidade com legenda, CENAR, impacto total).
+Motor V2 e Lote Real intactos (o pedido nomeia custo_final_equivalente —
+aplicado só à Estimativa; estender ao Lote Real fica como pergunta aberta).
+Vetores: lote padrão 7,46 → 7,52 (exemplo do pedido); 11.500 kg + 5.980 →
+7,58; realista 7,49 → 7,55; validações individuais (+0,05 / +0,01 / +0,06).
