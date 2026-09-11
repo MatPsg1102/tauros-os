@@ -232,16 +232,12 @@ export function CalculatorScreen({
                       value={formatPerKg(quickResult.equivalentPerKg)}
                     />
                     <BreakdownRow
-                      label="Taxa de abate"
-                      value={`+ ${formatPerKg(quickResult.slaughterPerKg)}`}
+                      label="Custos adicionais da operação"
+                      value={formatBRL(quickResult.additionalCostsTotal)}
                     />
                     <BreakdownRow
-                      label="Serviço"
-                      value={`+ ${formatPerKg(quickResult.servicePerKg)}`}
-                    />
-                    <BreakdownRow
-                      label="Frete / diária"
-                      value={`+ ${formatPerKg(quickResult.freightPerKg)}`}
+                      label="Impacto dos custos adicionais"
+                      value={`+ ${formatPerKg(quickResult.additionalPerKg)}`}
                     />
                   </>
                 ) : realResult !== null ? (
@@ -251,16 +247,12 @@ export function CalculatorScreen({
                       value={formatPerKg(realResult.basePerKg)}
                     />
                     <BreakdownRow
-                      label="Taxa de abate"
-                      value={`+ ${formatPerKg(realResult.slaughterPerKg)}`}
+                      label="Custos adicionais da operação"
+                      value={formatBRL(realResult.additionalCostsTotal)}
                     />
                     <BreakdownRow
-                      label="Serviço"
-                      value={`+ ${formatPerKg(realResult.servicePerKg)}`}
-                    />
-                    <BreakdownRow
-                      label="Frete / diária"
-                      value={`+ ${formatPerKg(realResult.freightPerKg)}`}
+                      label="Impacto dos custos adicionais"
+                      value={`+ ${formatPerKg(realResult.additionalPerKg)}`}
                     />
                   </>
                 ) : null}
@@ -321,7 +313,7 @@ export function CalculatorScreen({
             <SummaryTile
               label="Custos adicionais"
               value={`+ ${formatPerKg(headline.additionalPerKg)}`}
-              detail="Abate + serviço + frete"
+              detail="Abate + serviço + viagem"
             />
           </ResponsiveGrid>
         </Section>
@@ -526,46 +518,22 @@ export function CalculatorScreen({
         </>
       )}
 
-      <Section title="Custos">
+      <Section
+        title="Custos"
+        description="Abate e serviço são por suíno; diária e combustível valem para a viagem inteira. Tudo é diluído pelo peso final da carcaça."
+      >
         <Stack gap={200}>
-          <div style={{ position: 'relative' }}>
-            <SegmentedControl
-              aria-label="Modelo da taxa de abate"
-              options={[
-                { value: 'perKg', label: 'Por kg' },
-                { value: 'perHead', label: 'Por cabeça' },
-              ]}
-              value={state.costs.slaughterFeeKind}
-              onValueChange={(value) => {
-                actions.patchCosts({ slaughterFeeKind: value === 'perHead' ? 'perHead' : 'perKg' });
+          <Field label="Taxa de abate (R$/cabeça)" {...errorProp(issues, 'slaughterFeePerHead')}>
+            <CurrencyInput
+              size="lg"
+              valueInMinorUnits={toMinorUnits(state.costs.slaughterFeePerHead)}
+              onValueChange={(change) => {
+                actions.patchCosts({
+                  slaughterFeePerHead: fromMinorUnits(change.valueInMinorUnits),
+                });
               }}
             />
-          </div>
-          {state.costs.slaughterFeeKind === 'perKg' ? (
-            <Field label="Taxa de abate (R$/kg)" {...errorProp(issues, 'slaughterFeePerKg')}>
-              <CurrencyInput
-                size="lg"
-                valueInMinorUnits={toMinorUnits(state.costs.slaughterFeePerKg)}
-                onValueChange={(change) => {
-                  actions.patchCosts({
-                    slaughterFeePerKg: fromMinorUnits(change.valueInMinorUnits),
-                  });
-                }}
-              />
-            </Field>
-          ) : (
-            <Field label="Taxa de abate (R$/cabeça)" {...errorProp(issues, 'slaughterFeePerHead')}>
-              <CurrencyInput
-                size="lg"
-                valueInMinorUnits={toMinorUnits(state.costs.slaughterFeePerHead)}
-                onValueChange={(change) => {
-                  actions.patchCosts({
-                    slaughterFeePerHead: fromMinorUnits(change.valueInMinorUnits),
-                  });
-                }}
-              />
-            </Field>
-          )}
+          </Field>
           <Field label="Taxa de serviço (R$/suíno)" {...errorProp(issues, 'servicePerHead')}>
             <CurrencyInput
               size="lg"
@@ -575,12 +543,21 @@ export function CalculatorScreen({
               }}
             />
           </Field>
-          <Field label="Frete / diária do motorista (R$)" {...errorProp(issues, 'freight')}>
+          <Field label="Diária do motorista (R$/viagem)" {...errorProp(issues, 'driverDailyRate')}>
             <CurrencyInput
               size="lg"
-              valueInMinorUnits={toMinorUnits(state.costs.freight)}
+              valueInMinorUnits={toMinorUnits(state.costs.driverDailyRate)}
               onValueChange={(change) => {
-                actions.patchCosts({ freight: fromMinorUnits(change.valueInMinorUnits) });
+                actions.patchCosts({ driverDailyRate: fromMinorUnits(change.valueInMinorUnits) });
+              }}
+            />
+          </Field>
+          <Field label="Combustível (R$/viagem)" {...errorProp(issues, 'fuelCost')}>
+            <CurrencyInput
+              size="lg"
+              valueInMinorUnits={toMinorUnits(state.costs.fuelCost)}
+              onValueChange={(change) => {
+                actions.patchCosts({ fuelCost: fromMinorUnits(change.valueInMinorUnits) });
               }}
             />
           </Field>

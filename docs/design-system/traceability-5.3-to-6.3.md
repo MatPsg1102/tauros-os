@@ -1473,3 +1473,20 @@ responsável se o equivalente deve aparecer lá também). STORAGE_VERSION 1→2
 "quebra de frio/transformação" virou dois campos + seção própria de Ajuste
 comercial; resumo mostra a cadeia (total → após abate → carcaça final);
 headline da estimativa renomeado "Custo final equivalente".
+
+## Custo da Carcaça V2.1 — aba Custos simplificada (feat/carcass-costs-section)
+
+**Pedido do responsável** (só apps/carcass-cost): removido o seletor
+"Por kg / Por cabeça" — a taxa de abate é SEMPRE R$/cabeça (o suporte a
+R$/kg deixou de existir, inclusive no Lote Real). O frete único virou dois
+campos independentes de custo da VIAGEM (diária do motorista + combustível),
+nunca multiplicados pela quantidade de suínos. Fórmulas: `custo_abate =
+n × taxa`, `custo_serviço = n × taxa`, `custo_viagem = diária + combustível`,
+`adicional_por_kg = total ÷ peso FINAL da carcaça` (V2 intacta; o +7% segue
+só na matéria-prima). Resultado exibe explicitamente "Custos adicionais da
+operação" (R$), "Impacto dos custos adicionais" (R$/kg) e o custo final
+equivalente. Padrões: 50 / 3 / 150 / 0. STORAGE_VERSION 2→3 (sem migração
+implícita). Vetores: canônico real 65.212 → 6,38 preservado; realista da
+estimativa 5.700 ÷ 9.306,375 = 0,6125/kg ⇒ ≈7,49/kg; dobrar suínos dobra
+abate/serviço mas não a viagem. Defaults da estimativa passam de 7,20/kg
+(antes 7,16 com abate 0,50/kg — modelo por kg extinto).
