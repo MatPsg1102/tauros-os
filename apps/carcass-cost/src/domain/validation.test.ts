@@ -17,11 +17,10 @@ import {
 } from './validation.js';
 
 const VALID_COSTS: CostsForm = {
-  slaughterFeeKind: 'perKg',
-  slaughterFeePerKg: 0.5,
-  slaughterFeePerHead: null,
+  slaughterFeePerHead: 50,
   servicePerHead: 3,
-  freight: 150,
+  driverDailyRate: 150,
+  fuelCost: 0,
 };
 
 const VALID_QUICK: QuickForm = {
@@ -114,30 +113,24 @@ describe('validateQuick', () => {
 });
 
 describe('validateCosts', () => {
-  it('valida somente o campo do modelo de abate ativo', () => {
-    // perKg ativo: perHead pode ficar vazio.
+  it('exige os quatro custos preenchidos', () => {
     expect(validateCosts(VALID_COSTS)).toEqual([]);
-    // perHead ativo: perKg pode ficar vazio.
-    expect(
-      validateCosts({
-        ...VALID_COSTS,
-        slaughterFeeKind: 'perHead',
-        slaughterFeePerKg: null,
-        slaughterFeePerHead: 50,
-      }),
-    ).toEqual([]);
-    expect(
-      validateCosts({ ...VALID_COSTS, slaughterFeeKind: 'perHead', slaughterFeePerHead: null }),
-    ).toEqual([{ field: 'slaughterFeePerHead', code: 'REQUIRED' }]);
+    expect(validateCosts({ ...VALID_COSTS, slaughterFeePerHead: null })).toEqual([
+      { field: 'slaughterFeePerHead', code: 'REQUIRED' },
+    ]);
+    expect(validateCosts({ ...VALID_COSTS, fuelCost: null })).toEqual([
+      { field: 'fuelCost', code: 'REQUIRED' },
+    ]);
   });
 
-  it('rejeita custos negativos', () => {
-    expect(validateCosts({ ...VALID_COSTS, freight: -1 })).toEqual([
-      { field: 'freight', code: 'NEGATIVE' },
+  it('rejeita custos negativos e aceita zero', () => {
+    expect(validateCosts({ ...VALID_COSTS, driverDailyRate: -1 })).toEqual([
+      { field: 'driverDailyRate', code: 'NEGATIVE' },
     ]);
     expect(validateCosts({ ...VALID_COSTS, servicePerHead: -0.01 })).toEqual([
       { field: 'servicePerHead', code: 'NEGATIVE' },
     ]);
+    expect(validateCosts({ ...VALID_COSTS, fuelCost: 0, driverDailyRate: 0 })).toEqual([]);
   });
 });
 
@@ -182,7 +175,12 @@ describe('buildQuickInput', () => {
     expect(input?.slaughterLossPct).toBe(17);
     expect(input?.coolingLossPct).toBe(2.5);
     expect(input?.commercialAdjustmentPct).toBe(7);
-    expect(input?.costs.slaughterFee).toEqual({ kind: 'perKg', amountPerKg: 0.5 });
+    expect(input?.costs).toEqual({
+      slaughterFeePerHead: 50,
+      servicePerHead: 3,
+      driverDailyRate: 150,
+      fuelCost: 0,
+    });
   });
 });
 
@@ -192,15 +190,11 @@ describe('buildRealInput', () => {
   });
 
   it('constrói a entrada completa quando válida', () => {
-    const input = buildRealInput(VALID_REAL, {
-      ...VALID_COSTS,
-      slaughterFeeKind: 'perHead',
-      slaughterFeePerHead: 50,
-    });
+    const input = buildRealInput(VALID_REAL, VALID_COSTS);
     expect(input).toMatchObject({
       animals: 110,
       scaleWeightKg: 12_560,
-      costs: { slaughterFee: { kind: 'perHead', amountPerHead: 50 } },
+      costs: { slaughterFeePerHead: 50, driverDailyRate: 150, fuelCost: 0 },
     });
   });
 });

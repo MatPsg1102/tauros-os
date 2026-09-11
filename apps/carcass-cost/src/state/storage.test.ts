@@ -65,14 +65,16 @@ describe('loadState / saveState', () => {
       data: { quick: Record<string, unknown>; costs: Record<string, unknown> };
     };
     raw.data.quick['avgLiveWeightKg'] = 'cento e quinze';
-    raw.data.costs['slaughterFeeKind'] = 'perTruck';
-    localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify({ version: 2, data: raw.data }));
+    raw.data.costs['fuelCost'] = 'um tanque';
+    localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify({ version: 3, data: raw.data }));
 
     const loaded = loadState();
     expect(loaded.quick.avgLiveWeightKg).toBeNull();
-    expect(loaded.costs.slaughterFeeKind).toBe('perKg');
+    // Valor corrompido cai no padrão vigente (0), nunca derruba o app.
+    expect(loaded.costs.fuelCost).toBe(0);
     // Campos íntegros sobrevivem.
     expect(loaded.quick.animals).toBe(110);
+    expect(loaded.costs.driverDailyRate).toBe(150);
   });
 });
 
@@ -102,7 +104,7 @@ describe('loadHistory / saveHistory', () => {
   it('entradas inválidas são descartadas sem derrubar as demais', () => {
     localStorage.setItem(
       HISTORY_STORAGE_KEY,
-      JSON.stringify({ version: 2, data: [entry('a'), { id: 42 }, 'lixo'] }),
+      JSON.stringify({ version: 3, data: [entry('a'), { id: 42 }, 'lixo'] }),
     );
     const history = loadHistory();
     expect(history).toHaveLength(1);

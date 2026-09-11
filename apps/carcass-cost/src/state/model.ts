@@ -2,7 +2,7 @@
 // As premissas padrão (tela Configurações) alimentam lotes novos; o lote
 // atual guarda os valores efetivamente em uso.
 
-import type { CostsForm, QuickForm, RealForm, SlaughterFeeKind } from '../domain/validation.js';
+import type { CostsForm, QuickForm, RealForm } from '../domain/validation.js';
 
 export type CalculatorMode = 'quick' | 'real';
 
@@ -12,11 +12,10 @@ export interface DefaultSettings {
   readonly slaughterLossPct: number;
   readonly coolingLossPct: number;
   readonly commercialAdjustmentPct: number;
-  readonly slaughterFeeKind: SlaughterFeeKind;
-  readonly slaughterFeePerKg: number;
   readonly slaughterFeePerHead: number;
   readonly servicePerHead: number;
-  readonly freight: number;
+  readonly driverDailyRate: number;
+  readonly fuelCost: number;
 }
 
 export const DEFAULT_SETTINGS: DefaultSettings = {
@@ -25,11 +24,10 @@ export const DEFAULT_SETTINGS: DefaultSettings = {
   slaughterLossPct: 17,
   coolingLossPct: 2.5,
   commercialAdjustmentPct: 7,
-  slaughterFeeKind: 'perKg',
-  slaughterFeePerKg: 0.5,
   slaughterFeePerHead: 50,
   servicePerHead: 3,
-  freight: 150,
+  driverDailyRate: 150,
+  fuelCost: 0,
 };
 
 export interface CalculatorState {
@@ -78,11 +76,10 @@ export function lotFromSettings(settings: DefaultSettings): Omit<CalculatorState
       livePricePerKg: settings.livePricePerKg,
     },
     costs: {
-      slaughterFeeKind: settings.slaughterFeeKind,
-      slaughterFeePerKg: settings.slaughterFeePerKg,
       slaughterFeePerHead: settings.slaughterFeePerHead,
       servicePerHead: settings.servicePerHead,
-      freight: settings.freight,
+      driverDailyRate: settings.driverDailyRate,
+      fuelCost: settings.fuelCost,
     },
   };
 }

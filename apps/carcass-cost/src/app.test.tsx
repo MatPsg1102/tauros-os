@@ -29,13 +29,13 @@ describe('Calculadora — modo estimativa', () => {
     ).toBeDefined();
   });
 
-  it('reage imediatamente ao peso médio: defaults dão R$ 7,16/kg', async () => {
+  it('reage imediatamente ao peso médio: defaults dão R$ 7,20/kg', async () => {
     // Física: 110 × 115 = 12.650 kg → ×0,83 = 10.499,50 → ×0,975 = 10.237,0125.
-    // Econômica: 5,00 ÷ 0,83 ÷ 0,975 × 1,07 = 6,6111 + 0,50 + (330+150)/10.237 = 7,1579…
+    // Econômica: 5,00 ÷ 0,83 ÷ 0,975 × 1,07 = 6,6111 + (5.500+330+150)/10.237 = 7,1952…
     const user = userEvent.setup();
     renderApp();
     await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
-    const matches = await screen.findAllByText(/7,16\/kg/);
+    const matches = await screen.findAllByText(/7,20\/kg/);
     expect(matches.length).toBeGreaterThan(0);
     // Peso vivo total derivado (nunca digitado) visível junto ao campo.
     expect(screen.getByText('Peso vivo total: 12.650,00 kg')).toBeDefined();
@@ -46,15 +46,20 @@ describe('Calculadora — modo estimativa', () => {
     expect(screen.getAllByText('10.237,01 kg').length).toBeGreaterThan(0);
     // Cadeia econômica: equivalente antes dos custos adicionais = 6,61/kg.
     expect(screen.getAllByText(/6,61\/kg/).length).toBeGreaterThan(0);
+    // Custos adicionais explícitos: total da operação e impacto por kg.
+    expect(screen.getByText('Custos adicionais da operação')).toBeDefined();
+    expect(screen.getAllByText(/5\.980,00/).length).toBeGreaterThan(0);
+    expect(screen.getByText('Impacto dos custos adicionais')).toBeDefined();
+    expect(screen.getAllByText(/0,58\/kg/).length).toBeGreaterThan(0);
   });
 
   it('“E se eu pagar…” aplica o preço tocado e recalcula na hora', async () => {
     const user = userEvent.setup();
     renderApp();
     await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
-    // 4,50 ÷ 0,83 ÷ 0,975 × 1,07 + adicionais = 6,4968…
+    // 4,50 ÷ 0,83 ÷ 0,975 × 1,07 + adicionais = 6,5341…
     await user.click(await screen.findByRole('button', { name: /4,50/ }));
-    const matches = await screen.findAllByText(/6,50\/kg/);
+    const matches = await screen.findAllByText(/6,53\/kg/);
     expect(matches.length).toBeGreaterThan(0);
   });
 
@@ -105,9 +110,7 @@ describe('Calculadora — modo lote real (teste de integração do spec)', () =>
     const preco = screen.getByLabelText('Preço do suíno vivo (R$/kg)');
     await user.clear(preco);
     await user.type(preco, '4,8');
-
-    await user.click(screen.getByRole('radio', { name: 'Por cabeça' }));
-    // Taxa padrão por cabeça já é R$ 50,00; serviço R$ 3,00; frete R$ 150,00.
+    // Custos padrão: abate R$ 50/cabeça, serviço R$ 3, diária R$ 150, combustível R$ 0.
 
     const custoKg = await screen.findAllByText(/6,38\/kg/);
     expect(custoKg.length).toBeGreaterThan(0);
@@ -145,11 +148,11 @@ describe('Persistência local', () => {
     const user = userEvent.setup();
     renderApp();
     await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
-    await screen.findAllByText(/7,16\/kg/);
+    await screen.findAllByText(/7,20\/kg/);
 
     cleanup();
     renderApp();
-    const matches = await screen.findAllByText(/7,16\/kg/);
+    const matches = await screen.findAllByText(/7,20\/kg/);
     expect(matches.length).toBeGreaterThan(0);
   });
 });
@@ -159,14 +162,14 @@ describe('Histórico', () => {
     const user = userEvent.setup();
     renderApp();
     await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
-    await screen.findAllByText(/7,16\/kg/);
+    await screen.findAllByText(/7,20\/kg/);
     await user.click(screen.getByRole('button', { name: 'Salvar lote no histórico' }));
 
     await user.click(screen.getByRole('button', { name: 'Histórico' }));
     expect(await screen.findByText(/110 suínos/)).toBeDefined();
 
     await user.click(screen.getByRole('button', { name: 'Abrir este lote' }));
-    const matches = await screen.findAllByText(/7,16\/kg/);
+    const matches = await screen.findAllByText(/7,20\/kg/);
     expect(matches.length).toBeGreaterThan(0);
   });
 
@@ -207,10 +210,10 @@ describe('Configurações', () => {
     ).toBeDefined();
 
     // Voltar e iniciar novo lote: o padrão vigente continua 20% (o inválido
-    // nunca persistiu) — com os defaults o resultado volta a ser R$ 7,16/kg.
+    // nunca persistiu) — com os defaults o resultado volta a ser R$ 7,20/kg.
     await user.click(screen.getByRole('button', { name: 'Voltar' }));
     await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
-    const matches = await screen.findAllByText(/7,16\/kg/);
+    const matches = await screen.findAllByText(/7,20\/kg/);
     expect(matches.length).toBeGreaterThan(0);
   });
 
@@ -225,8 +228,8 @@ describe('Configurações', () => {
     await user.click(screen.getByRole('button', { name: 'Iniciar novo lote com estes padrões' }));
 
     await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
-    // 4,50 ÷ 0,83 ÷ 0,975 × 1,07 + adicionais = 6,4968… → R$ 6,50/kg
-    const matches = await screen.findAllByText(/6,50\/kg/);
+    // 4,50 ÷ 0,83 ÷ 0,975 × 1,07 + adicionais = 6,5341… → R$ 6,53/kg
+    const matches = await screen.findAllByText(/6,53\/kg/);
     expect(matches.length).toBeGreaterThan(0);
   });
 });

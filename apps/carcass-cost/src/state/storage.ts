@@ -16,10 +16,10 @@ import {
 export const STATE_STORAGE_KEY = 'tauros.carcass-cost.state.v1';
 export const HISTORY_STORAGE_KEY = 'tauros.carcass-cost.history.v1';
 export const HISTORY_LIMIT = 50;
-// v2: modelo novo da estimativa (quebra de abate × quebra de frio × ajuste
-// comercial separados; peso vivo médio). Envelope v1 é rejeitado — sem
-// migração implícita (o app volta aos padrões).
-const STORAGE_VERSION = 2;
+// v3: aba de Custos simplificada (abate sempre por cabeça; viagem separada
+// em diária do motorista + combustível). Envelope anterior é rejeitado —
+// sem migração implícita (o app volta aos padrões).
+const STORAGE_VERSION = 3;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -36,10 +36,6 @@ function finiteNumber(value: unknown, fallback: number): number {
 
 function mode(value: unknown, fallback: CalculatorMode): CalculatorMode {
   return value === 'quick' || value === 'real' ? value : fallback;
-}
-
-function feeKind(value: unknown, fallback: 'perKg' | 'perHead'): 'perKg' | 'perHead' {
-  return value === 'perKg' || value === 'perHead' ? value : fallback;
 }
 
 function sanitizeQuick(value: unknown, fallback: QuickForm): QuickForm {
@@ -72,11 +68,10 @@ function sanitizeReal(value: unknown, fallback: RealForm): RealForm {
 function sanitizeCosts(value: unknown, fallback: CostsForm): CostsForm {
   const raw = isRecord(value) ? value : {};
   return {
-    slaughterFeeKind: feeKind(raw['slaughterFeeKind'], fallback.slaughterFeeKind),
-    slaughterFeePerKg: numberOrNull(raw['slaughterFeePerKg'], fallback.slaughterFeePerKg),
     slaughterFeePerHead: numberOrNull(raw['slaughterFeePerHead'], fallback.slaughterFeePerHead),
     servicePerHead: numberOrNull(raw['servicePerHead'], fallback.servicePerHead),
-    freight: numberOrNull(raw['freight'], fallback.freight),
+    driverDailyRate: numberOrNull(raw['driverDailyRate'], fallback.driverDailyRate),
+    fuelCost: numberOrNull(raw['fuelCost'], fallback.fuelCost),
   };
 }
 
@@ -91,14 +86,13 @@ function sanitizeSettings(value: unknown): DefaultSettings {
       raw['commercialAdjustmentPct'],
       DEFAULT_SETTINGS.commercialAdjustmentPct,
     ),
-    slaughterFeeKind: feeKind(raw['slaughterFeeKind'], DEFAULT_SETTINGS.slaughterFeeKind),
-    slaughterFeePerKg: finiteNumber(raw['slaughterFeePerKg'], DEFAULT_SETTINGS.slaughterFeePerKg),
     slaughterFeePerHead: finiteNumber(
       raw['slaughterFeePerHead'],
       DEFAULT_SETTINGS.slaughterFeePerHead,
     ),
     servicePerHead: finiteNumber(raw['servicePerHead'], DEFAULT_SETTINGS.servicePerHead),
-    freight: finiteNumber(raw['freight'], DEFAULT_SETTINGS.freight),
+    driverDailyRate: finiteNumber(raw['driverDailyRate'], DEFAULT_SETTINGS.driverDailyRate),
+    fuelCost: finiteNumber(raw['fuelCost'], DEFAULT_SETTINGS.fuelCost),
   };
 }
 

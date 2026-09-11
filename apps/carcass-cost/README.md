@@ -50,8 +50,10 @@ pnpm --filter @tauros/carcass-cost build    # SPA estática em dist/ (PWA)
   digitado.
 - **O custo final headline inclui TODOS os custos** com a composição por kg
   exibida logo abaixo — nenhum custo escondido.
-- **Taxa de abate**: um modelo por vez — R$/kg (sobre o peso final) ou
-  R$/cabeça — nunca os dois.
+- **Custos adicionais** (nunca recebem o ajuste comercial): taxa de abate
+  (R$/cabeça × quantidade), taxa de serviço (R$/suíno × quantidade) e o custo
+  da VIAGEM = diária do motorista + combustível (uma única vez por lote,
+  nunca por cabeça). `custo_adicional_por_kg = total ÷ peso FINAL da carcaça`.
 - Modo Lote Real: custo físico real (sem ajuste comercial); peso pago =
   balança − descontos; % quebra de abate sobre o peso pago; % quebra de frio
   sobre o peso abatido; custo/kg = custo total ÷ peso após frio.
@@ -62,9 +64,13 @@ pnpm --filter @tauros/carcass-cost build    # SPA estática em dist/ (PWA)
   ×0,975 = **9.306,375 kg** (rendimento 80,925%).
 - Econômica da estimativa: vivo R$ 5,20 ⇒ 5,20 ÷ 0,83 ÷ 0,975 × 1,07 ≈
   **R$ 6,88/kg** (antes de abate/serviço/frete, rateados pelo peso final).
+- Custos da estimativa (caso realista): 100 suínos, abate R$ 50/cabeça +
+  serviço R$ 3 + diária R$ 150 + combustível R$ 250 = R$ 5.700 ÷ 9.306,375 kg
+  = R$ 0,6125/kg ⇒ final 6,8755 + 0,6125 ≈ **R$ 7,49/kg**.
 - Lote real: 110 suínos, balança 12.560 kg, graxaria 220 kg, abatido
   10.513,50 kg, após frio 10.217,20 kg, vivo R$ 4,80, abate R$ 50/cabeça,
-  serviço R$ 3, frete R$ 150 ⇒ total R$ 65.212,00 ⇒ **R$ 6,38/kg**.
+  serviço R$ 3, diária R$ 150 + combustível R$ 0 ⇒ total R$ 65.212,00 ⇒
+  **R$ 6,38/kg**.
 
 ## Fora de escopo (deliberado)
 

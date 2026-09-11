@@ -35,9 +35,19 @@ describe('calculateTotalLiveWeight', () => {
 });
 
 const ZERO_COSTS = {
-  slaughterFee: { kind: 'perKg', amountPerKg: 0 },
+  slaughterFeePerHead: 0,
   servicePerHead: 0,
-  freight: 0,
+  driverDailyRate: 0,
+  fuelCost: 0,
+} as const;
+
+// Caso realista de custos: abate R$ 50/cabeça, serviço R$ 3/suíno,
+// diária R$ 150/viagem, combustível R$ 250/viagem.
+const REALISTIC_COSTS = {
+  slaughterFeePerHead: 50,
+  servicePerHead: 3,
+  driverDailyRate: 150,
+  fuelCost: 250,
 } as const;
 
 const QUICK_BASE: QuickEstimateInput = {
@@ -75,13 +85,11 @@ describe('calculateQuickEstimate — cadeia econômica', () => {
   });
 
   it('ajuste comercial incide SÓ sobre a matéria-prima, nunca sobre os custos', () => {
-    const withCosts: QuickEstimateInput = {
-      ...QUICK_BASE,
-      costs: { slaughterFee: { kind: 'perKg', amountPerKg: 0.5 }, servicePerHead: 3, freight: 150 },
-    };
+    const withCosts: QuickEstimateInput = { ...QUICK_BASE, costs: REALISTIC_COSTS };
     const result = calculateQuickEstimate(withCosts);
     const noAdjustment = calculateQuickEstimate({ ...withCosts, commercialAdjustmentPct: 0 });
     // custos adicionais idênticos com e sem ajuste (o 7% não os multiplica)
+    expect(result.additionalCostsTotal).toBeCloseTo(noAdjustment.additionalCostsTotal, 12);
     expect(result.additionalPerKg).toBeCloseTo(noAdjustment.additionalPerKg, 12);
     // identidade exata: final = equivalente + adicionais
     expect(result.costPerKg).toBeCloseTo(result.equivalentPerKg + result.additionalPerKg, 12);
@@ -99,23 +107,35 @@ describe('calculateQuickEstimate — cadeia econômica', () => {
     expect(semAjuste.equivalentPerKg).toBeCloseTo(5.2 / 0.83 / 0.975, 12);
   });
 
-  it('rateia abate/serviço/frete pelo peso final da carcaça', () => {
-    const result = calculateQuickEstimate({
-      ...QUICK_BASE,
-      costs: { slaughterFee: { kind: 'perKg', amountPerKg: 0.5 }, servicePerHead: 3, freight: 150 },
-    });
-    expect(result.slaughterPerKg).toBeCloseTo(0.5, 12);
-    expect(result.servicePerKg).toBeCloseTo(300 / 9_306.375, 12);
-    expect(result.freightPerKg).toBeCloseTo(150 / 9_306.375, 12);
-    expect(result.additionalPerKg).toBeCloseTo(0.5 + 300 / 9_306.375 + 150 / 9_306.375, 12);
+  it('abate por cabeça, serviço por suíno, diária e combustível UMA vez por viagem', () => {
+    const result = calculateQuickEstimate({ ...QUICK_BASE, costs: REALISTIC_COSTS });
+    expect(result.slaughterCost).toBeCloseTo(100 * 50, 12);
+    expect(result.serviceCost).toBeCloseTo(100 * 3, 12);
+    // custo da viagem NÃO multiplica pela quantidade de suínos
+    expect(result.tripCost).toBeCloseTo(150 + 250, 12);
+    expect(result.additionalCostsTotal).toBeCloseTo(5_000 + 300 + 400, 12);
   });
 
-  it('taxa de abate por cabeça é rateada pelo peso final', () => {
-    const result = calculateQuickEstimate({
+  it('dobrar o nº de suínos dobra abate/serviço mas NÃO a viagem', () => {
+    const single = calculateQuickEstimate({ ...QUICK_BASE, costs: REALISTIC_COSTS });
+    const double = calculateQuickEstimate({
       ...QUICK_BASE,
-      costs: { ...ZERO_COSTS, slaughterFee: { kind: 'perHead', amountPerHead: 50 } },
+      animals: 200,
+      costs: REALISTIC_COSTS,
     });
-    expect(result.slaughterPerKg).toBeCloseTo(5_000 / 9_306.375, 12);
+    expect(double.slaughterCost).toBeCloseTo(single.slaughterCost * 2, 9);
+    expect(double.serviceCost).toBeCloseTo(single.serviceCost * 2, 9);
+    expect(double.tripCost).toBeCloseTo(single.tripCost, 12);
+  });
+
+  it('caso realista completo: adicionais diluídos pelo peso FINAL da carcaça', () => {
+    // 100 × 115 kg, vivo 5,20 → carcaça final 9.306,375 kg;
+    // adicionais = 5.000 + 300 + 150 + 250 = 5.700 → 5.700 ÷ 9.306,375 = 0,6125/kg;
+    // final = 6,8755 (equivalente) + 0,6125 = 7,4880 → R$ 7,49/kg.
+    const result = calculateQuickEstimate({ ...QUICK_BASE, costs: REALISTIC_COSTS });
+    expect(result.additionalPerKg).toBeCloseTo(5_700 / 9_306.375, 12);
+    expect(result.costPerKg).toBeCloseTo((5.2 / 0.83 / 0.975) * 1.07 + 5_700 / 9_306.375, 12);
+    expect(Math.round(result.costPerKg * 100) / 100).toBe(7.49);
   });
 
   it('custo total e custo por suíno derivam do custo/kg × peso final', () => {
@@ -136,9 +156,10 @@ const REAL_LOT: RealLotInput = {
   chilledWeightKg: 10_217.2,
   livePricePerKg: 4.8,
   costs: {
-    slaughterFee: { kind: 'perHead', amountPerHead: 50 },
+    slaughterFeePerHead: 50,
     servicePerHead: 3,
-    freight: 150,
+    driverDailyRate: 150,
+    fuelCost: 0,
   },
 };
 
@@ -160,19 +181,22 @@ describe('calculateRealLot', () => {
     expect(result.animalsCost).toBeCloseTo(59_232, 6);
     expect(result.slaughterCost).toBeCloseTo(5_500, 6);
     expect(result.serviceCost).toBeCloseTo(330, 6);
-    expect(result.freightCost).toBeCloseTo(150, 6);
+    expect(result.tripCost).toBeCloseTo(150, 6);
+    expect(result.additionalCostsTotal).toBeCloseTo(5_980, 6);
     expect(result.totalCost).toBeCloseTo(65_212, 6);
     expect(result.costPerKg).toBeCloseTo(65_212 / 10_217.2, 12); // ≈ 6,38
     expect(result.costPerAnimal).toBeCloseTo(65_212 / 110, 6);
     expect(result.additionalPerKg).toBeCloseTo(5_980 / 10_217.2, 12);
   });
 
-  it('taxa de abate por kg usa o peso final recebido', () => {
+  it('combustível entra UMA vez por viagem também no lote real', () => {
     const result = calculateRealLot({
       ...REAL_LOT,
-      costs: { ...REAL_LOT.costs, slaughterFee: { kind: 'perKg', amountPerKg: 0.5 } },
+      costs: { ...REAL_LOT.costs, fuelCost: 250 },
     });
-    expect(result.slaughterCost).toBeCloseTo(10_217.2 * 0.5, 6);
+    expect(result.tripCost).toBeCloseTo(400, 6);
+    expect(result.totalCost).toBeCloseTo(65_462, 6);
+    expect(result.costPerKg).toBeCloseTo(65_462 / 10_217.2, 12);
   });
 
   it('decomposição por kg soma exatamente o custo/kg', () => {

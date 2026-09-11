@@ -2,14 +2,7 @@
 // impossíveis nunca chegam às fórmulas). As mensagens pt-BR ficam na UI
 // (ui/field-messages.ts), indexadas pelo código do problema.
 
-import type {
-  LotCosts,
-  QuickEstimateInput,
-  RealLotInput,
-  SlaughterFeeModel,
-} from './carcass-cost.js';
-
-export type SlaughterFeeKind = SlaughterFeeModel['kind'];
+import type { LotCosts, QuickEstimateInput, RealLotInput } from './carcass-cost.js';
 
 /** Formas em edição: campo vazio = null (contrato do NumberInput do DS). */
 export interface QuickForm {
@@ -32,11 +25,10 @@ export interface RealForm {
 }
 
 export interface CostsForm {
-  readonly slaughterFeeKind: SlaughterFeeKind;
-  readonly slaughterFeePerKg: number | null;
   readonly slaughterFeePerHead: number | null;
   readonly servicePerHead: number | null;
-  readonly freight: number | null;
+  readonly driverDailyRate: number | null;
+  readonly fuelCost: number | null;
 }
 
 export type IssueCode =
@@ -96,15 +88,10 @@ function check(
 
 export function validateCosts(costs: CostsForm): readonly ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  // Só o campo do modelo ativo é validado — por kg e por cabeça nunca
-  // valem ao mesmo tempo.
-  if (costs.slaughterFeeKind === 'perKg') {
-    check(issues, 'slaughterFeePerKg', costs.slaughterFeePerKg, nonNegative);
-  } else {
-    check(issues, 'slaughterFeePerHead', costs.slaughterFeePerHead, nonNegative);
-  }
+  check(issues, 'slaughterFeePerHead', costs.slaughterFeePerHead, nonNegative);
   check(issues, 'servicePerHead', costs.servicePerHead, nonNegative);
-  check(issues, 'freight', costs.freight, nonNegative);
+  check(issues, 'driverDailyRate', costs.driverDailyRate, nonNegative);
+  check(issues, 'fuelCost', costs.fuelCost, nonNegative);
   return issues;
 }
 
@@ -154,16 +141,20 @@ export function validateReal(form: RealForm, costs: CostsForm): readonly Validat
 
 export function buildLotCosts(costs: CostsForm): LotCosts | null {
   if (validateCosts(costs).length > 0) return null;
-  if (costs.servicePerHead === null || costs.freight === null) return null;
-  let slaughterFee: SlaughterFeeModel;
-  if (costs.slaughterFeeKind === 'perKg') {
-    if (costs.slaughterFeePerKg === null) return null;
-    slaughterFee = { kind: 'perKg', amountPerKg: costs.slaughterFeePerKg };
-  } else {
-    if (costs.slaughterFeePerHead === null) return null;
-    slaughterFee = { kind: 'perHead', amountPerHead: costs.slaughterFeePerHead };
+  if (
+    costs.slaughterFeePerHead === null ||
+    costs.servicePerHead === null ||
+    costs.driverDailyRate === null ||
+    costs.fuelCost === null
+  ) {
+    return null;
   }
-  return { slaughterFee, servicePerHead: costs.servicePerHead, freight: costs.freight };
+  return {
+    slaughterFeePerHead: costs.slaughterFeePerHead,
+    servicePerHead: costs.servicePerHead,
+    driverDailyRate: costs.driverDailyRate,
+    fuelCost: costs.fuelCost,
+  };
 }
 
 /** Constrói a entrada do modo estimativa; null enquanto houver problema de validação. */

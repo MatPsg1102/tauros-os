@@ -8,16 +8,15 @@
 //   aplicado SOMENTE sobre o custo da matéria-prima convertido para carcaça,
 //   nunca sobre abate/serviço/frete e nunca sobre o rendimento físico.
 
-export type SlaughterFeeModel =
-  | { readonly kind: 'perKg'; readonly amountPerKg: number }
-  | { readonly kind: 'perHead'; readonly amountPerHead: number };
-
 export interface LotCosts {
-  readonly slaughterFee: SlaughterFeeModel;
+  /** Taxa de abate, em R$ por cabeça (sempre × quantidade de suínos). */
+  readonly slaughterFeePerHead: number;
   /** Taxa de serviço, em R$ por suíno. */
   readonly servicePerHead: number;
-  /** Frete / diária do motorista, em R$ por lote. */
-  readonly freight: number;
+  /** Diária do motorista, em R$ por VIAGEM (uma única vez por lote). */
+  readonly driverDailyRate: number;
+  /** Combustível, em R$ por VIAGEM (uma única vez por lote). */
+  readonly fuelCost: number;
 }
 
 export interface QuickEstimateInput {
@@ -47,10 +46,13 @@ export interface QuickEstimateResult {
   readonly baseCarcassPerKg: number;
   readonly commercialAdjustmentPerKg: number;
   readonly equivalentPerKg: number;
-  readonly slaughterPerKg: number;
-  readonly servicePerKg: number;
-  readonly freightPerKg: number;
-  /** Abate + serviço + frete, R$/kg — SEM ajuste comercial por cima. */
+  /** Custos adicionais da operação, em R$ do lote. */
+  readonly slaughterCost: number;
+  readonly serviceCost: number;
+  /** Diária + combustível — custo da VIAGEM, nunca por cabeça. */
+  readonly tripCost: number;
+  readonly additionalCostsTotal: number;
+  /** Adicionais ÷ peso FINAL da carcaça, R$/kg — SEM ajuste comercial. */
   readonly additionalPerKg: number;
   readonly costPerKg: number;
   readonly totalCost: number;
@@ -83,13 +85,12 @@ export interface RealLotResult {
   readonly animalsCost: number;
   readonly slaughterCost: number;
   readonly serviceCost: number;
-  readonly freightCost: number;
+  /** Diária + combustível — custo da VIAGEM, nunca por cabeça. */
+  readonly tripCost: number;
+  readonly additionalCostsTotal: number;
   readonly totalCost: number;
   /** Decomposição por kg final — mesma transparência do modo estimativa. */
   readonly basePerKg: number;
-  readonly slaughterPerKg: number;
-  readonly servicePerKg: number;
-  readonly freightPerKg: number;
   readonly additionalPerKg: number;
   readonly costPerKg: number;
   readonly costPerAnimal: number;
@@ -146,13 +147,14 @@ export function calculateQuickEstimate(input: QuickEstimateInput): QuickEstimate
   const commercialAdjustmentPerKg = baseCarcassPerKg * fraction(input.commercialAdjustmentPct);
   const equivalentPerKg = baseCarcassPerKg + commercialAdjustmentPerKg;
 
-  const slaughterPerKg =
-    input.costs.slaughterFee.kind === 'perKg'
-      ? input.costs.slaughterFee.amountPerKg
-      : (input.costs.slaughterFee.amountPerHead * input.animals) / estimatedCarcassKg;
-  const servicePerKg = (input.costs.servicePerHead * input.animals) / estimatedCarcassKg;
-  const freightPerKg = input.costs.freight / estimatedCarcassKg;
-  const additionalPerKg = slaughterPerKg + servicePerKg + freightPerKg;
+  // Abate e serviço são por cabeça; diária e combustível são da VIAGEM
+  // (uma única vez por lote). Tudo diluído pelo peso FINAL da carcaça,
+  // sem o ajuste comercial por cima.
+  const slaughterCost = input.animals * input.costs.slaughterFeePerHead;
+  const serviceCost = input.animals * input.costs.servicePerHead;
+  const tripCost = input.costs.driverDailyRate + input.costs.fuelCost;
+  const additionalCostsTotal = slaughterCost + serviceCost + tripCost;
+  const additionalPerKg = additionalCostsTotal / estimatedCarcassKg;
 
   const costPerKg = equivalentPerKg + additionalPerKg;
   const totalCost = costPerKg * estimatedCarcassKg;
@@ -167,9 +169,10 @@ export function calculateQuickEstimate(input: QuickEstimateInput): QuickEstimate
     baseCarcassPerKg,
     commercialAdjustmentPerKg,
     equivalentPerKg,
-    slaughterPerKg,
-    servicePerKg,
-    freightPerKg,
+    slaughterCost,
+    serviceCost,
+    tripCost,
+    additionalCostsTotal,
     additionalPerKg,
     costPerKg,
     totalCost,
@@ -190,18 +193,14 @@ export function calculateRealLot(input: RealLotInput): RealLotResult {
   const totalLossKg = paidWeightKg - input.chilledWeightKg;
 
   const animalsCost = paidWeightKg * input.livePricePerKg;
-  const slaughterCost =
-    input.costs.slaughterFee.kind === 'perKg'
-      ? input.chilledWeightKg * input.costs.slaughterFee.amountPerKg
-      : input.animals * input.costs.slaughterFee.amountPerHead;
+  const slaughterCost = input.animals * input.costs.slaughterFeePerHead;
   const serviceCost = input.animals * input.costs.servicePerHead;
-  const freightCost = input.costs.freight;
-  const totalCost = animalsCost + slaughterCost + serviceCost + freightCost;
+  const tripCost = input.costs.driverDailyRate + input.costs.fuelCost;
+  const additionalCostsTotal = slaughterCost + serviceCost + tripCost;
+  const totalCost = animalsCost + additionalCostsTotal;
 
   const basePerKg = animalsCost / input.chilledWeightKg;
-  const slaughterPerKg = slaughterCost / input.chilledWeightKg;
-  const servicePerKg = serviceCost / input.chilledWeightKg;
-  const freightPerKg = freightCost / input.chilledWeightKg;
+  const additionalPerKg = additionalCostsTotal / input.chilledWeightKg;
 
   return {
     paidWeightKg,
@@ -216,13 +215,11 @@ export function calculateRealLot(input: RealLotInput): RealLotResult {
     animalsCost,
     slaughterCost,
     serviceCost,
-    freightCost,
+    tripCost,
+    additionalCostsTotal,
     totalCost,
     basePerKg,
-    slaughterPerKg,
-    servicePerKg,
-    freightPerKg,
-    additionalPerKg: slaughterPerKg + servicePerKg + freightPerKg,
+    additionalPerKg,
     costPerKg: totalCost / input.chilledWeightKg,
     costPerAnimal: totalCost / input.animals,
   };

@@ -11,7 +11,6 @@ import {
   NumberInput,
   PageHeader,
   Section,
-  SegmentedControl,
   Stack,
   Text,
 } from '@tauros/ui-primitives';
@@ -33,7 +32,7 @@ export interface SettingsScreenProps {
   readonly onBack: () => void;
 }
 
-type NumericSettingKey = Exclude<keyof DefaultSettings, 'slaughterFeeKind'>;
+type NumericSettingKey = keyof DefaultSettings;
 type SettingsDraft = { readonly [K in NumericSettingKey]: number | null };
 
 const RULES: { readonly [K in NumericSettingKey]: (value: number) => IssueCode | null } = {
@@ -42,10 +41,10 @@ const RULES: { readonly [K in NumericSettingKey]: (value: number) => IssueCode |
   slaughterLossPct: percentageIssue,
   coolingLossPct: percentageIssue,
   commercialAdjustmentPct: percentageIssue,
-  slaughterFeePerKg: nonNegativeIssue,
   slaughterFeePerHead: nonNegativeIssue,
   servicePerHead: nonNegativeIssue,
-  freight: nonNegativeIssue,
+  driverDailyRate: nonNegativeIssue,
+  fuelCost: nonNegativeIssue,
 };
 
 function issueOf(key: NumericSettingKey, value: number | null): IssueCode | null {
@@ -59,10 +58,10 @@ function draftFromSettings(settings: DefaultSettings): SettingsDraft {
     slaughterLossPct: settings.slaughterLossPct,
     coolingLossPct: settings.coolingLossPct,
     commercialAdjustmentPct: settings.commercialAdjustmentPct,
-    slaughterFeePerKg: settings.slaughterFeePerKg,
     slaughterFeePerHead: settings.slaughterFeePerHead,
     servicePerHead: settings.servicePerHead,
-    freight: settings.freight,
+    driverDailyRate: settings.driverDailyRate,
+    fuelCost: settings.fuelCost,
   };
 }
 
@@ -163,33 +162,9 @@ export function SettingsScreen({ calc, onBack }: SettingsScreenProps): ReactElem
 
       <Section
         title="Custos padrão"
-        description="A taxa de abate usa um único modelo por vez: por kg ou por cabeça."
+        description="Abate e serviço são por suíno; diária e combustível valem para a viagem inteira."
       >
         <Stack gap={200}>
-          {/* position:relative ancora os radios visually-hidden do
-              SegmentedControl (pendência do DS registrada na traceability). */}
-          <div style={{ position: 'relative' }}>
-            <SegmentedControl
-              aria-label="Modelo padrão da taxa de abate"
-              options={[
-                { value: 'perKg', label: 'Por kg' },
-                { value: 'perHead', label: 'Por cabeça' },
-              ]}
-              value={settings.slaughterFeeKind}
-              onValueChange={(value) => {
-                patchSettings({ slaughterFeeKind: value === 'perHead' ? 'perHead' : 'perKg' });
-              }}
-            />
-          </div>
-          <Field label="Taxa de abate (R$/kg)" {...errorProp('slaughterFeePerKg')}>
-            <CurrencyInput
-              size="lg"
-              valueInMinorUnits={toMinorUnits(draft.slaughterFeePerKg)}
-              onValueChange={(change) => {
-                edit('slaughterFeePerKg', fromMinorUnits(change.valueInMinorUnits));
-              }}
-            />
-          </Field>
           <Field label="Taxa de abate (R$/cabeça)" {...errorProp('slaughterFeePerHead')}>
             <CurrencyInput
               size="lg"
@@ -208,12 +183,21 @@ export function SettingsScreen({ calc, onBack }: SettingsScreenProps): ReactElem
               }}
             />
           </Field>
-          <Field label="Frete / diária do motorista (R$)" {...errorProp('freight')}>
+          <Field label="Diária do motorista (R$/viagem)" {...errorProp('driverDailyRate')}>
             <CurrencyInput
               size="lg"
-              valueInMinorUnits={toMinorUnits(draft.freight)}
+              valueInMinorUnits={toMinorUnits(draft.driverDailyRate)}
               onValueChange={(change) => {
-                edit('freight', fromMinorUnits(change.valueInMinorUnits));
+                edit('driverDailyRate', fromMinorUnits(change.valueInMinorUnits));
+              }}
+            />
+          </Field>
+          <Field label="Combustível (R$/viagem)" {...errorProp('fuelCost')}>
+            <CurrencyInput
+              size="lg"
+              valueInMinorUnits={toMinorUnits(draft.fuelCost)}
+              onValueChange={(change) => {
+                edit('fuelCost', fromMinorUnits(change.valueInMinorUnits));
               }}
             />
           </Field>
