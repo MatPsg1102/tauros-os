@@ -377,7 +377,8 @@ describe('FLUXO B — foto obrigatória + conferência', () => {
       outcome: 'APPROVED',
       reviewedByEmployeeId: 'emp-0004',
     });
-  });
+    // Timeout como no FLUXO C: runner do CI ~2× mais lento que local.
+  }, 15_000);
 
   it('FLUXO C — devolução com motivo, correção preservando histórico e aprovação final', async () => {
     await seedFixtureWorkforceLinks();
@@ -482,5 +483,6 @@ describe('FLUXO D — segurança da conferência', () => {
     expect(serra?.status).toBe('AWAITING_REVIEW');
 
     expect((await axe(container)).violations).toEqual([]);
-  });
+    // Timeout como no FLUXO C: runner do CI ~2× mais lento que local.
+  }, 15_000);
 });
