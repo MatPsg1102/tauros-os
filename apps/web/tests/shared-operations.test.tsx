@@ -300,7 +300,9 @@ describe('FLUXO A — tarefa simples no quadro compartilhado', () => {
     expect(serialized.includes('"1234"')).toBe(false);
     expect(serialized.toLowerCase().includes('pin')).toBe(false);
     expect(JSON.stringify({ ...window.localStorage })).not.toContain('224466');
-  });
+    // Timeout como no FLUXO C: o runner do CI é ~2× mais lento que local e o
+    // fluxo completo (assumir → iniciar → concluir → reload) passa de 5s lá.
+  }, 15_000);
 });
 
 describe('FLUXO B — foto obrigatória + conferência', () => {
