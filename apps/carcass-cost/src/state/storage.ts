@@ -3,6 +3,7 @@
 // escrita protegidas por try/catch (localStorage pode estar indisponível).
 // Todo valor lido é saneado campo a campo: storage corrompido nunca derruba o app.
 
+import { SUBPRODUCT_KEYS, type SubproductKey } from '../domain/transformation.js';
 import type { CostsForm, QuickForm, RealForm } from '../domain/validation.js';
 import {
   DEFAULT_SETTINGS,
@@ -11,15 +12,16 @@ import {
   type CalculatorState,
   type DefaultSettings,
   type HistoryEntry,
+  type TransformationForm,
 } from './model.js';
 
 export const STATE_STORAGE_KEY = 'tauros.carcass-cost.state.v1';
 export const HISTORY_STORAGE_KEY = 'tauros.carcass-cost.history.v1';
 export const HISTORY_LIMIT = 50;
-// v3: aba de Custos simplificada (abate sempre por cabeça; viagem separada
-// em diária do motorista + combustível). Envelope anterior é rejeitado —
-// sem migração implícita (o app volta aos padrões).
-const STORAGE_VERSION = 3;
+// v4: aba Transformação (subprodutos + preço da carcaça de exportação) e o
+// ajuste comercial deixou de ser campo (vem do indicador). Envelope anterior
+// é rejeitado — sem migração implícita (o app volta aos padrões).
+const STORAGE_VERSION = 4;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -46,9 +48,30 @@ function sanitizeQuick(value: unknown, fallback: QuickForm): QuickForm {
     livePricePerKg: numberOrNull(raw['livePricePerKg'], fallback.livePricePerKg),
     slaughterLossPct: numberOrNull(raw['slaughterLossPct'], fallback.slaughterLossPct),
     coolingLossPct: numberOrNull(raw['coolingLossPct'], fallback.coolingLossPct),
-    commercialAdjustmentPct: numberOrNull(
-      raw['commercialAdjustmentPct'],
-      fallback.commercialAdjustmentPct,
+  };
+}
+
+function sanitizeTransformation(value: unknown, fallback: TransformationForm): TransformationForm {
+  const raw = isRecord(value) ? value : {};
+  const rawSubs = isRecord(raw['subproducts']) ? raw['subproducts'] : {};
+  const subproducts = Object.fromEntries(
+    SUBPRODUCT_KEYS.map((key) => {
+      const item = isRecord(rawSubs[key]) ? rawSubs[key] : {};
+      const fb = fallback.subproducts[key];
+      return [
+        key,
+        {
+          weightKg: numberOrNull(item['weightKg'], fb.weightKg),
+          pricePerKg: numberOrNull(item['pricePerKg'], fb.pricePerKg),
+        },
+      ];
+    }),
+  ) as Record<SubproductKey, TransformationForm['subproducts'][SubproductKey]>;
+  return {
+    subproducts,
+    exportCarcassPricePerKg: numberOrNull(
+      raw['exportCarcassPricePerKg'],
+      fallback.exportCarcassPricePerKg,
     ),
   };
 }
@@ -82,10 +105,6 @@ function sanitizeSettings(value: unknown): DefaultSettings {
     livePricePerKg: finiteNumber(raw['livePricePerKg'], DEFAULT_SETTINGS.livePricePerKg),
     slaughterLossPct: finiteNumber(raw['slaughterLossPct'], DEFAULT_SETTINGS.slaughterLossPct),
     coolingLossPct: finiteNumber(raw['coolingLossPct'], DEFAULT_SETTINGS.coolingLossPct),
-    commercialAdjustmentPct: finiteNumber(
-      raw['commercialAdjustmentPct'],
-      DEFAULT_SETTINGS.commercialAdjustmentPct,
-    ),
     slaughterFeePerHead: finiteNumber(
       raw['slaughterFeePerHead'],
       DEFAULT_SETTINGS.slaughterFeePerHead,
@@ -126,6 +145,7 @@ export function loadState(): CalculatorState {
     real: sanitizeReal(data['real'], fallback.real),
     costs: sanitizeCosts(data['costs'], fallback.costs),
     settings: sanitizeSettings(data['settings']),
+    transformation: sanitizeTransformation(data['transformation'], fallback.transformation),
   };
 }
 

@@ -29,8 +29,10 @@ const VALID_QUICK: QuickForm = {
   livePricePerKg: 5,
   slaughterLossPct: 17,
   coolingLossPct: 2.5,
-  commercialAdjustmentPct: 7,
 };
+
+// Indicador de ajuste comercial que o controller injeta (aba Transformação).
+const ADJUSTMENT_PCT = 7;
 
 const VALID_REAL: RealForm = {
   animals: 110,
@@ -96,19 +98,15 @@ describe('validateQuick', () => {
     expect(validateQuick({ ...VALID_QUICK, livePricePerKg: 0 }, VALID_COSTS)).toEqual([]);
   });
 
-  it('percentual fora de [0, 100) é rejeitado nas duas bordas (três campos)', () => {
+  it('percentual de quebra fora de [0, 100) é rejeitado nas duas bordas', () => {
     expect(validateQuick({ ...VALID_QUICK, slaughterLossPct: -0.01 }, VALID_COSTS)).toEqual([
       { field: 'slaughterLossPct', code: 'PCT_OUT_OF_RANGE' },
     ]);
     expect(validateQuick({ ...VALID_QUICK, coolingLossPct: 100 }, VALID_COSTS)).toEqual([
       { field: 'coolingLossPct', code: 'PCT_OUT_OF_RANGE' },
     ]);
-    expect(validateQuick({ ...VALID_QUICK, commercialAdjustmentPct: -1 }, VALID_COSTS)).toEqual([
-      { field: 'commercialAdjustmentPct', code: 'PCT_OUT_OF_RANGE' },
-    ]);
     expect(validateQuick({ ...VALID_QUICK, slaughterLossPct: 0 }, VALID_COSTS)).toEqual([]);
     expect(validateQuick({ ...VALID_QUICK, coolingLossPct: 99.99 }, VALID_COSTS)).toEqual([]);
-    expect(validateQuick({ ...VALID_QUICK, commercialAdjustmentPct: 0 }, VALID_COSTS)).toEqual([]);
   });
 });
 
@@ -165,16 +163,18 @@ describe('validateReal', () => {
 
 describe('buildQuickInput', () => {
   it('retorna null enquanto houver problema de validação', () => {
-    expect(buildQuickInput({ ...VALID_QUICK, avgLiveWeightKg: null }, VALID_COSTS)).toBeNull();
+    expect(
+      buildQuickInput({ ...VALID_QUICK, avgLiveWeightKg: null }, VALID_COSTS, ADJUSTMENT_PCT),
+    ).toBeNull();
   });
 
-  it('constrói a entrada com os três conceitos separados', () => {
-    const input = buildQuickInput(VALID_QUICK, VALID_COSTS);
+  it('recebe o ajuste comercial pronto (indicador) e o repassa ao motor', () => {
+    const input = buildQuickInput(VALID_QUICK, VALID_COSTS, 6.97);
     expect(input).not.toBeNull();
     expect(input?.avgLiveWeightKg).toBe(115);
     expect(input?.slaughterLossPct).toBe(17);
     expect(input?.coolingLossPct).toBe(2.5);
-    expect(input?.commercialAdjustmentPct).toBe(7);
+    expect(input?.commercialAdjustmentPct).toBe(6.97);
     expect(input?.costs).toEqual({
       slaughterFeePerHead: 50,
       servicePerHead: 3,

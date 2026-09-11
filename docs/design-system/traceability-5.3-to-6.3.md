@@ -1523,3 +1523,34 @@ na tela de resultado PERMANECE como o caminho de simulação (mesmo estado das
 Entradas, recálculo imediato). Motor V2, custos, +7% e acréscimos fixos
 intactos. Teste novo garante a ausência da seção; teste do salvar passou a
 alterar o preço pelo Ajuste rápido. 69 testes.
+
+## Custo da Carcaça V3 — aba Transformação (indicador econômico de subprodutos) (feat/carcass-transformation)
+
+Nova aba/tela "Transformação": o usuário edita peso e preço de venda de 7
+subprodutos (cabeça, retalho, banha, papada, mãozinha, orelha, rabinho) e o
+preço da carcaça de exportação (padrão R$ 7,70/kg). O domínio novo
+(`transformation.ts`) calcula o INDICADOR ECONÔMICO = valor total dos
+subprodutos ÷ valor da carcaça de exportação, onde a carcaça =
+115 kg × rendimento físico REFERÊNCIA (17%/2,5%, constantes fixas —
+reusa calculateFinalYield, não recalcula quebra) × preço de exportação.
+Dados iniciais ⇒ 49,95 ÷ 716,590875 = **6,9705%** (não arredonda p/ 7 no
+domínio; UI mostra 6,97%, padrão 7,00%, diferença -0,03 p.p.).
+
+**Integração (o ponto central):** o indicador SUBSTITUI o antigo campo fixo
+de 7% como o `commercialAdjustmentPct` da Estimativa. `commercialAdjustmentPct`
+saiu de `QuickForm`/`DefaultSettings`/Configurações/tela; `buildQuickInput`
+passou a receber o pct pronto (3º arg); o controller injeta
+`resolveCommercialAdjustmentPct(transformation)` (fallback 7% se denominador
+inválido). O MOTOR V2 é intacto (`QuickEstimateInput.commercialAdjustmentPct`
+continua igual; +7% só no custo-base; oportunidade 0,05 + CENAR 0,01 seguem
+fixos, sem receber o indicador). Default da Estimativa passou de 7,26 → 7,25
+(indicador 6,97% no lugar de 7%). STORAGE_VERSION 3→4 (transformação
+persistida; envelope antigo rejeitado sem migração). Acesso pela aba
+(header "Transformação") e por "Ajustar subprodutos" na seção Ajuste comercial
+da Estimativa (agora read-only mostrando o indicador vigente).
+
+Testes: +transformation.test.ts (valores, soma, carcaça, indicador 6,97%,
+reatividade preço/peso/carcaça, fallback) + integração UI (alterar papada
+15,00 → indicador 7,67% → Estimativa 7,25→7,30; export 9,00 → 5,96%;
+persistência; acréscimos fixos intactos). 83 testes no app; suíte e pipeline
+verdes; jornada mobile validada em Chromium real (build de produção).

@@ -50,6 +50,7 @@ export interface CalculatorScreenProps {
   readonly calc: CalculatorController;
   readonly onOpenSettings: () => void;
   readonly onOpenHistory: () => void;
+  readonly onOpenTransformation: () => void;
 }
 
 /** Números compartilhados do resultado dominante nos dois modos. */
@@ -116,8 +117,17 @@ export function CalculatorScreen({
   calc,
   onOpenSettings,
   onOpenHistory,
+  onOpenTransformation,
 }: CalculatorScreenProps): ReactElement {
-  const { state, quickIssues, realIssues, quickResult, realResult, actions } = calc;
+  const {
+    state,
+    quickIssues,
+    realIssues,
+    quickResult,
+    realResult,
+    commercialAdjustmentPct,
+    actions,
+  } = calc;
   // Feedback do salvar: o mesmo snapshot não é salvo duas vezes por engano —
   // o botão confirma visivelmente e só reabilita quando algo muda no lote.
   const [savedKey, setSavedKey] = useState<string | null>(null);
@@ -163,6 +173,9 @@ export function CalculatorScreen({
         eyebrow="Lote atual"
         actions={
           <>
+            <Button variant="ghost" size="sm" onClick={onOpenTransformation}>
+              Transformação
+            </Button>
             <Button variant="ghost" size="sm" onClick={onOpenHistory}>
               Histórico
             </Button>
@@ -258,9 +271,8 @@ export function CalculatorScreen({
                       value={formatPerKg(quickResult.baseCarcassPerKg)}
                     />
                     <BreakdownRow
-                      label={`Ajuste comercial (+${formatPct(
-                        (state.quick.commercialAdjustmentPct ?? 0) / 100,
-                      )})`}
+                      label={`Ajuste comercial (+${formatPct(commercialAdjustmentPct / 100)})`}
+                      detail="Indicador de subprodutos"
                       value={`+ ${formatPerKg(quickResult.commercialAdjustmentPerKg)}`}
                     />
                     <BreakdownRow
@@ -525,21 +537,21 @@ export function CalculatorScreen({
 
           <Section
             title="Ajuste comercial"
-            description="Compara a carcaça recebida com a referência de exportação (mãozinha, rabinho, banha etc.). Não é quebra física: incide só sobre o custo da matéria-prima."
+            description="Indicador econômico dos subprodutos em relação ao valor da carcaça de exportação. Não é quebra física: incide só sobre o custo da matéria-prima."
+            actions={
+              <Button variant="secondary" size="sm" onClick={onOpenTransformation}>
+                Ajustar subprodutos
+              </Button>
+            }
           >
-            <Field
-              label="Ajuste comercial / exportação (%)"
-              {...errorProp(issues, 'commercialAdjustmentPct')}
-            >
-              <NumberInput
-                size="lg"
-                endAdornment="%"
-                value={state.quick.commercialAdjustmentPct}
-                onValueChange={(change) => {
-                  actions.patchQuick({ commercialAdjustmentPct: change.value });
-                }}
-              />
-            </Field>
+            <Surface elevation="flat" style={{ padding: cssVar('space-inset-md') }}>
+              <Flex justify="between" gap={100}>
+                <Text role="caption" tone="secondary">
+                  Indicador aplicado (aba Transformação)
+                </Text>
+                <Text role="data">{formatPct(commercialAdjustmentPct / 100)}</Text>
+              </Flex>
+            </Surface>
           </Section>
         </>
       )}

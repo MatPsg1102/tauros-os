@@ -37,10 +37,11 @@ pnpm --filter @tauros/carcass-cost build    # SPA estática em dist/ (PWA)
   - **Quebra de frio** (física, padrão 2,5%): sobre o peso que restou APÓS o
     abate — nunca sobre o vivo. Sequencial: 17% + 2,5% ⇒ rendimento 80,925%
     (0,83 × 0,975), não 80,5%.
-  - **Ajuste comercial/exportação** (econômico, padrão 7%): compara a carcaça
-    recebida com a referência de exportação (mãozinha, rabinho, banha etc.).
+  - **Ajuste comercial/exportação** (econômico): não é digitado — vem do
+    **indicador da aba Transformação** (`valor dos subprodutos ÷ valor da
+carcaça de exportação`, ≈ 6,97% com os dados iniciais; fallback 7%).
     Incide SÓ sobre o custo da matéria-prima convertido — nunca sobre
-    abate/serviço/frete e nunca sobre o rendimento físico.
+    abate/serviço/viagem, acréscimos fixos, nem sobre o rendimento físico.
 - **Cadeia econômica da estimativa**:
   `base = vivo ÷ (1 − q_abate) ÷ (1 − q_frio)`;
   `equivalente = base × (1 + ajuste)`;

@@ -4,7 +4,9 @@
 
 import type { LotCosts, QuickEstimateInput, RealLotInput } from './carcass-cost.js';
 
-/** Formas em edição: campo vazio = null (contrato do NumberInput do DS). */
+/** Formas em edição: campo vazio = null (contrato do NumberInput do DS).
+ * O ajuste comercial NÃO é campo daqui — vem do indicador econômico calculado
+ * na aba Transformação (buildQuickInput recebe o percentual pronto). */
 export interface QuickForm {
   readonly animals: number | null;
   /** Peso vivo médio por suíno — o total é derivado (animais × médio). */
@@ -12,7 +14,6 @@ export interface QuickForm {
   readonly livePricePerKg: number | null;
   readonly slaughterLossPct: number | null;
   readonly coolingLossPct: number | null;
-  readonly commercialAdjustmentPct: number | null;
 }
 
 export interface RealForm {
@@ -102,7 +103,6 @@ export function validateQuick(form: QuickForm, costs: CostsForm): readonly Valid
   check(issues, 'livePricePerKg', form.livePricePerKg, nonNegative);
   check(issues, 'slaughterLossPct', form.slaughterLossPct, percentage);
   check(issues, 'coolingLossPct', form.coolingLossPct, percentage);
-  check(issues, 'commercialAdjustmentPct', form.commercialAdjustmentPct, percentage);
   issues.push(...validateCosts(costs));
   return issues;
 }
@@ -157,8 +157,16 @@ export function buildLotCosts(costs: CostsForm): LotCosts | null {
   };
 }
 
-/** Constrói a entrada do modo estimativa; null enquanto houver problema de validação. */
-export function buildQuickInput(form: QuickForm, costs: CostsForm): QuickEstimateInput | null {
+/**
+ * Constrói a entrada do modo estimativa; null enquanto houver problema de
+ * validação. O `commercialAdjustmentPct` vem PRONTO (indicador da aba
+ * Transformação, resolvido pelo controller) — não é um campo do formulário.
+ */
+export function buildQuickInput(
+  form: QuickForm,
+  costs: CostsForm,
+  commercialAdjustmentPct: number,
+): QuickEstimateInput | null {
   if (validateQuick(form, costs).length > 0) return null;
   const lotCosts = buildLotCosts(costs);
   if (
@@ -167,8 +175,7 @@ export function buildQuickInput(form: QuickForm, costs: CostsForm): QuickEstimat
     form.avgLiveWeightKg === null ||
     form.livePricePerKg === null ||
     form.slaughterLossPct === null ||
-    form.coolingLossPct === null ||
-    form.commercialAdjustmentPct === null
+    form.coolingLossPct === null
   ) {
     return null;
   }
@@ -178,7 +185,7 @@ export function buildQuickInput(form: QuickForm, costs: CostsForm): QuickEstimat
     livePricePerKg: form.livePricePerKg,
     slaughterLossPct: form.slaughterLossPct,
     coolingLossPct: form.coolingLossPct,
-    commercialAdjustmentPct: form.commercialAdjustmentPct,
+    commercialAdjustmentPct,
     costs: lotCosts,
   };
 }

@@ -40,7 +40,6 @@ const RULES: { readonly [K in NumericSettingKey]: (value: number) => IssueCode |
   livePricePerKg: nonNegativeIssue,
   slaughterLossPct: percentageIssue,
   coolingLossPct: percentageIssue,
-  commercialAdjustmentPct: percentageIssue,
   slaughterFeePerHead: nonNegativeIssue,
   servicePerHead: nonNegativeIssue,
   driverDailyRate: nonNegativeIssue,
@@ -57,7 +56,6 @@ function draftFromSettings(settings: DefaultSettings): SettingsDraft {
     livePricePerKg: settings.livePricePerKg,
     slaughterLossPct: settings.slaughterLossPct,
     coolingLossPct: settings.coolingLossPct,
-    commercialAdjustmentPct: settings.commercialAdjustmentPct,
     slaughterFeePerHead: settings.slaughterFeePerHead,
     servicePerHead: settings.servicePerHead,
     driverDailyRate: settings.driverDailyRate,
@@ -140,20 +138,6 @@ export function SettingsScreen({ calc, onBack }: SettingsScreenProps): ReactElem
               value={draft.coolingLossPct}
               onValueChange={(change) => {
                 edit('coolingLossPct', change.value);
-              }}
-            />
-          </Field>
-          <Field
-            label="Ajuste comercial / exportação (%)"
-            description="Econômico, não é quebra: compara a carcaça recebida com a referência de exportação. Incide só sobre o custo da matéria-prima."
-            {...errorProp('commercialAdjustmentPct')}
-          >
-            <NumberInput
-              size="lg"
-              endAdornment="%"
-              value={draft.commercialAdjustmentPct}
-              onValueChange={(change) => {
-                edit('commercialAdjustmentPct', change.value);
               }}
             />
           </Field>
