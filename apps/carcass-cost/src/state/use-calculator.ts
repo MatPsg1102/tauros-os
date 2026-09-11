@@ -9,7 +9,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   calculateQuickEstimate,
   calculateRealLot,
-  whatIfPrices,
   type QuickEstimateResult,
   type RealLotResult,
 } from '../domain/carcass-cost.js';
@@ -32,12 +31,6 @@ import {
 } from './model.js';
 import { HISTORY_LIMIT, loadHistory, loadState, saveHistory, saveState } from './storage.js';
 
-export interface WhatIfEntry {
-  readonly price: number;
-  readonly costPerKg: number | null;
-  readonly current: boolean;
-}
-
 export interface CalculatorActions {
   readonly setMode: (mode: CalculatorMode) => void;
   readonly patchQuick: (patch: Partial<QuickForm>) => void;
@@ -46,7 +39,6 @@ export interface CalculatorActions {
   readonly patchSettings: (patch: Partial<DefaultSettings>) => void;
   /** Reinicia o lote atual a partir das premissas padrão configuradas. */
   readonly startNewLot: () => void;
-  readonly applyPrice: (price: number) => void;
   readonly saveToHistory: () => void;
   readonly loadHistoryEntry: (id: string) => void;
   readonly removeHistoryEntry: (id: string) => void;
@@ -58,28 +50,13 @@ export interface CalculatorController {
   readonly realIssues: readonly ValidationIssue[];
   readonly quickResult: QuickEstimateResult | null;
   readonly realResult: RealLotResult | null;
-  readonly whatIf: readonly WhatIfEntry[];
   readonly history: readonly HistoryEntry[];
   readonly actions: CalculatorActions;
-}
-
-function quickCostAt(form: QuickForm, costs: CostsForm, price: number): number | null {
-  const input = buildQuickInput({ ...form, livePricePerKg: price }, costs);
-  return input === null ? null : calculateQuickEstimate(input).costPerKg;
-}
-
-function realCostAt(form: RealForm, costs: CostsForm, price: number): number | null {
-  const input = buildRealInput({ ...form, livePricePerKg: price }, costs);
-  return input === null ? null : calculateRealLot(input).costPerKg;
 }
 
 export function useCalculator(): CalculatorController {
   const [state, setState] = useState<CalculatorState>(loadState);
   const [history, setHistory] = useState<readonly HistoryEntry[]>(loadHistory);
-  // Âncora do "E se eu pagar…": o preço DIGITADO. Tocar num chip aplica o
-  // preço ao lote mas NÃO re-centra a lista — o preço original continua
-  // visível como chip para voltar. Digitar um preço novo re-ancora.
-  const [whatIfAnchor, setWhatIfAnchor] = useState<number | null>(null);
 
   useEffect(() => {
     saveState(state);
@@ -107,22 +84,6 @@ export function useCalculator(): CalculatorController {
     const input = buildRealInput(state.real, state.costs);
     return input === null ? null : calculateRealLot(input);
   }, [state.real, state.costs]);
-
-  const currentPrice =
-    state.mode === 'quick' ? state.quick.livePricePerKg : state.real.livePricePerKg;
-  const anchorPrice = whatIfAnchor ?? currentPrice;
-
-  const whatIf = useMemo<readonly WhatIfEntry[]>(() => {
-    if (anchorPrice === null || currentPrice === null) return [];
-    return whatIfPrices(anchorPrice).map((price) => ({
-      price,
-      costPerKg:
-        state.mode === 'quick'
-          ? quickCostAt(state.quick, state.costs, price)
-          : realCostAt(state.real, state.costs, price),
-      current: price === currentPrice,
-    }));
-  }, [anchorPrice, currentPrice, state.mode, state.quick, state.real, state.costs]);
 
   const saveToHistory = (): void => {
     let summary: HistoryEntry['summary'];
@@ -157,15 +118,12 @@ export function useCalculator(): CalculatorController {
 
   const actions: CalculatorActions = {
     setMode: (nextMode) => {
-      setWhatIfAnchor(null);
       setState((current) => ({ ...current, mode: nextMode }));
     },
     patchQuick: (patch) => {
-      if ('livePricePerKg' in patch) setWhatIfAnchor(patch.livePricePerKg ?? null);
       setState((current) => ({ ...current, quick: { ...current.quick, ...patch } }));
     },
     patchReal: (patch) => {
-      if ('livePricePerKg' in patch) setWhatIfAnchor(patch.livePricePerKg ?? null);
       setState((current) => ({ ...current, real: { ...current.real, ...patch } }));
     },
     patchCosts: (patch) => {
@@ -175,24 +133,12 @@ export function useCalculator(): CalculatorController {
       setState((current) => ({ ...current, settings: { ...current.settings, ...patch } }));
     },
     startNewLot: () => {
-      setWhatIfAnchor(null);
       setState((current) => ({ ...lotFromSettings(current.settings), settings: current.settings }));
-    },
-    applyPrice: (price) => {
-      // Fixa a âncora no valor vigente ANTES do toque: a lista de chips não
-      // se move sob o dedo e o preço original permanece disponível.
-      setWhatIfAnchor(anchorPrice);
-      setState((current) =>
-        current.mode === 'quick'
-          ? { ...current, quick: { ...current.quick, livePricePerKg: price } }
-          : { ...current, real: { ...current.real, livePricePerKg: price } },
-      );
     },
     saveToHistory,
     loadHistoryEntry: (id) => {
       const entry = history.find((candidate) => candidate.id === id);
       if (entry === undefined) return;
-      setWhatIfAnchor(null);
       setState((current) => ({
         ...current,
         mode: entry.mode,
@@ -206,5 +152,5 @@ export function useCalculator(): CalculatorController {
     },
   };
 
-  return { state, quickIssues, realIssues, quickResult, realResult, whatIf, history, actions };
+  return { state, quickIssues, realIssues, quickResult, realResult, history, actions };
 }
