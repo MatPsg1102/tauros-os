@@ -1378,3 +1378,77 @@ escala está vazia.
 **Fora do escopo (registrado)**: advisory novo de `pnpm audit` em
 deepmerge-ts <8 via prisma (devDependency, pré-existente na main, CI não
 bloqueia) — corrigir na faixa de manutenção de dependências, não neste PR.
+
+## Custo da Carcaça V1 — app irmão de calculadora operacional (feat/carcass-cost)
+
+**Escopo**: novo app isolado `apps/carcass-cost` (`@tauros/carcass-cost`) —
+calculadora mobile-first e offline do custo real do suíno vivo transformado
+em carcaça (Estimativa por premissas × Lote Real por pesos efetivos, E-se de
+preço, configurações de premissas padrão, histórico local). **Não-escopo**:
+nenhuma mudança em domínio/application/infrastructure/contracts, nenhuma
+mudança em pacotes ui-\*, nenhum backend/auth/sincronização. Raiz tocada só
+em `knip.json` (workspace novo) e `.changeset/config.json` (ignore do app
+privado); lockfile regenerado.
+
+**Decisões registradas**:
+
+- App IRMÃO (não rota do apps/web): o root layout do web monta
+  obrigatoriamente o container operacional inteiro (IndexedDB/sessão), e o
+  web hoje não tem manifest/service worker — nada a reaproveitar de offline.
+- Vite 6 + React 19 (SPA estática, dist/ coberto pelo turbo; storybook já
+  provava o pipeline Vite sobre os fontes TS do DS). Porta dev 3010.
+- Consome APENAS `@tauros/tokens` + `@tauros/theme` + `@tauros/ui-primitives`
+  pelos barrels públicos; bootstrap idêntico ao providers.tsx do web
+  (injectUiStyles + ThemeProvider). Nenhum primitive novo, nenhum stylesheet
+  paralelo (reset estrutural mínimo e metadados PWA no index.html/manifest).
+- Domínio puro em `src/domain` (fonte de verdade matemática): quebras
+  sequenciais; "quebra de frio" (física, peso) separada de "transformação"
+  (econômica, preço) com um único campo de UI alimentando os dois conceitos
+  de forma documentada; headline inclui TODOS os custos com decomposição
+  por kg visível; taxa de abate por kg OU por cabeça, nunca ambos.
+- Persistência: localStorage com envelope versionado + saneamento defensivo
+  (padrão do theme-storage); PWA com sw.js mínimo sem biblioteca
+  (network-first navegação, cache-first assets), registro só em produção.
+
+**Testes**: +54 no app (fórmulas com os vetores canônicos do spec — rápido
+7,1875 e lote real 65.212 → 6,38/kg —, validação §25, storage, formatação
+pt-BR, jornada de integração com user-event e axe). Pipeline completo local
+verde; CI cobre o app automaticamente por glob (nenhuma regra do
+dependency-cruiser alterada).
+
+**Pendências registradas**: ícone do manifest usa <text> SVG (rasterizar se
+algum launcher não renderizar); deploy/hosting do app fora deste escopo;
+histórico sem edição de descrição do lote (só data/resumo).
+
+**Review adversarial pré-PR** (4 dimensões × céticos; 13 achados confirmados,
+todos tratados): (1) crítico PWA — o precache estático não continha o bundle
+com hash do Vite (offline quebraria na 2ª abertura em tela branca); sw.js
+agora é gerado no build (plugin local em vite.config.ts) com a lista real de
+assets e cache versionado por conteúdo (deploy novo ⇒ SW novo ⇒ cleanup do
+activate roda); gravações de cache sob event.waitUntil; registro do SW não
+depende mais só do evento load. Offline provado em Chromium real com o
+servidor DERRUBADO (app renderiza e calcula). No caminho descobriu-se que
+`caches.match` respeita `Vary: Origin` (vite preview) e o module script (com
+header Origin) nunca batia com o precache — corrigido com ignoreVary. (2)
+Configurações agora edita rascunho local validado pelas regras EXPORTADAS do
+domínio (headCountIssue/percentageIssue/nonNegativeIssue) com erro visível
+junto ao campo — antes descartava valor inválido em silêncio e duplicava as
+regras na UI. (3) Troca de tela reseta scroll e move o foco ao início. (4)
+Excluir do histórico passa pelo ConfirmDialog destrutivo do DS. (5) Salvar
+no histórico dá feedback e não duplica o mesmo snapshot. (6) Chips do
+"E se eu pagar…" ancorados no preço digitado (não re-centram sob o dedo; o
+preço original continua na lista). (7) aria-label em containers genéricos
+ganhou role="group"; mensagem do peso após frio alinhada ao rótulo do campo;
+apple-touch-icon em PNG 180×180. (8) Regras ADITIVAS no dependency-cruiser
+(`carcass-domain-is-pure`, `carcass-ui-presents-only`) — nenhuma regra
+existente alterada.
+
+**Achado de DS (validação em Chromium real, afeta também apps/web)**: os
+radios `.t-visually-hidden` do SegmentedControl são `position: absolute` e
+`.t-segment`/`.t-segmented` não são positioned — o containing block vira o
+documento e a posição estática deles ESTICA o `html` (scroll fantasma da
+página por fora do `.t-shell-content`; página rola até ~750px de branco).
+Correção candidata no DS (processo formal): `position: relative` em
+`.t-segment`. Workaround aplicado no app (sem tocar o DS): wrapper
+`position: relative` em volta de cada SegmentedControl + `overflow: hidden`
+estrutural no html/body do index.html.

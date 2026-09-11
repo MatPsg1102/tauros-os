@@ -53,6 +53,25 @@ module.exports = {
     },
     { name: 'no-circular', severity: 'error', from: {}, to: { circular: true } },
 
+    // --- apps/carcass-cost (regras ADITIVAS — mesmas invariantes de camada
+    // dos pacotes, aplicadas ao app isolado; nenhuma regra existente mudou) ---
+    {
+      name: 'carcass-domain-is-pure',
+      comment: 'Domínio da calculadora é TS puro: sem React e sem camadas de cima (ui/state).',
+      severity: 'error',
+      from: { path: '^apps/carcass-cost/src/domain/' },
+      to: {
+        path: '^(react|react-dom)($|/)|node_modules/(react|react-dom)/|^apps/carcass-cost/src/(ui|state)/',
+      },
+    },
+    {
+      name: 'carcass-ui-presents-only',
+      comment: 'Telas apresentam; persistência entra só pelo controller (state/use-calculator).',
+      severity: 'error',
+      from: { path: '^apps/carcass-cost/src/ui/' },
+      to: { path: '^apps/carcass-cost/src/state/storage[.]ts' },
+    },
+
     // --- Clean Architecture (SAS §2) ---
     {
       name: 'domain-is-pure',
