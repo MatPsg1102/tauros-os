@@ -175,6 +175,27 @@ export function CalculatorScreen({
         />
       </div>
 
+      {!isReal && (
+        <Section
+          title="Ajuste rápido"
+          description="Atalho: altera só o preço do suíno vivo da estimativa atual — todo o resto permanece igual."
+        >
+          {/* Mesmo estado do campo de preço das Entradas (patchQuick) — o
+              resultado recalcula pelo mesmo motor V2, sem lógica duplicada. */}
+          <Field label="Preço do suíno vivo (R$/kg)" {...errorProp(issues, 'livePricePerKg')}>
+            <CurrencyInput
+              size="lg"
+              valueInMinorUnits={toMinorUnits(state.quick.livePricePerKg)}
+              onValueChange={(change) => {
+                actions.patchQuick({
+                  livePricePerKg: fromMinorUnits(change.valueInMinorUnits),
+                });
+              }}
+            />
+          </Field>
+        </Section>
+      )}
+
       <Card as="section" aria-label="Resultado">
         <Stack gap={200}>
           <Flex justify="between" gap={100}>
