@@ -10,7 +10,8 @@ export interface DefaultSettings {
   readonly animals: number;
   readonly livePricePerKg: number;
   readonly slaughterLossPct: number;
-  readonly coolingTransformPct: number;
+  readonly coolingLossPct: number;
+  readonly commercialAdjustmentPct: number;
   readonly slaughterFeeKind: SlaughterFeeKind;
   readonly slaughterFeePerKg: number;
   readonly slaughterFeePerHead: number;
@@ -21,8 +22,9 @@ export interface DefaultSettings {
 export const DEFAULT_SETTINGS: DefaultSettings = {
   animals: 110,
   livePricePerKg: 5,
-  slaughterLossPct: 20,
-  coolingTransformPct: 7,
+  slaughterLossPct: 17,
+  coolingLossPct: 2.5,
+  commercialAdjustmentPct: 7,
   slaughterFeeKind: 'perKg',
   slaughterFeePerKg: 0.5,
   slaughterFeePerHead: 50,
@@ -61,10 +63,11 @@ export function lotFromSettings(settings: DefaultSettings): Omit<CalculatorState
     mode: 'quick',
     quick: {
       animals: settings.animals,
-      liveWeightKg: null,
+      avgLiveWeightKg: null,
       livePricePerKg: settings.livePricePerKg,
       slaughterLossPct: settings.slaughterLossPct,
-      coolingTransformPct: settings.coolingTransformPct,
+      coolingLossPct: settings.coolingLossPct,
+      commercialAdjustmentPct: settings.commercialAdjustmentPct,
     },
     real: {
       animals: settings.animals,

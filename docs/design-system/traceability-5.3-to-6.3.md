@@ -1452,3 +1452,24 @@ Correção candidata no DS (processo formal): `position: relative` em
 `.t-segment`. Workaround aplicado no app (sem tocar o DS): wrapper
 `position: relative` em volta de cada SegmentedControl + `overflow: hidden`
 estrutural no html/body do index.html.
+
+## Custo da Carcaça V2 — quebras físicas separadas do ajuste comercial (feat/carcass-model-v2)
+
+**Mudança de regra de negócio pedida pelo responsável** (só apps/carcass-cost;
+nada no DS/monorepo): a estimativa agora separa TRÊS conceitos — quebra de
+ABATE (padrão 17%, sobre o peso vivo), quebra de FRIO (padrão 2,5%, sobre o
+peso restante APÓS o abate) e AJUSTE COMERCIAL/exportação (padrão 7%,
+econômico: incide só sobre a matéria-prima convertida, nunca sobre
+abate/serviço/frete nem sobre rendimento físico). Cadeia:
+`base = vivo ÷ (1−q_abate) ÷ (1−q_frio)`; `equivalente = base × 1,07`;
+`final = equivalente + adicionais ÷ peso final`. Entrada da estimativa passou
+a ser peso vivo MÉDIO por suíno (total = derivado, exibido, nunca digitado).
+**Supera o exemplo v1** (`5,00÷0,80×1,07`): no modelo novo a quebra de frio
+entra na conversão do preço. Vetores novos testados: físico 100×115 →
+11.500 → 9.545 → 9.306,375 kg (80,925%) e econômico 5,20 → ≈6,88/kg. Modo
+Lote Real inalterado (custo físico real, sem ajuste — confirmar com o
+responsável se o equivalente deve aparecer lá também). STORAGE_VERSION 1→2
+(envelope antigo rejeitado, sem migração implícita). UI: campo único
+"quebra de frio/transformação" virou dois campos + seção própria de Ajuste
+comercial; resumo mostra a cadeia (total → após abate → carcaça final);
+headline da estimativa renomeado "Custo final equivalente".

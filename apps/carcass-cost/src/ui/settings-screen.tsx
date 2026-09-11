@@ -40,7 +40,8 @@ const RULES: { readonly [K in NumericSettingKey]: (value: number) => IssueCode |
   animals: headCountIssue,
   livePricePerKg: nonNegativeIssue,
   slaughterLossPct: percentageIssue,
-  coolingTransformPct: percentageIssue,
+  coolingLossPct: percentageIssue,
+  commercialAdjustmentPct: percentageIssue,
   slaughterFeePerKg: nonNegativeIssue,
   slaughterFeePerHead: nonNegativeIssue,
   servicePerHead: nonNegativeIssue,
@@ -56,7 +57,8 @@ function draftFromSettings(settings: DefaultSettings): SettingsDraft {
     animals: settings.animals,
     livePricePerKg: settings.livePricePerKg,
     slaughterLossPct: settings.slaughterLossPct,
-    coolingTransformPct: settings.coolingTransformPct,
+    coolingLossPct: settings.coolingLossPct,
+    commercialAdjustmentPct: settings.commercialAdjustmentPct,
     slaughterFeePerKg: settings.slaughterFeePerKg,
     slaughterFeePerHead: settings.slaughterFeePerHead,
     servicePerHead: settings.servicePerHead,
@@ -114,7 +116,11 @@ export function SettingsScreen({ calc, onBack }: SettingsScreenProps): ReactElem
               }}
             />
           </Field>
-          <Field label="Quebra de abate (%)" {...errorProp('slaughterLossPct')}>
+          <Field
+            label="Quebra de abate (%)"
+            description="Perda física sobre o peso vivo."
+            {...errorProp('slaughterLossPct')}
+          >
             <NumberInput
               size="lg"
               endAdornment="%"
@@ -125,16 +131,30 @@ export function SettingsScreen({ calc, onBack }: SettingsScreenProps): ReactElem
             />
           </Field>
           <Field
-            label="Quebra de frio / transformação (%)"
-            description="Perda física no resfriamento; na estimativa também entra como acréscimo econômico sobre o preço."
-            {...errorProp('coolingTransformPct')}
+            label="Quebra de frio (%)"
+            description="Perda física sobre o peso que restou APÓS o abate — nunca sobre o vivo."
+            {...errorProp('coolingLossPct')}
           >
             <NumberInput
               size="lg"
               endAdornment="%"
-              value={draft.coolingTransformPct}
+              value={draft.coolingLossPct}
               onValueChange={(change) => {
-                edit('coolingTransformPct', change.value);
+                edit('coolingLossPct', change.value);
+              }}
+            />
+          </Field>
+          <Field
+            label="Ajuste comercial / exportação (%)"
+            description="Econômico, não é quebra: compara a carcaça recebida com a referência de exportação. Incide só sobre o custo da matéria-prima."
+            {...errorProp('commercialAdjustmentPct')}
+          >
+            <NumberInput
+              size="lg"
+              endAdornment="%"
+              value={draft.commercialAdjustmentPct}
+              onValueChange={(change) => {
+                edit('commercialAdjustmentPct', change.value);
               }}
             />
           </Field>

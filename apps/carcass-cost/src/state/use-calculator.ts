@@ -137,7 +137,7 @@ export function useCalculator(): CalculatorController {
     } else {
       summary = {
         animals: state.quick.animals,
-        referenceWeightKg: state.quick.liveWeightKg,
+        referenceWeightKg: quickResult === null ? null : quickResult.totalLiveWeightKg,
         finalWeightKg: quickResult === null ? null : quickResult.estimatedCarcassKg,
         livePricePerKg: state.quick.livePricePerKg,
         costPerKg: quickResult === null ? null : quickResult.costPerKg,

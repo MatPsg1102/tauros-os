@@ -14,11 +14,12 @@ export type SlaughterFeeKind = SlaughterFeeModel['kind'];
 /** Formas em edição: campo vazio = null (contrato do NumberInput do DS). */
 export interface QuickForm {
   readonly animals: number | null;
-  readonly liveWeightKg: number | null;
+  /** Peso vivo médio por suíno — o total é derivado (animais × médio). */
+  readonly avgLiveWeightKg: number | null;
   readonly livePricePerKg: number | null;
   readonly slaughterLossPct: number | null;
-  /** Um único valor alimenta quebra de frio (peso) e transformação (preço). */
-  readonly coolingTransformPct: number | null;
+  readonly coolingLossPct: number | null;
+  readonly commercialAdjustmentPct: number | null;
 }
 
 export interface RealForm {
@@ -110,10 +111,11 @@ export function validateCosts(costs: CostsForm): readonly ValidationIssue[] {
 export function validateQuick(form: QuickForm, costs: CostsForm): readonly ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   check(issues, 'animals', form.animals, headCount);
-  check(issues, 'liveWeightKg', form.liveWeightKg, positive);
+  check(issues, 'avgLiveWeightKg', form.avgLiveWeightKg, positive);
   check(issues, 'livePricePerKg', form.livePricePerKg, nonNegative);
   check(issues, 'slaughterLossPct', form.slaughterLossPct, percentage);
-  check(issues, 'coolingTransformPct', form.coolingTransformPct, percentage);
+  check(issues, 'coolingLossPct', form.coolingLossPct, percentage);
+  check(issues, 'commercialAdjustmentPct', form.commercialAdjustmentPct, percentage);
   issues.push(...validateCosts(costs));
   return issues;
 }
@@ -164,27 +166,28 @@ export function buildLotCosts(costs: CostsForm): LotCosts | null {
   return { slaughterFee, servicePerHead: costs.servicePerHead, freight: costs.freight };
 }
 
-/** Constrói a entrada do modo rápido; null enquanto houver problema de validação. */
+/** Constrói a entrada do modo estimativa; null enquanto houver problema de validação. */
 export function buildQuickInput(form: QuickForm, costs: CostsForm): QuickEstimateInput | null {
   if (validateQuick(form, costs).length > 0) return null;
   const lotCosts = buildLotCosts(costs);
   if (
     lotCosts === null ||
     form.animals === null ||
-    form.liveWeightKg === null ||
+    form.avgLiveWeightKg === null ||
     form.livePricePerKg === null ||
     form.slaughterLossPct === null ||
-    form.coolingTransformPct === null
+    form.coolingLossPct === null ||
+    form.commercialAdjustmentPct === null
   ) {
     return null;
   }
   return {
     animals: form.animals,
-    liveWeightKg: form.liveWeightKg,
+    avgLiveWeightKg: form.avgLiveWeightKg,
     livePricePerKg: form.livePricePerKg,
     slaughterLossPct: form.slaughterLossPct,
-    coolingLossPct: form.coolingTransformPct,
-    transformationPct: form.coolingTransformPct,
+    coolingLossPct: form.coolingLossPct,
+    commercialAdjustmentPct: form.commercialAdjustmentPct,
     costs: lotCosts,
   };
 }
