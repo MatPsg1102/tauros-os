@@ -271,7 +271,7 @@ export function CalculatorScreen({
                       value={formatPerKg(quickResult.baseCarcassPerKg)}
                     />
                     <BreakdownRow
-                      label={`Ajuste comercial (+${formatPct(commercialAdjustmentPct / 100)})`}
+                      label={`Ajuste comercial (+${formatPct((commercialAdjustmentPct ?? 0) / 100)})`}
                       detail="Indicador de subprodutos"
                       value={`+ ${formatPerKg(quickResult.commercialAdjustmentPerKg)}`}
                     />
@@ -549,7 +549,11 @@ export function CalculatorScreen({
                 <Text role="caption" tone="secondary">
                   Indicador aplicado (aba Transformação)
                 </Text>
-                <Text role="data">{formatPct(commercialAdjustmentPct / 100)}</Text>
+                <Text role="data">
+                  {commercialAdjustmentPct === null
+                    ? '—'
+                    : formatPct(commercialAdjustmentPct / 100)}
+                </Text>
               </Flex>
             </Surface>
           </Section>

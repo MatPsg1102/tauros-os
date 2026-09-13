@@ -1,15 +1,19 @@
-// Domínio da aba Transformação — indicador ECONÔMICO dos subprodutos que
-// acompanham a carcaça. NÃO é quebra/perda/rendimento: é a razão entre o valor
-// de venda dos subprodutos (por suíno) e o valor da carcaça de exportação
-// (por suíno de referência). Esse indicador substitui o antigo 7% fixo como o
-// ajuste comercial da Estimativa. Reusa o rendimento físico do motor V2
-// (calculateFinalYield) — não recalcula quebra por conta própria.
+// Domínio da aba Transformação — INDICADOR ECONÔMICO DE TRANSFORMAÇÃO.
+// No suíno mineiro recebemos subprodutos (cabeça, retalho, banha, papada,
+// mãozinha, orelha, rabinho) que NÃO vêm na carcaça de exportação. Eles são
+// parte física do suíno mas se vendem por valores diferentes do preço/kg da
+// carcaça. O indicador mede a PERDA econômica dessa diferença:
+//   perda = (peso dos subprodutos × preço da carcaça) − valor recuperado
+//   indicador = perda ÷ valor da carcaça de exportação
+// Assim, quanto MAIOR a recuperação (preço de venda), MENOR o indicador.
+// Não é quebra física; não é o antigo 7% fixo; não há calibração no 7%.
+// Reusa o rendimento físico do motor V2 (calculateFinalYield).
 
 import { calculateFinalYield } from './carcass-cost.js';
 
 export type SubproductKey = 'head' | 'headTrim' | 'lard' | 'jowl' | 'trotter' | 'ear' | 'tail';
 
-/** Ordem oficial de exibição dos subprodutos. */
+/** Ordem oficial de exibição dos subprodutos (PELE não participa). */
 export const SUBPRODUCT_KEYS: readonly SubproductKey[] = [
   'head',
   'headTrim',
@@ -25,14 +29,12 @@ export interface SubproductAmount {
   readonly pricePerKg: number;
 }
 
-/** Referência física padrão (por suíno) para o valor da carcaça de exportação —
- * fixa, independente das premissas editáveis dos lotes. */
+/** Referência física padrão (por suíno) usada quando a Estimativa ainda não
+ * tem um peso médio informado. Quebras fixas (não seguem premissas de lote). */
 export const REFERENCE_LIVE_WEIGHT_KG = 115;
 export const REFERENCE_SLAUGHTER_LOSS_PCT = 17;
 export const REFERENCE_COOLING_LOSS_PCT = 2.5;
 export const DEFAULT_EXPORT_CARCASS_PRICE_PER_KG = 7.7;
-/** Fallback quando não há subprodutos/carcaça válidos — não quebra a Estimativa. */
-export const DEFAULT_COMMERCIAL_ADJUSTMENT_PCT = 7;
 
 /** Cadastro inicial dos subprodutos (peso kg, preço R$/kg). */
 export const DEFAULT_SUBPRODUCTS: Readonly<Record<SubproductKey, SubproductAmount>> = {
@@ -48,7 +50,7 @@ export const DEFAULT_SUBPRODUCTS: Readonly<Record<SubproductKey, SubproductAmoun
 export interface TransformationInput {
   readonly subproducts: Readonly<Record<SubproductKey, SubproductAmount>>;
   readonly exportCarcassPricePerKg: number;
-  /** Referência física (padrões da Estimativa). */
+  /** Peso vivo de referência (compartilhado da Estimativa; fallback 115). */
   readonly referenceLiveWeightKg: number;
   readonly slaughterLossPct: number;
   readonly coolingLossPct: number;
@@ -58,23 +60,30 @@ export interface SubproductValue {
   readonly key: SubproductKey;
   readonly weightKg: number;
   readonly pricePerKg: number;
-  readonly valueBRL: number;
+  /** Valor recuperado na venda = peso × preço de venda. */
+  readonly recoveredBRL: number;
 }
 
 export interface TransformationResult {
   readonly items: readonly SubproductValue[];
   readonly totalWeightKg: number;
-  readonly totalValueBRL: number;
+  readonly totalRecoveredBRL: number;
+  /** Valor teórico dos subprodutos se valorizados pelo preço da carcaça. */
+  readonly theoreticalValueBRL: number;
+  /** Perda econômica = teórico − recuperado. */
+  readonly economicLossBRL: number;
   readonly exportCarcassWeightKg: number;
   readonly exportCarcassValueBRL: number;
-  /** Indicador econômico em PONTOS PERCENTUAIS (ex.: 6.9705). null se inválido. */
+  /** Indicador econômico em PONTOS PERCENTUAIS (ex.: 1.63). null se inválido
+   * (denominador ≤ 0) — a Estimativa trata o nulo como pendente, sem 7%. */
   readonly indicatorPct: number | null;
 }
 
 /**
- * Indicador = valor total dos subprodutos ÷ valor da carcaça de exportação.
- * Carcaça de exportação = peso vivo de referência × rendimento físico (mesma
- * cadeia do motor V2) × preço de exportação. Denominador ≤ 0 ⇒ indicador null.
+ * perda = (peso total dos subprodutos × preço da carcaça) − valor recuperado;
+ * indicador = perda ÷ valor da carcaça de exportação;
+ * valor da carcaça = peso vivo × rendimento físico × preço da carcaça.
+ * Denominador ≤ 0 ⇒ indicador null (dados inválidos, não inventa percentual).
  */
 export function calculateTransformation(input: TransformationInput): TransformationResult {
   const items: SubproductValue[] = SUBPRODUCT_KEYS.map((key) => {
@@ -83,34 +92,30 @@ export function calculateTransformation(input: TransformationInput): Transformat
       key,
       weightKg: amount.weightKg,
       pricePerKg: amount.pricePerKg,
-      valueBRL: amount.weightKg * amount.pricePerKg,
+      recoveredBRL: amount.weightKg * amount.pricePerKg,
     };
   });
 
   const totalWeightKg = items.reduce((sum, item) => sum + item.weightKg, 0);
-  const totalValueBRL = items.reduce((sum, item) => sum + item.valueBRL, 0);
+  const totalRecoveredBRL = items.reduce((sum, item) => sum + item.recoveredBRL, 0);
+  const theoreticalValueBRL = totalWeightKg * input.exportCarcassPricePerKg;
+  const economicLossBRL = theoreticalValueBRL - totalRecoveredBRL;
 
   const finalYield = calculateFinalYield(input.slaughterLossPct, input.coolingLossPct);
   const exportCarcassWeightKg = input.referenceLiveWeightKg * finalYield;
   const exportCarcassValueBRL = exportCarcassWeightKg * input.exportCarcassPricePerKg;
 
   const indicatorPct =
-    exportCarcassValueBRL > 0 ? (totalValueBRL / exportCarcassValueBRL) * 100 : null;
+    exportCarcassValueBRL > 0 ? (economicLossBRL / exportCarcassValueBRL) * 100 : null;
 
   return {
     items,
     totalWeightKg,
-    totalValueBRL,
+    totalRecoveredBRL,
+    theoreticalValueBRL,
+    economicLossBRL,
     exportCarcassWeightKg,
     exportCarcassValueBRL,
     indicatorPct,
   };
-}
-
-/**
- * Percentual de ajuste comercial que a Estimativa deve usar: o indicador
- * calculado quando válido; senão o fallback padrão (7%) — nunca quebra o motor.
- */
-export function resolveCommercialAdjustmentPct(result: TransformationResult): number {
-  return result.indicatorPct === null ? DEFAULT_COMMERCIAL_ADJUSTMENT_PCT : result.indicatorPct;
 }

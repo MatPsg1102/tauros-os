@@ -26,12 +26,6 @@ export function formatPct(fractionValue: number): string {
   return `${DECIMAL.format(fractionValue * 100)}%`;
 }
 
-/** Diferença em pontos percentuais (já em p.p.), com sinal e 2 casas. */
-export function formatPoints(points: number): string {
-  const sign = points > 0 ? '+' : '';
-  return `${sign}${DECIMAL.format(points)} p.p.`;
-}
-
 export function formatDateTime(iso: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? '—' : DATE_TIME.format(date);
