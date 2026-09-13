@@ -1554,3 +1554,24 @@ reatividade preço/peso/carcaça, fallback) + integração UI (alterar papada
 15,00 → indicador 7,67% → Estimativa 7,25→7,30; export 9,00 → 5,96%;
 persistência; acréscimos fixos intactos). 83 testes no app; suíte e pipeline
 verdes; jornada mobile validada em Chromium real (build de produção).
+
+## Custo da Carcaça V3.1 — correção da fórmula do indicador de Transformação (fix/carcass-transformation-formula)
+
+A fórmula V3 (`recuperado ÷ valor da carcaça`) tinha DIREÇÃO ERRADA (subia
+quando o preço de venda subia). Corrigida para o INDICADOR ECONÔMICO DE
+TRANSFORMAÇÃO definido pelo responsável:
+`perda = (peso_total_subprodutos × preço_carcaça) − valor_recuperado`;
+`indicador = perda ÷ valor_carcaça_exportação`. Agora ↑ preço de venda →
+↑ recuperação → ↓ perda → ↓ indicador (comprovado em teste e navegador:
+papada 12,99→15,00 leva o indicador de 1,63% para 0,92% e a Estimativa de
+6,92 para 6,88/kg). Dados iniciais: 8 kg, R$ 49,95 recuperado, R$ 61,60
+teórico, R$ 11,65 de perda, **indicador ≈ 1,63%** (nunca 7%). O 7% deixou
+de existir: removidos `DEFAULT_COMMERCIAL_ADJUSTMENT_PCT`, o fallback
+silencioso e as linhas "Padrão histórico 7,00%"/"Diferença" da aba —
+indicador inválido (denominador ≤ 0) vira `null` e deixa a Estimativa
+pendente, sem inventar percentual. Peso vivo COMPARTILHADO da Estimativa
+(state.quick.avgLiveWeightKg, fallback 115) para o valor da carcaça; sem
+segundo campo. Pele NÃO existe na equação nem na aba (7 subprodutos).
+Motor V2 intacto (17%/2,5%, oportunidade 0,05, CENAR 0,01 independentes;
+Lote Real inalterado). Sem mudança de arquitetura, storage ou boundaries.
+Default da Estimativa 7,25 → 6,92. 84 testes.

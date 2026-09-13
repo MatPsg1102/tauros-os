@@ -18,7 +18,6 @@ import {
   REFERENCE_SLAUGHTER_LOSS_PCT,
   SUBPRODUCT_KEYS,
   calculateTransformation,
-  resolveCommercialAdjustmentPct,
   type SubproductKey,
   type TransformationInput,
   type TransformationResult,
@@ -66,16 +65,21 @@ export interface CalculatorController {
   readonly quickResult: QuickEstimateResult | null;
   readonly realResult: RealLotResult | null;
   readonly transformation: TransformationResult;
-  /** Percentual efetivo do ajuste comercial usado pela Estimativa (indicador). */
-  readonly commercialAdjustmentPct: number;
+  /** Indicador econômico da Transformação usado pela Estimativa como ajuste
+   * comercial; null quando a Transformação é inválida (Estimativa fica pendente). */
+  readonly commercialAdjustmentPct: number | null;
   readonly history: readonly HistoryEntry[];
   readonly actions: CalculatorActions;
 }
 
-// Glue form→domínio: campo vazio (null) não contribui (peso/preço = 0). Usa a
-// referência física PADRÃO fixa (115 kg, 17%, 2,5%) — o indicador é uma
-// premissa econômica de referência, não segue os ajustes de lote/premissas.
-function buildTransformationInput(form: TransformationForm): TransformationInput {
+// Glue form→domínio: campo vazio (null) não contribui (peso/preço = 0). O peso
+// vivo vem COMPARTILHADO da Estimativa (state.quick.avgLiveWeightKg) para o
+// valor da carcaça de exportação; se ainda não informado, usa a referência
+// padrão de 115 kg. Quebras físicas fixas (17%/2,5%).
+function buildTransformationInput(
+  form: TransformationForm,
+  avgLiveWeightKg: number | null,
+): TransformationInput {
   const subproducts = Object.fromEntries(
     SUBPRODUCT_KEYS.map((key) => {
       const item = form.subproducts[key];
@@ -85,7 +89,8 @@ function buildTransformationInput(form: TransformationForm): TransformationInput
   return {
     subproducts,
     exportCarcassPricePerKg: form.exportCarcassPricePerKg ?? 0,
-    referenceLiveWeightKg: REFERENCE_LIVE_WEIGHT_KG,
+    referenceLiveWeightKg:
+      avgLiveWeightKg !== null && avgLiveWeightKg > 0 ? avgLiveWeightKg : REFERENCE_LIVE_WEIGHT_KG,
     slaughterLossPct: REFERENCE_SLAUGHTER_LOSS_PCT,
     coolingLossPct: REFERENCE_COOLING_LOSS_PCT,
   };
@@ -104,11 +109,15 @@ export function useCalculator(): CalculatorController {
   }, [history]);
 
   const transformation = useMemo(
-    () => calculateTransformation(buildTransformationInput(state.transformation)),
-    [state.transformation],
+    () =>
+      calculateTransformation(
+        buildTransformationInput(state.transformation, state.quick.avgLiveWeightKg),
+      ),
+    [state.transformation, state.quick.avgLiveWeightKg],
   );
-  // Indicador da aba Transformação = ajuste comercial da Estimativa (fallback 7%).
-  const commercialAdjustmentPct = resolveCommercialAdjustmentPct(transformation);
+  // Indicador da aba Transformação = ajuste comercial da Estimativa. Sem
+  // fallback: indicador inválido (null) deixa a Estimativa pendente.
+  const commercialAdjustmentPct = transformation.indicatorPct;
 
   const quickIssues = useMemo(
     () => validateQuick(state.quick, state.costs),
@@ -120,6 +129,7 @@ export function useCalculator(): CalculatorController {
   );
 
   const quickResult = useMemo(() => {
+    if (commercialAdjustmentPct === null) return null;
     const input = buildQuickInput(state.quick, state.costs, commercialAdjustmentPct);
     return input === null ? null : calculateQuickEstimate(input);
   }, [state.quick, state.costs, commercialAdjustmentPct]);

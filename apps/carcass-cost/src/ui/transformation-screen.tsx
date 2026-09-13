@@ -1,7 +1,8 @@
-// Tela Transformação — indicador ECONÔMICO dos subprodutos (não é quebra).
-// O usuário edita pesos/preços dos subprodutos e o preço da carcaça de
-// exportação; o indicador recalcula em tempo real (controller/domínio) e
-// passa a ser o ajuste comercial da Estimativa. A tela só apresenta.
+// Tela Transformação — INDICADOR ECONÔMICO DE TRANSFORMAÇÃO. O usuário edita
+// pesos/preços dos subprodutos e o preço da carcaça de exportação; a perda
+// econômica (valor teórico pelo preço da carcaça − valor recuperado) sobre o
+// valor da carcaça recalcula em tempo real e vira o ajuste comercial da
+// Estimativa. A tela só apresenta.
 
 import { cssVar } from '@tauros/tokens';
 import {
@@ -19,18 +20,13 @@ import {
 } from '@tauros/ui-primitives';
 import type { ReactElement } from 'react';
 
-import {
-  DEFAULT_COMMERCIAL_ADJUSTMENT_PCT,
-  SUBPRODUCT_KEYS,
-  type SubproductKey,
-} from '../domain/transformation.js';
+import { SUBPRODUCT_KEYS, type SubproductKey } from '../domain/transformation.js';
 import type { CalculatorController } from '../state/use-calculator.js';
 import {
   formatBRL,
   formatKg,
   formatPct,
   formatPerKg,
-  formatPoints,
   fromMinorUnits,
   toMinorUnits,
 } from './format.js';
@@ -77,19 +73,18 @@ function SummaryRow({
 }
 
 export function TransformationScreen({ calc, onBack }: TransformationScreenProps): ReactElement {
-  const { transformation, commercialAdjustmentPct } = calc;
+  const { transformation } = calc;
   const { patchSubproduct, setExportCarcassPrice } = calc.actions;
-  const valueByKey = Object.fromEntries(
-    transformation.items.map((item) => [item.key, item.valueBRL]),
+  const recoveredByKey = Object.fromEntries(
+    transformation.items.map((item) => [item.key, item.recoveredBRL]),
   );
-  const differencePoints = commercialAdjustmentPct - DEFAULT_COMMERCIAL_ADJUSTMENT_PCT;
 
   return (
     <Stack gap={300}>
       <PageHeader
         title="Transformação"
         eyebrow="Subprodutos"
-        description="Indicador econômico dos subprodutos em relação ao valor da carcaça de exportação."
+        description="Impacto econômico dos subprodutos que vêm no suíno mineiro mas não na carcaça de exportação: quanto se perde por vendê-los abaixo do preço da carcaça."
         actions={
           <Button variant="ghost" size="sm" onClick={onBack}>
             Voltar
@@ -115,7 +110,7 @@ export function TransformationScreen({ calc, onBack }: TransformationScreenProps
                 <Stack gap={100}>
                   <Flex justify="between" gap={100}>
                     <Text role="label">{SUBPRODUCT_LABELS[key]}</Text>
-                    <Text role="data">{formatBRL(valueByKey[key] ?? 0)}</Text>
+                    <Text role="data">{formatBRL(recoveredByKey[key] ?? 0)}</Text>
                   </Flex>
                   <Field label="Peso (kg)">
                     <NumberInput
@@ -168,28 +163,35 @@ export function TransformationScreen({ calc, onBack }: TransformationScreenProps
               value={formatKg(transformation.totalWeightKg)}
             />
             <SummaryRow
-              label="Valor total dos subprodutos"
-              value={formatBRL(transformation.totalValueBRL)}
+              label="Valor recuperado dos subprodutos"
+              value={formatBRL(transformation.totalRecoveredBRL)}
             />
             <SummaryRow
-              label="Preço da carcaça exportação"
+              label="Preço da carcaça de exportação"
               value={formatPerKg(calc.state.transformation.exportCarcassPricePerKg ?? 0)}
             />
             <SummaryRow
-              label="Valor da carcaça exportação"
+              label="Valor teórico pelo preço da carcaça"
+              value={formatBRL(transformation.theoreticalValueBRL)}
+            />
+            <SummaryRow
+              label="Valor da carcaça de exportação"
               value={formatBRL(transformation.exportCarcassValueBRL)}
+            />
+            <SummaryRow
+              label="Perda econômica da transformação"
+              value={formatBRL(transformation.economicLossBRL)}
             />
             <Divider />
             <SummaryRow
-              label="Indicador econômico"
-              detail="Aplicado na Estimativa"
-              value={formatPct(commercialAdjustmentPct / 100)}
+              label="Indicador econômico de transformação"
+              detail="Aplicado como ajuste comercial na Estimativa"
+              value={
+                transformation.indicatorPct === null
+                  ? '—'
+                  : formatPct(transformation.indicatorPct / 100)
+              }
             />
-            <SummaryRow
-              label="Padrão histórico"
-              value={formatPct(DEFAULT_COMMERCIAL_ADJUSTMENT_PCT / 100)}
-            />
-            <SummaryRow label="Diferença" value={formatPoints(differencePoints)} />
           </Stack>
         </Surface>
       </Section>
