@@ -35,7 +35,7 @@ describe('Calculadora — modo estimativa', () => {
     // 1,016258 = 6,2790 + (5.980)/10.237 = 0,5842 + 0,06 (fixos) = 6,9232 → 6,92.
     const user = userEvent.setup();
     renderApp();
-    await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
+    await user.type(screen.getByLabelText('Peso vivo médio'), '115');
     const matches = await screen.findAllByText(/6,92\/kg/);
     expect(matches.length).toBeGreaterThan(0);
     // Peso vivo total derivado (nunca digitado) visível junto ao campo.
@@ -65,7 +65,7 @@ describe('Calculadora — modo estimativa', () => {
   it('a seção “E se eu pagar…” não existe mais', async () => {
     const user = userEvent.setup();
     renderApp();
-    await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
+    await user.type(screen.getByLabelText('Peso vivo médio'), '115');
     await screen.findAllByText(/6,92\/kg/);
     expect(screen.queryByText('E se eu pagar…')).toBeNull();
     expect(screen.queryByRole('button', { name: /4,50/ })).toBeNull();
@@ -75,7 +75,7 @@ describe('Calculadora — modo estimativa', () => {
   it('salvar dá feedback e não duplica o mesmo lote', async () => {
     const user = userEvent.setup();
     renderApp();
-    await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
+    await user.type(screen.getByLabelText('Peso vivo médio'), '115');
     await user.click(screen.getByRole('button', { name: 'Salvar lote no histórico' }));
     const savedButton = screen.getByRole('button', { name: 'Lote salvo no histórico' });
     expect((savedButton as HTMLButtonElement).disabled).toBe(true);
@@ -104,7 +104,7 @@ describe('Ajuste rápido (tela de resultado da estimativa)', () => {
   it('recalcula na hora para 5,00 / 5,20 / 5,50 / 6,00 sem tocar nos demais parâmetros', async () => {
     const user = userEvent.setup();
     renderApp();
-    await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
+    await user.type(screen.getByLabelText('Peso vivo médio'), '115');
     await screen.findAllByText(/6,92\/kg/);
 
     const ajuste = ajusteField();
@@ -121,11 +121,9 @@ describe('Ajuste rápido (tela de resultado da estimativa)', () => {
     }
 
     // Demais parâmetros intocados: pesos, quebras e custos seguem os mesmos.
-    expect((screen.getByLabelText('Quebra de abate (%)') as HTMLInputElement).value).toBe('17');
-    expect((screen.getByLabelText('Quebra de frio (%)') as HTMLInputElement).value).toBe('2,5');
-    expect(
-      (screen.getByLabelText('Peso vivo médio por suíno (kg)') as HTMLInputElement).value,
-    ).toBe('115');
+    expect((screen.getByLabelText('Quebra de abate') as HTMLInputElement).value).toBe('17');
+    expect((screen.getByLabelText('Quebra de frio') as HTMLInputElement).value).toBe('2,5');
+    expect((screen.getByLabelText('Peso vivo médio') as HTMLInputElement).value).toBe('115');
     // Adicionais fixos (R$ 5.980,00) e impacto inalterado — o preço não os move.
     expect(screen.getAllByText(/5\.980,00/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/0,58\/kg/).length).toBeGreaterThan(0);
@@ -163,12 +161,12 @@ describe('Calculadora — modo lote real (teste de integração do spec)', () =>
 
     await user.click(screen.getByRole('radio', { name: 'Lote Real' }));
 
-    await user.type(screen.getByLabelText('Peso na balança (kg)'), '12560');
-    const descontos = screen.getByLabelText('Descontos / graxaria (kg)');
+    await user.type(screen.getByLabelText('Peso na balança'), '12560');
+    const descontos = screen.getByLabelText('Descontos / graxaria');
     await user.clear(descontos);
     await user.type(descontos, '220');
-    await user.type(screen.getByLabelText('Peso abatido (kg)'), '10513,5');
-    await user.type(screen.getByLabelText('Peso após frio (kg)'), '10217,2');
+    await user.type(screen.getByLabelText('Peso abatido'), '10513,5');
+    await user.type(screen.getByLabelText('Peso após frio'), '10217,2');
 
     const preco = screen.getByLabelText('Preço do suíno vivo (R$/kg)');
     await user.clear(preco);
@@ -197,9 +195,9 @@ describe('Calculadora — modo lote real (teste de integração do spec)', () =>
     const user = userEvent.setup();
     renderApp();
     await user.click(screen.getByRole('radio', { name: 'Lote Real' }));
-    await user.type(screen.getByLabelText('Peso na balança (kg)'), '12560');
-    await user.type(screen.getByLabelText('Peso abatido (kg)'), '10000');
-    await user.type(screen.getByLabelText('Peso após frio (kg)'), '10500');
+    await user.type(screen.getByLabelText('Peso na balança'), '12560');
+    await user.type(screen.getByLabelText('Peso abatido'), '10000');
+    await user.type(screen.getByLabelText('Peso após frio'), '10500');
     expect(
       await screen.findByText('O peso após frio não pode ser maior que o peso abatido.'),
     ).toBeDefined();
@@ -210,7 +208,7 @@ describe('Persistência local', () => {
   it('reabre exatamente no estado anterior', async () => {
     const user = userEvent.setup();
     renderApp();
-    await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
+    await user.type(screen.getByLabelText('Peso vivo médio'), '115');
     await screen.findAllByText(/6,92\/kg/);
 
     cleanup();
@@ -224,7 +222,7 @@ describe('Histórico', () => {
   it('salva o lote atual e reabre pelo histórico', async () => {
     const user = userEvent.setup();
     renderApp();
-    await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
+    await user.type(screen.getByLabelText('Peso vivo médio'), '115');
     await screen.findAllByText(/6,92\/kg/);
     await user.click(screen.getByRole('button', { name: 'Salvar lote no histórico' }));
 
@@ -239,7 +237,7 @@ describe('Histórico', () => {
   it('excluir exige confirmação; cancelar preserva o lote', async () => {
     const user = userEvent.setup();
     renderApp();
-    await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
+    await user.type(screen.getByLabelText('Peso vivo médio'), '115');
     await user.click(screen.getByRole('button', { name: 'Salvar lote no histórico' }));
     await user.click(screen.getByRole('button', { name: 'Histórico' }));
     await screen.findByText(/110 suínos/);
@@ -265,7 +263,7 @@ describe('Configurações', () => {
     renderApp();
     await user.click(screen.getByRole('button', { name: 'Configurações' }));
 
-    const quebra = screen.getByLabelText('Quebra de abate (%)');
+    const quebra = screen.getByLabelText('Quebra de abate');
     await user.clear(quebra);
     await user.type(quebra, '120');
     expect(
@@ -275,7 +273,7 @@ describe('Configurações', () => {
     // Voltar e iniciar novo lote: o padrão vigente continua 20% (o inválido
     // nunca persistiu) — com os defaults o resultado volta a ser R$ 6,92/kg.
     await user.click(screen.getByRole('button', { name: 'Voltar' }));
-    await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
+    await user.type(screen.getByLabelText('Peso vivo médio'), '115');
     const matches = await screen.findAllByText(/6,92\/kg/);
     expect(matches.length).toBeGreaterThan(0);
   });
@@ -290,7 +288,7 @@ describe('Configurações', () => {
     await user.type(preco, '4,5');
     await user.click(screen.getByRole('button', { name: 'Iniciar novo lote com estes padrões' }));
 
-    await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
+    await user.type(screen.getByLabelText('Peso vivo médio'), '115');
     // 4,50 ÷ 0,83 ÷ 0,975 × 1,016258 + adicionais + acréscimos fixos ≈ 6,30/kg
     const matches = await screen.findAllByText(/6,30\/kg/);
     expect(matches.length).toBeGreaterThan(0);
@@ -325,13 +323,11 @@ describe('Transformação (indicador econômico de transformação)', () => {
     const user = userEvent.setup();
     renderApp();
     // Estimativa base: 115 kg, defaults, indicador 1,63% → R$ 6,92/kg.
-    await user.type(screen.getByLabelText('Peso vivo médio por suíno (kg)'), '115');
+    await user.type(screen.getByLabelText('Peso vivo médio'), '115');
     expect((await screen.findAllByText(/6,92\/kg/)).length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole('button', { name: 'Transformação' }));
-    const papada = within(screen.getByRole('group', { name: 'Papada' })).getByLabelText(
-      'Preço de venda (R$/kg)',
-    );
+    const papada = within(screen.getByRole('group', { name: 'Papada' })).getByLabelText('Preço/kg');
     await user.clear(papada);
     await user.type(papada, '15,00');
     // recuperado 54,975 → perda 6,625 → 6,625/716,59 = 0,92% (DIMINUIU de 1,63%).
@@ -350,9 +346,7 @@ describe('Transformação (indicador econômico de transformação)', () => {
     const user = userEvent.setup();
     renderApp();
     await user.click(screen.getByRole('button', { name: 'Transformação' }));
-    const papada = within(screen.getByRole('group', { name: 'Papada' })).getByLabelText(
-      'Preço de venda (R$/kg)',
-    );
+    const papada = within(screen.getByRole('group', { name: 'Papada' })).getByLabelText('Preço/kg');
     await user.clear(papada);
     await user.type(papada, '10,00');
     // recuperado 42,475 → perda 19,125 → 19,125/716,59 = 2,67% (AUMENTOU de 1,63%).
@@ -374,16 +368,30 @@ describe('Transformação (indicador econômico de transformação)', () => {
     const user = userEvent.setup();
     renderApp();
     await user.click(screen.getByRole('button', { name: 'Transformação' }));
-    const papada = within(screen.getByRole('group', { name: 'Papada' })).getByLabelText(
-      'Preço de venda (R$/kg)',
-    );
+    const papada = within(screen.getByRole('group', { name: 'Papada' })).getByLabelText('Preço/kg');
     await user.clear(papada);
     await user.type(papada, '15,00');
     await user.click(screen.getByRole('button', { name: 'Voltar' }));
     await user.click(screen.getByRole('button', { name: 'Transformação' }));
     const papadaAgain = within(screen.getByRole('group', { name: 'Papada' })).getByLabelText(
-      'Preço de venda (R$/kg)',
+      'Preço/kg',
     );
     expect((papadaAgain as HTMLInputElement).value).toContain('15,00');
+  });
+});
+
+describe('Ajuda contextual ("?")', () => {
+  it('abre e fecha a nota inline da seção, sem overlay', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    const button = screen.getByRole('button', { name: 'Sobre: Rendimento' });
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText(/Quebra de abate incide sobre o peso vivo/)).toBeNull();
+    await user.click(button);
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText(/Quebra de abate incide sobre o peso vivo/)).toBeDefined();
+    await user.click(button);
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText(/Quebra de abate incide sobre o peso vivo/)).toBeNull();
   });
 });

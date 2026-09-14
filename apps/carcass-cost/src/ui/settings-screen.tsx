@@ -2,18 +2,9 @@
 // edita um RASCUNHO local: cada valor é validado pelas regras exportadas do
 // domínio (nunca recriadas aqui); valor válido persiste na hora, valor
 // inválido fica no campo COM a mensagem de erro e não sobrescreve o padrão
-// vigente.
+// vigente. Campos em duas colunas; explicações no "?".
 
-import {
-  Button,
-  CurrencyInput,
-  Field,
-  NumberInput,
-  PageHeader,
-  Section,
-  Stack,
-  Text,
-} from '@tauros/ui-primitives';
+import { Button, CurrencyInput, Grid, NumberInput, Stack, Text } from '@tauros/ui-primitives';
 import { useState, type ReactElement } from 'react';
 
 import {
@@ -26,6 +17,9 @@ import type { DefaultSettings } from '../state/model.js';
 import type { CalculatorController } from '../state/use-calculator.js';
 import { ISSUE_MESSAGES } from './field-messages.js';
 import { fromMinorUnits, toMinorUnits } from './format.js';
+import { GridField } from './grid-field.js';
+import { HelpSection } from './help.js';
+import { ScreenHeader } from './screen-header.js';
 
 export interface SettingsScreenProps {
   readonly calc: CalculatorController;
@@ -45,6 +39,13 @@ const RULES: { readonly [K in NumericSettingKey]: (value: number) => IssueCode |
   driverDailyRate: nonNegativeIssue,
   fuelCost: nonNegativeIssue,
 };
+
+const HELP = {
+  premissas:
+    'Quebra de abate incide sobre o peso vivo; quebra de frio, sobre o peso que restou após o abate (nunca sobre o vivo).',
+  custos:
+    'Abate e serviço são por suíno; diária do motorista e combustível valem para a viagem inteira.',
+} as const;
 
 function issueOf(key: NumericSettingKey, value: number | null): IssueCode | null {
   return value === null ? 'REQUIRED' : RULES[key](value);
@@ -81,114 +82,98 @@ export function SettingsScreen({ calc, onBack }: SettingsScreenProps): ReactElem
   };
 
   return (
-    <Stack gap={300}>
-      <PageHeader
+    <Stack gap={200}>
+      <ScreenHeader
         title="Configurações"
-        eyebrow="Premissas padrão"
         description="Valores usados ao iniciar um lote novo. O lote atual não muda sozinho."
-        actions={
-          <Button variant="ghost" size="sm" onClick={onBack}>
-            Voltar
-          </Button>
-        }
+        onBack={onBack}
       />
 
-      <Section title="Premissas padrão">
-        <Stack gap={200}>
-          <Field label="Nº de suínos padrão" {...errorProp('animals')}>
+      <HelpSection title="Premissas padrão" help={HELP.premissas}>
+        <Grid columns={2} gap={100}>
+          <GridField label="Nº de suínos" {...errorProp('animals')}>
             <NumberInput
-              size="lg"
+              size="md"
               value={draft.animals}
               onValueChange={(change) => {
                 edit('animals', change.value);
               }}
             />
-          </Field>
-          <Field label="Preço do suíno vivo (R$/kg)" {...errorProp('livePricePerKg')}>
+          </GridField>
+          <GridField label="Preço do suíno vivo (R$/kg)" {...errorProp('livePricePerKg')}>
             <CurrencyInput
-              size="lg"
+              size="md"
               valueInMinorUnits={toMinorUnits(draft.livePricePerKg)}
               onValueChange={(change) => {
                 edit('livePricePerKg', fromMinorUnits(change.valueInMinorUnits));
               }}
             />
-          </Field>
-          <Field
-            label="Quebra de abate (%)"
-            description="Perda física sobre o peso vivo."
-            {...errorProp('slaughterLossPct')}
-          >
+          </GridField>
+          <GridField label="Quebra de abate" {...errorProp('slaughterLossPct')}>
             <NumberInput
-              size="lg"
+              size="md"
               endAdornment="%"
               value={draft.slaughterLossPct}
               onValueChange={(change) => {
                 edit('slaughterLossPct', change.value);
               }}
             />
-          </Field>
-          <Field
-            label="Quebra de frio (%)"
-            description="Perda física sobre o peso que restou APÓS o abate — nunca sobre o vivo."
-            {...errorProp('coolingLossPct')}
-          >
+          </GridField>
+          <GridField label="Quebra de frio" {...errorProp('coolingLossPct')}>
             <NumberInput
-              size="lg"
+              size="md"
               endAdornment="%"
               value={draft.coolingLossPct}
               onValueChange={(change) => {
                 edit('coolingLossPct', change.value);
               }}
             />
-          </Field>
-        </Stack>
-      </Section>
+          </GridField>
+        </Grid>
+      </HelpSection>
 
-      <Section
-        title="Custos padrão"
-        description="Abate e serviço são por suíno; diária e combustível valem para a viagem inteira."
-      >
-        <Stack gap={200}>
-          <Field label="Taxa de abate (R$/cabeça)" {...errorProp('slaughterFeePerHead')}>
+      <HelpSection title="Custos padrão" help={HELP.custos}>
+        <Grid columns={2} gap={100}>
+          <GridField label="Abate (R$/cabeça)" {...errorProp('slaughterFeePerHead')}>
             <CurrencyInput
-              size="lg"
+              size="md"
               valueInMinorUnits={toMinorUnits(draft.slaughterFeePerHead)}
               onValueChange={(change) => {
                 edit('slaughterFeePerHead', fromMinorUnits(change.valueInMinorUnits));
               }}
             />
-          </Field>
-          <Field label="Taxa de serviço (R$/suíno)" {...errorProp('servicePerHead')}>
+          </GridField>
+          <GridField label="Serviço (R$/suíno)" {...errorProp('servicePerHead')}>
             <CurrencyInput
-              size="lg"
+              size="md"
               valueInMinorUnits={toMinorUnits(draft.servicePerHead)}
               onValueChange={(change) => {
                 edit('servicePerHead', fromMinorUnits(change.valueInMinorUnits));
               }}
             />
-          </Field>
-          <Field label="Diária do motorista (R$/viagem)" {...errorProp('driverDailyRate')}>
+          </GridField>
+          <GridField label="Diária (R$/viagem)" {...errorProp('driverDailyRate')}>
             <CurrencyInput
-              size="lg"
+              size="md"
               valueInMinorUnits={toMinorUnits(draft.driverDailyRate)}
               onValueChange={(change) => {
                 edit('driverDailyRate', fromMinorUnits(change.valueInMinorUnits));
               }}
             />
-          </Field>
-          <Field label="Combustível (R$/viagem)" {...errorProp('fuelCost')}>
+          </GridField>
+          <GridField label="Combustível (R$/viagem)" {...errorProp('fuelCost')}>
             <CurrencyInput
-              size="lg"
+              size="md"
               valueInMinorUnits={toMinorUnits(draft.fuelCost)}
               onValueChange={(change) => {
                 edit('fuelCost', fromMinorUnits(change.valueInMinorUnits));
               }}
             />
-          </Field>
-        </Stack>
-      </Section>
+          </GridField>
+        </Grid>
+      </HelpSection>
 
-      <Stack gap={100}>
+      <Stack gap={50}>
         <Button
           variant="primary"
           fullWidth

@@ -1,22 +1,23 @@
 // Tela principal — Custo da Carcaça. Hierarquia: resultado dominante no topo
-// (decisão nos primeiros 30% da tela), resumo executivo, entradas grandes
-// para edição com uma mão. A tela só apresenta: todo cálculo vem do domínio
-// via controller. Na estimativa a cadeia é visível: peso médio
-// → total → após abate → carcaça final → custo base → ajuste comercial →
-// equivalente → custos adicionais → CUSTO FINAL EQUIVALENTE.
+// (decisão nos primeiros 30% da tela), entradas em duas colunas para caber
+// um lote numa rolagem curta, resumo em linhas "razão" ao final. A tela só
+// apresenta: todo cálculo vem do domínio via controller. Na estimativa a
+// cadeia é visível: peso médio → total → após abate → carcaça final → custo
+// base → ajuste comercial → equivalente → custos adicionais → CUSTO FINAL.
+// A compacidade vem do LAYOUT (2 colunas, explicações em "?", gaps menores):
+// a altura dos controles é a do DS (glove-first, size-control-min) e não é
+// reduzida aqui.
 
 import { cssVar } from '@tauros/tokens';
 import {
   Badge,
   Button,
-  Card,
   CurrencyInput,
   Divider,
-  Field,
   Flex,
+  Grid,
   NumberInput,
   PageHeader,
-  ResponsiveGrid,
   Section,
   SegmentedControl,
   Stack,
@@ -45,6 +46,9 @@ import {
   fromMinorUnits,
   toMinorUnits,
 } from './format.js';
+import { GridField } from './grid-field.js';
+import { HelpSection } from './help.js';
+import { LedgerRow } from './ledger.js';
 
 export interface CalculatorScreenProps {
   readonly calc: CalculatorController;
@@ -61,57 +65,19 @@ interface HeadlineView {
   readonly additionalPerKg: number;
 }
 
-interface SummaryTileProps {
-  readonly label: string;
-  readonly value: string;
-  readonly detail?: string;
-}
-
-function SummaryTile({ label, value, detail }: SummaryTileProps): ReactElement {
-  return (
-    <Surface elevation="flat" style={{ padding: cssVar('space-inset-md') }}>
-      <Stack gap={25}>
-        <Text role="caption" tone="secondary">
-          {label}
-        </Text>
-        <Text role="data">{value}</Text>
-        {detail !== undefined && (
-          <Text role="caption" tone="tertiary">
-            {detail}
-          </Text>
-        )}
-      </Stack>
-    </Surface>
-  );
-}
-
-interface BreakdownRowProps {
-  readonly label: string;
-  readonly value: string;
-  readonly detail?: string;
-}
-
-function BreakdownRow({ label, value, detail }: BreakdownRowProps): ReactElement {
-  return (
-    <Flex justify="between" gap={100}>
-      <Stack gap={25}>
-        <Text role="caption" tone="secondary">
-          {label}
-        </Text>
-        {detail !== undefined && (
-          <Text role="caption" tone="tertiary">
-            {detail}
-          </Text>
-        )}
-      </Stack>
-      <Text role="data">{value}</Text>
-    </Flex>
-  );
-}
-
 function hasIssue(issues: readonly ValidationIssue[], field: string): boolean {
   return issues.some((issue) => issue.field === field);
 }
+
+// Explicações que saíram da interface principal (abrem pelo "?").
+const HELP = {
+  rendimento:
+    'Quebra de abate incide sobre o peso vivo; quebra de frio, sobre o peso que restou após o abate (nunca sobre o vivo). Rendimento final = (1 − abate) × (1 − frio).',
+  ajuste:
+    'Indicador da aba Transformação: perda econômica dos subprodutos sobre o valor da carcaça de exportação. Incide só sobre o custo da matéria-prima — não é quebra física.',
+  custos:
+    'Abate e serviço são por suíno; diária do motorista e combustível valem para a viagem inteira. Tudo é diluído pelo peso final da carcaça.',
+} as const;
 
 export function CalculatorScreen({
   calc,
@@ -165,26 +131,23 @@ export function CalculatorScreen({
   ) : (
     <Badge status="neutral">ESTIMATIVA</Badge>
   );
+  const indicatorText =
+    commercialAdjustmentPct === null ? '—' : formatPct(commercialAdjustmentPct / 100);
 
   return (
-    <Stack gap={300}>
-      <PageHeader
-        title="Custo da Carcaça"
-        eyebrow="Lote atual"
-        actions={
-          <>
-            <Button variant="ghost" size="sm" onClick={onOpenTransformation}>
-              Transformação
-            </Button>
-            <Button variant="ghost" size="sm" onClick={onOpenHistory}>
-              Histórico
-            </Button>
-            <Button variant="ghost" size="sm" onClick={onOpenSettings}>
-              Configurações
-            </Button>
-          </>
-        }
-      />
+    <Stack gap={200}>
+      <PageHeader title="Custo da Carcaça" />
+      <Grid columns={3} gap={50} role="navigation" aria-label="Telas">
+        <Button variant="secondary" size="sm" fullWidth onClick={onOpenTransformation}>
+          Transformação
+        </Button>
+        <Button variant="secondary" size="sm" fullWidth onClick={onOpenHistory}>
+          Histórico
+        </Button>
+        <Button variant="secondary" size="sm" fullWidth onClick={onOpenSettings}>
+          Configurações
+        </Button>
+      </Grid>
 
       {/* position:relative ancora os radios visually-hidden (absolutos) do
           SegmentedControl — sem âncora eles esticam o html e criam scroll
@@ -204,15 +167,12 @@ export function CalculatorScreen({
       </div>
 
       {!isReal && (
-        <Section
-          title="Ajuste rápido"
-          description="Atalho: altera só o preço do suíno vivo da estimativa atual — todo o resto permanece igual."
-        >
+        <Section title="Ajuste rápido">
           {/* Mesmo estado do campo de preço das Entradas (patchQuick) — o
               resultado recalcula pelo mesmo motor V2, sem lógica duplicada. */}
-          <Field label="Preço do suíno vivo (R$/kg)" {...errorProp(issues, 'livePricePerKg')}>
+          <GridField label="Preço do suíno vivo (R$/kg)" {...errorProp(issues, 'livePricePerKg')}>
             <CurrencyInput
-              size="lg"
+              size="md"
               valueInMinorUnits={toMinorUnits(state.quick.livePricePerKg)}
               onValueChange={(change) => {
                 actions.patchQuick({
@@ -220,13 +180,18 @@ export function CalculatorScreen({
                 });
               }}
             />
-          </Field>
+          </GridField>
         </Section>
       )}
 
-      <Card as="section" aria-label="Resultado">
-        <Stack gap={200}>
-          <Flex justify="between" gap={100}>
+      <Surface
+        as="section"
+        aria-label="Resultado"
+        elevation="card"
+        style={{ padding: cssVar('space-inset-md') }}
+      >
+        <Stack gap={100}>
+          <Flex justify="between" align="center" gap={100}>
             <Text role="label" tone="secondary">
               {isReal ? 'Custo final' : 'Custo final equivalente'}
             </Text>
@@ -266,52 +231,48 @@ export function CalculatorScreen({
               <Stack gap={50} role="group" aria-label="Composição do custo por kg">
                 {!isReal && quickResult !== null ? (
                   <>
-                    <BreakdownRow
+                    <LedgerRow
                       label="Carcaça antes do ajuste"
                       value={formatPerKg(quickResult.baseCarcassPerKg)}
                     />
-                    <BreakdownRow
-                      label={`Ajuste comercial (+${formatPct((commercialAdjustmentPct ?? 0) / 100)})`}
-                      detail="Indicador de subprodutos"
+                    <LedgerRow
+                      label={`Ajuste comercial (+${indicatorText})`}
                       value={`+ ${formatPerKg(quickResult.commercialAdjustmentPerKg)}`}
                     />
-                    <BreakdownRow
+                    <LedgerRow
                       label="Custo equivalente"
                       value={formatPerKg(quickResult.equivalentPerKg)}
                     />
-                    <BreakdownRow
+                    <LedgerRow
                       label="Custos adicionais da operação"
                       value={formatBRL(quickResult.additionalCostsTotal)}
                     />
-                    <BreakdownRow
+                    <LedgerRow
                       label="Impacto dos custos adicionais"
                       value={`+ ${formatPerKg(quickResult.additionalPerKg)}`}
                     />
-                    <BreakdownRow
+                    <LedgerRow
                       label="Custo de oportunidade"
-                      detail="Descarga não realizada"
+                      note="Descarga não realizada"
                       value={`+ ${formatPerKg(OPPORTUNITY_COST_PER_KG)}`}
                     />
-                    <BreakdownRow
-                      label="Imposto CENAR"
-                      value={`+ ${formatPerKg(CENAR_TAX_PER_KG)}`}
-                    />
-                    <BreakdownRow
+                    <LedgerRow label="Imposto CENAR" value={`+ ${formatPerKg(CENAR_TAX_PER_KG)}`} />
+                    <LedgerRow
                       label="Impacto total dos acréscimos"
                       value={`+ ${formatPerKg(FIXED_SURCHARGES_PER_KG)}`}
                     />
                   </>
                 ) : realResult !== null ? (
                   <>
-                    <BreakdownRow
+                    <LedgerRow
                       label="Animal (vivo → carcaça)"
                       value={formatPerKg(realResult.basePerKg)}
                     />
-                    <BreakdownRow
+                    <LedgerRow
                       label="Custos adicionais da operação"
                       value={formatBRL(realResult.additionalCostsTotal)}
                     />
-                    <BreakdownRow
+                    <LedgerRow
                       label="Impacto dos custos adicionais"
                       value={`+ ${formatPerKg(realResult.additionalPerKg)}`}
                     />
@@ -321,253 +282,174 @@ export function CalculatorScreen({
             </>
           )}
         </Stack>
-      </Card>
-
-      {headline !== null && (
-        <Section title="Resumo do lote">
-          <ResponsiveGrid itemSize="sm" gap={100}>
-            {isReal && realResult !== null ? (
-              <>
-                <SummaryTile label="Peso pago" value={formatKg(realResult.paidWeightKg)} />
-                <SummaryTile
-                  label="Quebra no abate"
-                  value={formatKg(realResult.slaughterLossKg)}
-                  detail={formatPct(realResult.slaughterLossPct)}
-                />
-                <SummaryTile
-                  label="Quebra no frio"
-                  value={formatKg(realResult.coolingLossKg)}
-                  detail={formatPct(realResult.coolingLossPct)}
-                />
-                <SummaryTile
-                  label="Quebra total"
-                  value={formatKg(realResult.totalLossKg)}
-                  detail={formatPct(realResult.totalLossPct)}
-                />
-                <SummaryTile label="Rendimento final" value={formatPct(realResult.finalYield)} />
-                <SummaryTile label="Peso final" value={formatKg(realResult.finalWeightKg)} />
-              </>
-            ) : quickResult !== null ? (
-              <>
-                <SummaryTile
-                  label="Peso vivo total"
-                  value={formatKg(quickResult.totalLiveWeightKg)}
-                />
-                <SummaryTile
-                  label="Peso após abate"
-                  value={formatKg(quickResult.weightAfterSlaughterKg)}
-                  detail={formatPct(quickResult.yieldAfterSlaughter)}
-                />
-                <SummaryTile
-                  label="Carcaça estimada"
-                  value={formatKg(quickResult.estimatedCarcassKg)}
-                  detail={formatPct(quickResult.finalYield)}
-                />
-                <SummaryTile label="Quebra total" value={formatPct(quickResult.totalLossPct)} />
-                <SummaryTile
-                  label="Custo equivalente"
-                  value={formatPerKg(quickResult.equivalentPerKg)}
-                  detail="Matéria-prima + ajuste comercial"
-                />
-              </>
-            ) : null}
-            <SummaryTile
-              label="Custos adicionais"
-              value={`+ ${formatPerKg(headline.additionalPerKg)}`}
-              detail="Abate + serviço + viagem"
-            />
-          </ResponsiveGrid>
-        </Section>
-      )}
+      </Surface>
 
       {isReal ? (
         <Section title="Pesos do lote real">
-          <Stack gap={200}>
-            <Field label="Nº de suínos" {...errorProp(issues, 'animals')}>
+          <Grid columns={2} gap={100}>
+            <GridField label="Nº de suínos" {...errorProp(issues, 'animals')}>
               <NumberInput
-                size="lg"
+                size="md"
                 value={state.real.animals}
                 onValueChange={(change) => {
                   actions.patchReal({ animals: change.value });
                 }}
               />
-            </Field>
-            <Field label="Peso na balança (kg)" {...errorProp(issues, 'scaleWeightKg')}>
+            </GridField>
+            <GridField label="Preço do suíno vivo (R$/kg)" {...errorProp(issues, 'livePricePerKg')}>
+              <CurrencyInput
+                size="md"
+                valueInMinorUnits={toMinorUnits(state.real.livePricePerKg)}
+                onValueChange={(change) => {
+                  actions.patchReal({ livePricePerKg: fromMinorUnits(change.valueInMinorUnits) });
+                }}
+              />
+            </GridField>
+            <GridField label="Peso na balança" {...errorProp(issues, 'scaleWeightKg')}>
               <NumberInput
-                size="lg"
+                size="md"
                 endAdornment="kg"
                 value={state.real.scaleWeightKg}
                 onValueChange={(change) => {
                   actions.patchReal({ scaleWeightKg: change.value });
                 }}
               />
-            </Field>
-            <Field
-              label="Descontos / graxaria (kg)"
+            </GridField>
+            <GridField
+              label="Descontos / graxaria"
               {...(realResult !== null
                 ? { description: `Peso pago: ${formatKg(realResult.paidWeightKg)}` }
                 : {})}
               {...errorProp(issues, 'discountsKg')}
             >
               <NumberInput
-                size="lg"
+                size="md"
                 endAdornment="kg"
                 value={state.real.discountsKg}
                 onValueChange={(change) => {
                   actions.patchReal({ discountsKg: change.value });
                 }}
               />
-            </Field>
-            <Field label="Peso abatido (kg)" {...errorProp(issues, 'slaughteredWeightKg')}>
+            </GridField>
+            <GridField label="Peso abatido" {...errorProp(issues, 'slaughteredWeightKg')}>
               <NumberInput
-                size="lg"
+                size="md"
                 endAdornment="kg"
                 value={state.real.slaughteredWeightKg}
                 onValueChange={(change) => {
                   actions.patchReal({ slaughteredWeightKg: change.value });
                 }}
               />
-            </Field>
-            <Field label="Peso após frio (kg)" {...errorProp(issues, 'chilledWeightKg')}>
+            </GridField>
+            <GridField label="Peso após frio" {...errorProp(issues, 'chilledWeightKg')}>
               <NumberInput
-                size="lg"
+                size="md"
                 endAdornment="kg"
                 value={state.real.chilledWeightKg}
                 onValueChange={(change) => {
                   actions.patchReal({ chilledWeightKg: change.value });
                 }}
               />
-            </Field>
-            <Field label="Preço do suíno vivo (R$/kg)" {...errorProp(issues, 'livePricePerKg')}>
-              <CurrencyInput
-                size="lg"
-                valueInMinorUnits={toMinorUnits(state.real.livePricePerKg)}
-                onValueChange={(change) => {
-                  actions.patchReal({ livePricePerKg: fromMinorUnits(change.valueInMinorUnits) });
-                }}
-              />
-            </Field>
-          </Stack>
+            </GridField>
+          </Grid>
         </Section>
       ) : (
         <>
           <Section title="Entradas do lote">
-            <Stack gap={200}>
-              <Field label="Nº de suínos" {...errorProp(issues, 'animals')}>
+            <Grid columns={2} gap={100}>
+              <GridField label="Nº de suínos" {...errorProp(issues, 'animals')}>
                 <NumberInput
-                  size="lg"
+                  size="md"
                   value={state.quick.animals}
                   onValueChange={(change) => {
                     actions.patchQuick({ animals: change.value });
                   }}
                 />
-              </Field>
-              <Field
-                label="Peso vivo médio por suíno (kg)"
+              </GridField>
+              <GridField
+                label="Peso vivo médio"
                 {...(totalLivePreview !== null
                   ? { description: `Peso vivo total: ${formatKg(totalLivePreview)}` }
                   : {})}
                 {...errorProp(issues, 'avgLiveWeightKg')}
               >
                 <NumberInput
-                  size="lg"
+                  size="md"
                   endAdornment="kg"
                   value={state.quick.avgLiveWeightKg}
                   onValueChange={(change) => {
                     actions.patchQuick({ avgLiveWeightKg: change.value });
                   }}
                 />
-              </Field>
-              <Field label="Preço do suíno vivo (R$/kg)" {...errorProp(issues, 'livePricePerKg')}>
-                <CurrencyInput
-                  size="lg"
-                  valueInMinorUnits={toMinorUnits(state.quick.livePricePerKg)}
-                  onValueChange={(change) => {
-                    actions.patchQuick({
-                      livePricePerKg: fromMinorUnits(change.valueInMinorUnits),
-                    });
-                  }}
-                />
-              </Field>
-            </Stack>
+              </GridField>
+            </Grid>
+            <GridField label="Preço do suíno vivo (R$/kg)" {...errorProp(issues, 'livePricePerKg')}>
+              <CurrencyInput
+                size="md"
+                valueInMinorUnits={toMinorUnits(state.quick.livePricePerKg)}
+                onValueChange={(change) => {
+                  actions.patchQuick({
+                    livePricePerKg: fromMinorUnits(change.valueInMinorUnits),
+                  });
+                }}
+              />
+            </GridField>
           </Section>
 
-          <Section title="Rendimento">
-            <Stack gap={200}>
-              <Field
-                label="Quebra de abate (%)"
-                description="Sobre o peso vivo."
-                {...errorProp(issues, 'slaughterLossPct')}
-              >
+          <HelpSection title="Rendimento" help={HELP.rendimento}>
+            <Grid columns={2} gap={100}>
+              <GridField label="Quebra de abate" {...errorProp(issues, 'slaughterLossPct')}>
                 <NumberInput
-                  size="lg"
+                  size="md"
                   endAdornment="%"
                   value={state.quick.slaughterLossPct}
                   onValueChange={(change) => {
                     actions.patchQuick({ slaughterLossPct: change.value });
                   }}
                 />
-              </Field>
-              <Field
-                label="Quebra de frio (%)"
-                description="Sobre o peso que restou após o abate — nunca sobre o vivo."
-                {...errorProp(issues, 'coolingLossPct')}
-              >
+              </GridField>
+              <GridField label="Quebra de frio" {...errorProp(issues, 'coolingLossPct')}>
                 <NumberInput
-                  size="lg"
+                  size="md"
                   endAdornment="%"
                   value={state.quick.coolingLossPct}
                   onValueChange={(change) => {
                     actions.patchQuick({ coolingLossPct: change.value });
                   }}
                 />
-              </Field>
-              <ResponsiveGrid itemSize="sm" gap={100}>
-                <SummaryTile
-                  label="Rendimento após abate"
-                  value={yieldAfterSlaughter === null ? '—' : formatPct(yieldAfterSlaughter)}
-                />
-                <SummaryTile
-                  label="Rendimento final"
-                  value={finalYieldPreview === null ? '—' : formatPct(finalYieldPreview)}
-                />
-              </ResponsiveGrid>
+              </GridField>
+            </Grid>
+            <Stack gap={50} role="group" aria-label="Rendimento físico">
+              <LedgerRow
+                label="Após abate"
+                value={yieldAfterSlaughter === null ? '—' : formatPct(yieldAfterSlaughter)}
+              />
+              <LedgerRow
+                label="Rendimento final"
+                value={finalYieldPreview === null ? '—' : formatPct(finalYieldPreview)}
+              />
             </Stack>
-          </Section>
+          </HelpSection>
 
-          <Section
-            title="Ajuste comercial"
-            description="Indicador econômico dos subprodutos em relação ao valor da carcaça de exportação. Não é quebra física: incide só sobre o custo da matéria-prima."
-            actions={
-              <Button variant="secondary" size="sm" onClick={onOpenTransformation}>
-                Ajustar subprodutos
-              </Button>
-            }
-          >
+          <HelpSection title="Ajuste comercial" help={HELP.ajuste}>
             <Surface elevation="flat" style={{ padding: cssVar('space-inset-md') }}>
-              <Flex justify="between" gap={100}>
-                <Text role="caption" tone="secondary">
-                  Indicador aplicado (aba Transformação)
-                </Text>
-                <Text role="data">
-                  {commercialAdjustmentPct === null
-                    ? '—'
-                    : formatPct(commercialAdjustmentPct / 100)}
-                </Text>
-              </Flex>
+              <Stack gap={100}>
+                <LedgerRow label="Indicador de transformação" value={indicatorText} />
+                {/* Abre os dados que geram o indicador acima (aba Transformação). */}
+                <Button variant="secondary" fullWidth onClick={onOpenTransformation}>
+                  Ajustar subprodutos
+                </Button>
+              </Stack>
             </Surface>
-          </Section>
+          </HelpSection>
         </>
       )}
 
-      <Section
-        title="Custos"
-        description="Abate e serviço são por suíno; diária e combustível valem para a viagem inteira. Tudo é diluído pelo peso final da carcaça."
-      >
-        <Stack gap={200}>
-          <Field label="Taxa de abate (R$/cabeça)" {...errorProp(issues, 'slaughterFeePerHead')}>
+      <HelpSection title="Custos" help={HELP.custos}>
+        <Grid columns={2} gap={100}>
+          <GridField label="Abate (R$/cabeça)" {...errorProp(issues, 'slaughterFeePerHead')}>
             <CurrencyInput
-              size="lg"
+              size="md"
               valueInMinorUnits={toMinorUnits(state.costs.slaughterFeePerHead)}
               onValueChange={(change) => {
                 actions.patchCosts({
@@ -575,36 +457,91 @@ export function CalculatorScreen({
                 });
               }}
             />
-          </Field>
-          <Field label="Taxa de serviço (R$/suíno)" {...errorProp(issues, 'servicePerHead')}>
+          </GridField>
+          <GridField label="Serviço (R$/suíno)" {...errorProp(issues, 'servicePerHead')}>
             <CurrencyInput
-              size="lg"
+              size="md"
               valueInMinorUnits={toMinorUnits(state.costs.servicePerHead)}
               onValueChange={(change) => {
                 actions.patchCosts({ servicePerHead: fromMinorUnits(change.valueInMinorUnits) });
               }}
             />
-          </Field>
-          <Field label="Diária do motorista (R$/viagem)" {...errorProp(issues, 'driverDailyRate')}>
+          </GridField>
+          <GridField label="Diária (R$/viagem)" {...errorProp(issues, 'driverDailyRate')}>
             <CurrencyInput
-              size="lg"
+              size="md"
               valueInMinorUnits={toMinorUnits(state.costs.driverDailyRate)}
               onValueChange={(change) => {
                 actions.patchCosts({ driverDailyRate: fromMinorUnits(change.valueInMinorUnits) });
               }}
             />
-          </Field>
-          <Field label="Combustível (R$/viagem)" {...errorProp(issues, 'fuelCost')}>
+          </GridField>
+          <GridField label="Combustível (R$/viagem)" {...errorProp(issues, 'fuelCost')}>
             <CurrencyInput
-              size="lg"
+              size="md"
               valueInMinorUnits={toMinorUnits(state.costs.fuelCost)}
               onValueChange={(change) => {
                 actions.patchCosts({ fuelCost: fromMinorUnits(change.valueInMinorUnits) });
               }}
             />
-          </Field>
-        </Stack>
-      </Section>
+          </GridField>
+        </Grid>
+      </HelpSection>
+
+      {headline !== null && (
+        <Section title="Resumo do lote">
+          <Stack gap={50}>
+            {isReal && realResult !== null ? (
+              <>
+                <LedgerRow label="Peso pago" value={formatKg(realResult.paidWeightKg)} />
+                <LedgerRow
+                  label="Quebra no abate"
+                  value={formatKg(realResult.slaughterLossKg)}
+                  detail={formatPct(realResult.slaughterLossPct)}
+                />
+                <LedgerRow
+                  label="Quebra no frio"
+                  value={formatKg(realResult.coolingLossKg)}
+                  detail={formatPct(realResult.coolingLossPct)}
+                />
+                <LedgerRow
+                  label="Quebra total"
+                  value={formatKg(realResult.totalLossKg)}
+                  detail={formatPct(realResult.totalLossPct)}
+                />
+                <LedgerRow label="Rendimento final" value={formatPct(realResult.finalYield)} />
+                <LedgerRow label="Peso final" value={formatKg(realResult.finalWeightKg)} />
+              </>
+            ) : quickResult !== null ? (
+              <>
+                <LedgerRow
+                  label="Peso vivo total"
+                  value={formatKg(quickResult.totalLiveWeightKg)}
+                />
+                <LedgerRow
+                  label="Peso após abate"
+                  value={formatKg(quickResult.weightAfterSlaughterKg)}
+                  detail={formatPct(quickResult.yieldAfterSlaughter)}
+                />
+                <LedgerRow
+                  label="Carcaça estimada"
+                  value={formatKg(quickResult.estimatedCarcassKg)}
+                  detail={formatPct(quickResult.finalYield)}
+                />
+                <LedgerRow label="Quebra total" value={formatPct(quickResult.totalLossPct)} />
+                <LedgerRow
+                  label="Custo equivalente"
+                  value={formatPerKg(quickResult.equivalentPerKg)}
+                />
+              </>
+            ) : null}
+            <LedgerRow
+              label="Custos adicionais"
+              value={`+ ${formatPerKg(headline.additionalPerKg)}`}
+            />
+          </Stack>
+        </Section>
+      )}
 
       <Stack gap={50}>
         <Button
@@ -630,8 +567,9 @@ export function CalculatorScreen({
       <StickyRegion position="bottom">
         <Flex
           justify="between"
+          align="center"
           gap={100}
-          style={{ padding: cssVar('space-inset-md') }}
+          style={{ padding: cssVar('space-inset-sm') }}
           role="group"
           aria-label="Custo final atual"
         >

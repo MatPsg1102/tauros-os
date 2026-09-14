@@ -1575,3 +1575,46 @@ segundo campo. Pele NÃO existe na equação nem na aba (7 subprodutos).
 Motor V2 intacto (17%/2,5%, oportunidade 0,05, CENAR 0,01 independentes;
 Lote Real inalterado). Sem mudança de arquitetura, storage ou boundaries.
 Default da Estimativa 7,25 → 6,92. 84 testes.
+
+## Custo da Carcaça V3.2 — rodada UX/UI compacta, sem mudança de regra (feat/carcass-ux-compact)
+
+Tarefa exclusivamente de composição (skill `frontend-design` subordinada ao
+DS): nenhuma fórmula, regra, estado, persistência ou cálculo foi alterado —
+os 84 testes anteriores (vetores numéricos incluídos) passaram sem ajuste de
+número; só rótulos de campo mudaram nos seletores. Viewport-alvo 390×844.
+Rolagem medida em Chromium (altura do conteúdo a 390 px, antes → depois):
+Estimativa 3.752 → 2.218 px (−41%); Lote Real 2.908 → 1.568 (−46%);
+Transformação 2.882 → 1.525 (−47%); Configurações 1.435 → 941 (−34%);
+Histórico 446 → 354 (−21%).
+
+O que mudou (tudo via API pública do DS, tokens por `cssVar`, sem literal):
+Transformação com card do indicador no topo + 7 linhas compactas (nome e
+valor recuperado na mesma linha; "Peso [ ] Preço/kg [ ]" lado a lado com
+`Label` + id explícito, sem `Field`) + barra fixa com o indicador;
+entradas em `Grid` de 2 colunas; explicações longas viraram "?"
+(`IconButton` + nota inline `aria-expanded/aria-controls`); "Resumo do
+lote", composição do custo e do indicador em linhas "razão" (`LedgerRow`:
+rótulo em `emphasis-level4-size`, valor em `data` — hierarquia
+entrada/cálculo/resultado); navegação e "Voltar" em `secondary`
+(borda visível); eyebrows e descrições de cabeçalho removidos.
+Composições locais novas em `apps/carcass-cost/src/ui/`: `help.tsx`,
+`ledger.tsx`, `grid-field.tsx`, `screen-header.tsx`.
+
+Restrições do DS encontradas (registradas, NÃO contornadas — DS congelado):
+
+1. `size-control-min` = 64 px (glove) em TODO controle; `sm/md/lg` só mudam
+   padding/fonte. A altura dos inputs pedida na tarefa NÃO foi reduzida —
+   compactação veio do layout. Consequência: o "?" também tem 64 px.
+2. `PageHeader` empilha `actions` abaixo do título em telas estreitas (uma
+   linha de 64 px a mais por tela) → `ScreenHeader` local (título + Voltar
+   na mesma linha). Sugestão para o DS: variante inline das ações no mobile.
+3. `Tooltip` abre por hover/foco; no iPhone o toque em botão não dá foco →
+   nota inline em vez de tooltip/popover. `Popover` do DS traz trigger
+   próprio (texto) sem nome acessível separado → não usado.
+4. `Field` só tem layout vertical (rótulo acima) → linha compacta usa `Label`
+   - `id`. Sugestão: `Field` com `layout="inline"`.
+5. `.t-section-header` alinha ações em `flex-start` → título fica no topo ao
+   lado de um botão de 64 px; `HelpSection` monta o cabeçalho com `Flex
+align="center"` e nomeia a região por `aria-label`.
+6. Em `Grid` de 2 colunas, rótulo de 2 linhas desalinha o campo vizinho →
+   `GridField` (controle na base da célula, `margin-top: auto`).

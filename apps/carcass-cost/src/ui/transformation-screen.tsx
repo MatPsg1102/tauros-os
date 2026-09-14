@@ -1,26 +1,28 @@
-// Tela Transformação — INDICADOR ECONÔMICO DE TRANSFORMAÇÃO. O usuário edita
-// pesos/preços dos subprodutos e o preço da carcaça de exportação; a perda
-// econômica (valor teórico pelo preço da carcaça − valor recuperado) sobre o
-// valor da carcaça recalcula em tempo real e vira o ajuste comercial da
-// Estimativa. A tela só apresenta.
+// Tela Transformação — INDICADOR ECONÔMICO DE TRANSFORMAÇÃO. Resultado no
+// topo (mesma regra da calculadora), depois os 7 subprodutos em linhas
+// compactas (nome + valor recuperado; peso e preço lado a lado), o preço da
+// carcaça e uma barra fixa com o indicador para acompanhar enquanto se edita
+// as últimas linhas. A tela só apresenta: perda econômica e indicador vêm do
+// domínio via controller e viram o ajuste comercial da Estimativa.
 
 import { cssVar } from '@tauros/tokens';
 import {
-  Button,
   CurrencyInput,
   Divider,
   Field,
   Flex,
+  Label,
   NumberInput,
-  PageHeader,
   Section,
   Stack,
+  StickyRegion,
   Surface,
   Text,
 } from '@tauros/ui-primitives';
-import type { ReactElement } from 'react';
+import { useId, type ReactElement } from 'react';
 
 import { SUBPRODUCT_KEYS, type SubproductKey } from '../domain/transformation.js';
+import type { SubproductForm } from '../state/model.js';
 import type { CalculatorController } from '../state/use-calculator.js';
 import {
   formatBRL,
@@ -30,6 +32,9 @@ import {
   fromMinorUnits,
   toMinorUnits,
 } from './format.js';
+import { HelpButton, HelpNote, useHelp } from './help.js';
+import { LedgerRow } from './ledger.js';
+import { ScreenHeader } from './screen-header.js';
 
 export interface TransformationScreenProps {
   readonly calc: CalculatorController;
@@ -46,107 +51,159 @@ const SUBPRODUCT_LABELS: Record<SubproductKey, string> = {
   tail: 'Rabinho',
 };
 
-function SummaryRow({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail?: string;
-}): ReactElement {
+const HELP_INDICATOR =
+  'Valor teórico = peso dos subprodutos × preço da carcaça. Perda = teórico − recuperado. Indicador = perda ÷ valor da carcaça de exportação; entra na Estimativa como ajuste comercial. Quanto mais você recupera, menor o indicador.';
+
+interface SubproductRowProps {
+  readonly label: string;
+  readonly form: SubproductForm;
+  readonly recoveredBRL: number;
+  readonly onPatch: (patch: Partial<SubproductForm>) => void;
+}
+
+// Linha compacta: nome + valor recuperado em cima; "Peso [ ] Preço/kg [ ]"
+// embaixo, rótulos ao lado dos campos (Label + id explícito, sem Field).
+function SubproductRow({ label, form, recoveredBRL, onPatch }: SubproductRowProps): ReactElement {
+  const baseId = useId();
+  const weightId = `${baseId}-weight`;
+  const priceId = `${baseId}-price`;
   return (
-    <Flex justify="between" gap={100}>
-      <Stack gap={25}>
-        <Text role="caption" tone="secondary">
-          {label}
-        </Text>
-        {detail !== undefined && (
-          <Text role="caption" tone="tertiary">
-            {detail}
-          </Text>
-        )}
+    <Surface
+      role="group"
+      aria-label={label}
+      elevation="flat"
+      style={{ padding: cssVar('space-inset-sm') }}
+    >
+      <Stack gap={50}>
+        <Flex justify="between" align="baseline" gap={100}>
+          <Text role="label">{label}</Text>
+          <Text role="data">{formatBRL(recoveredBRL)}</Text>
+        </Flex>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'auto minmax(0, 2fr) auto minmax(0, 3fr)',
+            alignItems: 'center',
+            gap: cssVar('space-gap-100'),
+          }}
+        >
+          <Label htmlFor={weightId} tone="secondary">
+            Peso
+          </Label>
+          <NumberInput
+            id={weightId}
+            size="sm"
+            endAdornment="kg"
+            value={form.weightKg}
+            onValueChange={(change) => {
+              onPatch({ weightKg: change.value });
+            }}
+          />
+          <Label htmlFor={priceId} tone="secondary">
+            Preço/kg
+          </Label>
+          <CurrencyInput
+            id={priceId}
+            size="sm"
+            valueInMinorUnits={toMinorUnits(form.pricePerKg)}
+            onValueChange={(change) => {
+              onPatch({ pricePerKg: fromMinorUnits(change.valueInMinorUnits) });
+            }}
+          />
+        </div>
       </Stack>
-      <Text role="data">{value}</Text>
-    </Flex>
+    </Surface>
   );
 }
 
 export function TransformationScreen({ calc, onBack }: TransformationScreenProps): ReactElement {
   const { transformation } = calc;
   const { patchSubproduct, setExportCarcassPrice } = calc.actions;
+  const help = useHelp();
   const recoveredByKey = Object.fromEntries(
     transformation.items.map((item) => [item.key, item.recoveredBRL]),
   );
+  const indicatorText =
+    transformation.indicatorPct === null ? '—' : formatPct(transformation.indicatorPct / 100);
 
   return (
-    <Stack gap={300}>
-      <PageHeader
-        title="Transformação"
-        eyebrow="Subprodutos"
-        description="Impacto econômico dos subprodutos que vêm no suíno mineiro mas não na carcaça de exportação: quanto se perde por vendê-los abaixo do preço da carcaça."
-        actions={
-          <Button variant="ghost" size="sm" onClick={onBack}>
-            Voltar
-          </Button>
-        }
-      />
+    <Stack gap={200}>
+      <ScreenHeader title="Transformação" onBack={onBack} />
 
-      <Section
-        title="Subprodutos"
-        description="Peso e preço de venda de cada item. O valor recalcula na hora."
+      <Surface
+        as="section"
+        aria-label="Indicador econômico"
+        elevation="card"
+        style={{ padding: cssVar('space-inset-md') }}
       >
-        <Stack gap={200}>
-          {SUBPRODUCT_KEYS.map((key) => {
-            const item = calc.state.transformation.subproducts[key];
-            return (
-              <Surface
-                key={key}
-                role="group"
-                aria-label={SUBPRODUCT_LABELS[key]}
-                elevation="flat"
-                style={{ padding: cssVar('space-inset-md') }}
-              >
-                <Stack gap={100}>
-                  <Flex justify="between" gap={100}>
-                    <Text role="label">{SUBPRODUCT_LABELS[key]}</Text>
-                    <Text role="data">{formatBRL(recoveredByKey[key] ?? 0)}</Text>
-                  </Flex>
-                  <Field label="Peso (kg)">
-                    <NumberInput
-                      size="lg"
-                      endAdornment="kg"
-                      value={item.weightKg}
-                      onValueChange={(change) => {
-                        patchSubproduct(key, { weightKg: change.value });
-                      }}
-                    />
-                  </Field>
-                  <Field label="Preço de venda (R$/kg)">
-                    <CurrencyInput
-                      size="lg"
-                      valueInMinorUnits={toMinorUnits(item.pricePerKg)}
-                      onValueChange={(change) => {
-                        patchSubproduct(key, {
-                          pricePerKg: fromMinorUnits(change.valueInMinorUnits),
-                        });
-                      }}
-                    />
-                  </Field>
-                </Stack>
-              </Surface>
-            );
-          })}
+        <Stack gap={100}>
+          <Flex justify="between" align="center" gap={100}>
+            <Text role="label" tone="secondary">
+              Indicador de transformação
+            </Text>
+            <HelpButton topic="indicador de transformação" help={help} />
+          </Flex>
+          <HelpNote help={help}>{HELP_INDICATOR}</HelpNote>
+          <Text
+            as="p"
+            role="data"
+            style={{
+              fontSize: cssVar('emphasis-level1-size'),
+              fontWeight: cssVar('emphasis-level1-weight'),
+            }}
+          >
+            {indicatorText}
+          </Text>
+          <Text role="caption" tone="tertiary">
+            Ajuste comercial da Estimativa
+          </Text>
+          <Divider />
+          <Stack gap={50} role="group" aria-label="Composição do indicador">
+            <LedgerRow label="Perda econômica" value={formatBRL(transformation.economicLossBRL)} />
+            <LedgerRow
+              label="Valor recuperado"
+              value={formatBRL(transformation.totalRecoveredBRL)}
+            />
+            <LedgerRow
+              label="Valor teórico"
+              value={formatBRL(transformation.theoreticalValueBRL)}
+            />
+            <LedgerRow
+              label="Carcaça de exportação"
+              value={formatBRL(transformation.exportCarcassValueBRL)}
+            />
+            <LedgerRow
+              label="Peso dos subprodutos"
+              value={formatKg(transformation.totalWeightKg)}
+            />
+            <LedgerRow
+              label="Preço da carcaça"
+              value={formatPerKg(calc.state.transformation.exportCarcassPricePerKg ?? 0)}
+            />
+          </Stack>
+        </Stack>
+      </Surface>
+
+      <Section title="Subprodutos">
+        <Stack gap={100}>
+          {SUBPRODUCT_KEYS.map((key) => (
+            <SubproductRow
+              key={key}
+              label={SUBPRODUCT_LABELS[key]}
+              form={calc.state.transformation.subproducts[key]}
+              recoveredBRL={recoveredByKey[key] ?? 0}
+              onPatch={(patch) => {
+                patchSubproduct(key, patch);
+              }}
+            />
+          ))}
         </Stack>
       </Section>
 
-      <Section
-        title="Carcaça de exportação"
-        description="Preço de referência usado para valorar a carcaça principal."
-      >
+      <Section title="Carcaça de exportação">
         <Field label="Preço da carcaça de exportação (R$/kg)">
           <CurrencyInput
-            size="lg"
+            size="md"
             valueInMinorUnits={toMinorUnits(calc.state.transformation.exportCarcassPricePerKg)}
             onValueChange={(change) => {
               setExportCarcassPrice(fromMinorUnits(change.valueInMinorUnits));
@@ -155,46 +212,29 @@ export function TransformationScreen({ calc, onBack }: TransformationScreenProps
         </Field>
       </Section>
 
-      <Section title="Resumo">
-        <Surface elevation="flat" style={{ padding: cssVar('space-inset-md') }}>
-          <Stack gap={100}>
-            <SummaryRow
-              label="Peso total dos subprodutos"
-              value={formatKg(transformation.totalWeightKg)}
-            />
-            <SummaryRow
-              label="Valor recuperado dos subprodutos"
-              value={formatBRL(transformation.totalRecoveredBRL)}
-            />
-            <SummaryRow
-              label="Preço da carcaça de exportação"
-              value={formatPerKg(calc.state.transformation.exportCarcassPricePerKg ?? 0)}
-            />
-            <SummaryRow
-              label="Valor teórico pelo preço da carcaça"
-              value={formatBRL(transformation.theoreticalValueBRL)}
-            />
-            <SummaryRow
-              label="Valor da carcaça de exportação"
-              value={formatBRL(transformation.exportCarcassValueBRL)}
-            />
-            <SummaryRow
-              label="Perda econômica da transformação"
-              value={formatBRL(transformation.economicLossBRL)}
-            />
-            <Divider />
-            <SummaryRow
-              label="Indicador econômico de transformação"
-              detail="Aplicado como ajuste comercial na Estimativa"
-              value={
-                transformation.indicatorPct === null
-                  ? '—'
-                  : formatPct(transformation.indicatorPct / 100)
-              }
-            />
-          </Stack>
-        </Surface>
-      </Section>
+      <StickyRegion position="bottom">
+        <Flex
+          justify="between"
+          align="center"
+          gap={100}
+          style={{ padding: cssVar('space-inset-sm') }}
+          role="group"
+          aria-label="Indicador atual"
+        >
+          <Text role="label" tone="secondary">
+            Indicador de transformação
+          </Text>
+          <Text
+            role="data"
+            style={{
+              fontSize: cssVar('emphasis-level3-size'),
+              fontWeight: cssVar('emphasis-level3-weight'),
+            }}
+          >
+            {indicatorText}
+          </Text>
+        </Flex>
+      </StickyRegion>
     </Stack>
   );
 }
