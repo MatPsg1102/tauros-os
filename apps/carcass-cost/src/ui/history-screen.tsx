@@ -2,22 +2,14 @@
 // "Abrir este lote" restaura o snapshot completo (modo, pesos e custos).
 // Exclusão é irreversível: sempre passa pelo ConfirmDialog (destrutivo).
 
-import {
-  Badge,
-  Button,
-  Card,
-  ConfirmDialog,
-  Flex,
-  PageHeader,
-  Stack,
-  Text,
-} from '@tauros/ui-primitives';
+import { Badge, Button, ConfirmDialog, Flex, Stack, Surface, Text } from '@tauros/ui-primitives';
 import { cssVar } from '@tauros/tokens';
 import { useState, type ReactElement } from 'react';
 
 import type { HistoryEntry } from '../state/model.js';
 import type { CalculatorController } from '../state/use-calculator.js';
 import { formatBRL, formatDateTime, formatKg, formatPerKg } from './format.js';
+import { ScreenHeader } from './screen-header.js';
 
 export interface HistoryScreenProps {
   readonly calc: CalculatorController;
@@ -31,31 +23,29 @@ export function HistoryScreen({ calc, onBack, onOpenEntry }: HistoryScreenProps)
   const [pendingDelete, setPendingDelete] = useState<HistoryEntry | null>(null);
 
   return (
-    <Stack gap={300}>
-      <PageHeader
-        title="Histórico"
-        eyebrow="Lotes salvos"
-        actions={
-          <Button variant="ghost" size="sm" onClick={onBack}>
-            Voltar
-          </Button>
-        }
-      />
+    <Stack gap={200}>
+      <ScreenHeader title="Histórico" onBack={onBack} />
 
       {history.length === 0 ? (
-        <Card>
-          <Stack gap={100}>
+        <Surface elevation="card" style={{ padding: cssVar('space-inset-md') }}>
+          <Stack gap={50}>
             <Text role="label">Nenhum lote salvo ainda.</Text>
             <Text role="caption" tone="secondary">
               Use “Salvar lote no histórico” na calculadora para registrar um lote.
             </Text>
           </Stack>
-        </Card>
+        </Surface>
       ) : (
         history.map((entry) => (
-          <Card as="article" key={entry.id} aria-label={`Lote de ${formatDateTime(entry.savedAt)}`}>
-            <Stack gap={100}>
-              <Flex justify="between" gap={100}>
+          <Surface
+            as="article"
+            key={entry.id}
+            aria-label={`Lote de ${formatDateTime(entry.savedAt)}`}
+            elevation="card"
+            style={{ padding: cssVar('space-inset-md') }}
+          >
+            <Stack gap={50}>
+              <Flex justify="between" align="center" gap={100}>
                 <Text role="label">{formatDateTime(entry.savedAt)}</Text>
                 {entry.mode === 'real' ? (
                   <Badge status="info">LOTE REAL</Badge>
@@ -100,7 +90,7 @@ export function HistoryScreen({ calc, onBack, onOpenEntry }: HistoryScreenProps)
                   Abrir este lote
                 </Button>
                 <Button
-                  variant="ghost"
+                  variant="secondary"
                   size="sm"
                   onClick={() => {
                     setPendingDelete(entry);
@@ -110,7 +100,7 @@ export function HistoryScreen({ calc, onBack, onOpenEntry }: HistoryScreenProps)
                 </Button>
               </Flex>
             </Stack>
-          </Card>
+          </Surface>
         ))
       )}
 

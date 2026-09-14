@@ -26,6 +26,9 @@ pnpm --filter @tauros/carcass-cost build    # SPA estática em dist/ (PWA)
   `tauros.carcass-cost.history.v1`).
 - **`src/ui/`** — telas compostas exclusivamente com `@tauros/ui-primitives`
   (barrel público) + tokens via `cssVar`. Sem stylesheet paralelo.
+  Composições locais reutilizadas pelas telas: `help.tsx` ("?" com nota
+  inline), `ledger.tsx` (linha rótulo/valor), `grid-field.tsx` (campo alinhado em
+  grid de 2 colunas) e `screen-header.tsx` (título + Voltar na mesma linha).
 - **PWA**: `public/manifest.webmanifest` + `public/sw.js` (precache do casco;
   network-first para navegação, cache-first para assets com hash). O service
   worker só registra em produção.
