@@ -1618,3 +1618,8 @@ Restrições do DS encontradas (registradas, NÃO contornadas — DS congelado):
 align="center"` e nomeia a região por `aria-label`.
 6. Em `Grid` de 2 colunas, rótulo de 2 linhas desalinha o campo vizinho →
    `GridField` (controle na base da célula, `margin-top: auto`).
+
+Ajuste pós-rodada (fix/carcass-subproduct-price-label): rótulo do preço nas
+7 linhas de subproduto "Preço/kg" → "R$/Kg" (microcopy; libera largura para
+o campo mostrar "R$ 12,99" inteiro). Nenhuma outra alteração; domínio,
+estado e cálculo intocados.

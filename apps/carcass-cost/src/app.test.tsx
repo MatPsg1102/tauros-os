@@ -327,7 +327,7 @@ describe('Transformação (indicador econômico de transformação)', () => {
     expect((await screen.findAllByText(/6,92\/kg/)).length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole('button', { name: 'Transformação' }));
-    const papada = within(screen.getByRole('group', { name: 'Papada' })).getByLabelText('Preço/kg');
+    const papada = within(screen.getByRole('group', { name: 'Papada' })).getByLabelText('R$/Kg');
     await user.clear(papada);
     await user.type(papada, '15,00');
     // recuperado 54,975 → perda 6,625 → 6,625/716,59 = 0,92% (DIMINUIU de 1,63%).
@@ -346,7 +346,7 @@ describe('Transformação (indicador econômico de transformação)', () => {
     const user = userEvent.setup();
     renderApp();
     await user.click(screen.getByRole('button', { name: 'Transformação' }));
-    const papada = within(screen.getByRole('group', { name: 'Papada' })).getByLabelText('Preço/kg');
+    const papada = within(screen.getByRole('group', { name: 'Papada' })).getByLabelText('R$/Kg');
     await user.clear(papada);
     await user.type(papada, '10,00');
     // recuperado 42,475 → perda 19,125 → 19,125/716,59 = 2,67% (AUMENTOU de 1,63%).
@@ -368,13 +368,13 @@ describe('Transformação (indicador econômico de transformação)', () => {
     const user = userEvent.setup();
     renderApp();
     await user.click(screen.getByRole('button', { name: 'Transformação' }));
-    const papada = within(screen.getByRole('group', { name: 'Papada' })).getByLabelText('Preço/kg');
+    const papada = within(screen.getByRole('group', { name: 'Papada' })).getByLabelText('R$/Kg');
     await user.clear(papada);
     await user.type(papada, '15,00');
     await user.click(screen.getByRole('button', { name: 'Voltar' }));
     await user.click(screen.getByRole('button', { name: 'Transformação' }));
     const papadaAgain = within(screen.getByRole('group', { name: 'Papada' })).getByLabelText(
-      'Preço/kg',
+      'R$/Kg',
     );
     expect((papadaAgain as HTMLInputElement).value).toContain('15,00');
   });
