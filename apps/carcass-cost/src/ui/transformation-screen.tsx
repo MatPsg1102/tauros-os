@@ -61,7 +61,7 @@ interface SubproductRowProps {
   readonly onPatch: (patch: Partial<SubproductForm>) => void;
 }
 
-// Linha compacta: nome + valor recuperado em cima; "Peso [ ] Preço/kg [ ]"
+// Linha compacta: nome + valor recuperado em cima; "Peso [ ] R$/Kg [ ]"
 // embaixo, rótulos ao lado dos campos (Label + id explícito, sem Field).
 function SubproductRow({ label, form, recoveredBRL, onPatch }: SubproductRowProps): ReactElement {
   const baseId = useId();
@@ -100,7 +100,7 @@ function SubproductRow({ label, form, recoveredBRL, onPatch }: SubproductRowProp
             }}
           />
           <Label htmlFor={priceId} tone="secondary">
-            Preço/kg
+            R$/Kg
           </Label>
           <CurrencyInput
             id={priceId}
