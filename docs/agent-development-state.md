@@ -36,11 +36,11 @@ liberado operacionalmente só após o merge desta correção. Produto: V3.4.1 en
 
 ## Last Approved Baseline
 
-- `main` = `4873a77` — PR #60 `docs(agent-slice): pré-requisitos mínimos da primeira vertical slice manual do Agent Bridge`, squash-merge em 2026-09-15T13:09Z. CI da `main` em `4873a77`: run `34973264904`, em andamento no momento da coleta; o head do PR #60 (`f4c40ea`) teve `verify` e `architecture` verdes. CI da `main` em `0e95473` (PR #59) concluiu verde nos dois jobs.
+- `main` = `e3c1a87` = `origin/main` (confirmado por `git log -1` em 2026-09-15T16:41Z, início de L-0004) — PR #64 `feat(tooling): Agent Bridge PR 2 — subcomando run (Claude headless → RESULT → decide → DECISION)`, squash-merge em 2026-09-15T16:24Z; **L-0003 concluído**. Agent Bridge `decide` (PR #63, `aa3b693`) e `run` (PR #64) estão na `main`. CI do head do PR #64 (`fcb28ec`): run `34992866550` com `verify` e `architecture` verdes.
 - Design da bridge: PR #58 mergeado (`9c79160`, 2026-09-15T11:54Z); [agent-bridge-design.md](agent-bridge-design.md) está na `main`.
 - Etapa 0 (PR #56, `caaf0e9`) concluída e versionada; protocolo de execução em vigor.
 - Último PR de produto: #55 (`b096268`, Custo da Carcaça V3.4.1). Produção https://carcass-cost.vercel.app serve o bundle desse commit (`index-DaEjw6mv.js`).
-- PR aberto: o PR documental de correção do GATE 1 (branch `docs/agent-gate1-domain-path`, dois arquivos: `docs/agent-gate-paths.md` e este checkpoint), aguardando `verify` + `architecture` e GATE 6.
+- Correção do GATE 1 (PR #61, `ed9401e`) e L-0001 / `CLAUDE.md` (PR #62, `2d937ac`) mergeados; nenhum PR aberto no início de L-0004.
 
 ## Current Branch
 
@@ -52,17 +52,17 @@ pelo git desde o PR #60) ainda não existe; é criada localmente ao iniciar um l
 ## Current Loop
 
 Seção escrita pela bridge — na fase manual, pelo executor ao fechar cada iteração — conforme o design
-(§3.5). Nenhum loop ativo; L-0003 fechado por DECISION DONE (GPT via `decide`, confirmada pelo humano).
+(§3.5). Loop ativo: L-0004 (teste de aceitação do Agent Bridge via `run`); L-0003 fechado por DECISION DONE.
 
 ```text
-LOOP_ID: none
+LOOP_ID: L-0004
 LAST_LOOP_ID: L-0003
-ITERATION: 0
-HANDOFF_REF: none
-STARTED: none
+ITERATION: 1
+HANDOFF_REF: .agent-loop/inbox/L-0004.handoff.md
+STARTED: 2026-09-15T16:41Z
 HUMAN_INTERVENTIONS: 0
 FAILED_ITERATIONS: 0
-LOOPS_THIS_SESSION: 3
+LOOPS_THIS_SESSION: 4
 ```
 
 ## Approved Decisions
@@ -120,17 +120,17 @@ GATE 1 (`packages/domain/**`) foi decidida e corrigida nesta iteração.
 
 ## Next Action
 
-Aguardar o GATE 6 do PR #64. Após o merge, o próximo objective é L-0004: prova real end-to-end do
-Agent Bridge mergeado (um comando humano → `run` → Claude headless real → RESULT → GPT → DECISION →
-CI_VERIFIED → GATE 6), meta HUMAN_INTERVENTIONS_PER_OBJECTIVE = 0. **Não iniciar sem HANDOFF aprovado.**
+L-0004 em execução (iteração 1, prova real end-to-end do Agent Bridge mergeado, meta
+HUMAN_INTERVENTIONS_PER_OBJECTIVE = 0): após o RESULT, o `run` chama o `decide` e grava a DECISION;
+em DONE, aguardar o GATE 6 do PR de L-0004. **Nenhum outro objective sem HANDOFF aprovado.**
 
 ## Human Gate
 
-**HUMAN_APPROVAL_REQUIRED** — (a) GATE 6 do PR #64 (L-0003) e HANDOFF de L-0004; (b) DECISION do GPT após
-cada RESULT de L-0001, entregue por transporte manual; (c) qualquer implementação da bridge ou
+**HUMAN_APPROVAL_REQUIRED** — (a) GATE 6 do PR de L-0004 após DECISION DONE; (b) L-0004 fora do
+envelope (RESULT HUMAN_GATE ou BLOCKED, ou `max_iterations` esgotado); (c) qualquer implementação da bridge ou
 automação do transporte; (d) FASE 1 (Auth Supabase) só começa com aprovação explícita
 (GATE 3 / GATE 4 / GATE 8).
 
 ## Last Updated
 
-2026-09-15T16:17Z — Claude Code (fechamento de L-0003 após DECISION DONE; bookkeeping).
+2026-09-15T16:41Z — Claude Code (L-0004 iteração 1: Last Approved Baseline atualizado para `e3c1a87`; bookkeeping).
