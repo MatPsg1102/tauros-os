@@ -13,6 +13,14 @@ import {
   type RealLotResult,
 } from '../domain/carcass-cost.js';
 import {
+  buildDeboningInput,
+  calculateDeboning,
+  validateDeboning,
+  type DeboningForm,
+  type DeboningProductForm,
+  type DeboningResult,
+} from '../domain/deboning.js';
+import {
   REFERENCE_COOLING_LOSS_PCT,
   REFERENCE_LIVE_WEIGHT_KG,
   REFERENCE_SLAUGHTER_LOSS_PCT,
@@ -36,12 +44,26 @@ import {
   lotFromSettings,
   type CalculatorMode,
   type CalculatorState,
+  type DeboningHistoryEntry,
   type DefaultSettings,
   type HistoryEntry,
   type SubproductForm,
   type TransformationForm,
 } from './model.js';
-import { HISTORY_LIMIT, loadHistory, loadState, saveHistory, saveState } from './storage.js';
+import {
+  HISTORY_LIMIT,
+  loadDeboningHistory,
+  loadHistory,
+  loadState,
+  saveDeboningHistory,
+  saveHistory,
+  saveState,
+} from './storage.js';
+
+export type DeboningCarcassPatch = Partial<
+  Pick<DeboningForm, 'carcassWeightKg' | 'carcassValueBRL'>
+>;
+export type DeboningProductPatch = Partial<Omit<DeboningProductForm, 'id'>>;
 
 export interface CalculatorActions {
   readonly setMode: (mode: CalculatorMode) => void;
@@ -56,6 +78,15 @@ export interface CalculatorActions {
   readonly saveToHistory: () => void;
   readonly loadHistoryEntry: (id: string) => void;
   readonly removeHistoryEntry: (id: string) => void;
+  // Desossa — análise comercial independente (nunca toca quick/real/transformation).
+  readonly patchDeboning: (patch: DeboningCarcassPatch) => void;
+  readonly patchDeboningProduct: (id: string, patch: DeboningProductPatch) => void;
+  /** Acrescenta uma linha vazia ao fim da lista (nome, peso e preço em branco). */
+  readonly addDeboningProduct: () => void;
+  readonly removeDeboningProduct: (id: string) => void;
+  readonly saveDeboningToHistory: () => void;
+  readonly loadDeboningEntry: (id: string) => void;
+  readonly removeDeboningEntry: (id: string) => void;
 }
 
 export interface CalculatorController {
@@ -69,6 +100,10 @@ export interface CalculatorController {
    * comercial; null quando a Transformação é inválida (Estimativa fica pendente). */
   readonly commercialAdjustmentPct: number | null;
   readonly history: readonly HistoryEntry[];
+  /** Desossa (indicador comercial): null enquanto houver problema de validação. */
+  readonly deboning: DeboningResult | null;
+  readonly deboningIssues: readonly ValidationIssue[];
+  readonly deboningHistory: readonly DeboningHistoryEntry[];
   readonly actions: CalculatorActions;
 }
 
@@ -99,6 +134,8 @@ function buildTransformationInput(
 export function useCalculator(): CalculatorController {
   const [state, setState] = useState<CalculatorState>(loadState);
   const [history, setHistory] = useState<readonly HistoryEntry[]>(loadHistory);
+  const [deboningHistory, setDeboningHistory] =
+    useState<readonly DeboningHistoryEntry[]>(loadDeboningHistory);
 
   useEffect(() => {
     saveState(state);
@@ -107,6 +144,10 @@ export function useCalculator(): CalculatorController {
   useEffect(() => {
     saveHistory(history);
   }, [history]);
+
+  useEffect(() => {
+    saveDeboningHistory(deboningHistory);
+  }, [deboningHistory]);
 
   const transformation = useMemo(
     () =>
@@ -139,6 +180,14 @@ export function useCalculator(): CalculatorController {
     return input === null ? null : calculateRealLot(input);
   }, [state.real, state.costs]);
 
+  // Desossa depende SÓ de state.deboning — nem lê nem alimenta a Transformação
+  // ou a Estimativa (regra: análise comercial independente).
+  const deboningIssues = useMemo(() => validateDeboning(state.deboning), [state.deboning]);
+  const deboning = useMemo(() => {
+    const input = buildDeboningInput(state.deboning);
+    return input === null ? null : calculateDeboning(input);
+  }, [state.deboning]);
+
   const saveToHistory = (): void => {
     let summary: HistoryEntry['summary'];
     if (state.mode === 'real') {
@@ -168,6 +217,27 @@ export function useCalculator(): CalculatorController {
       summary,
     };
     setHistory((entries) => [entry, ...entries].slice(0, HISTORY_LIMIT));
+  };
+
+  const saveDeboningToHistory = (): void => {
+    const entry: DeboningHistoryEntry = {
+      id: crypto.randomUUID(),
+      savedAt: new Date().toISOString(),
+      deboning: state.deboning,
+      summary: {
+        carcassWeightKg: state.deboning.carcassWeightKg,
+        carcassValueBRL: state.deboning.carcassValueBRL,
+        commercialValueBRL: deboning === null ? null : deboning.commercialValueBRL,
+        commercialGainBRL: deboning === null ? null : deboning.commercialGainBRL,
+        marginPct: deboning === null ? null : deboning.marginPct,
+        productCount: state.deboning.products.length,
+      },
+    };
+    setDeboningHistory((entries) => [entry, ...entries].slice(0, HISTORY_LIMIT));
+  };
+
+  const patchDeboningForm = (update: (current: DeboningForm) => DeboningForm): void => {
+    setState((current) => ({ ...current, deboning: update(current.deboning) }));
   };
 
   const actions: CalculatorActions = {
@@ -209,6 +279,7 @@ export function useCalculator(): CalculatorController {
         ...lotFromSettings(current.settings),
         settings: current.settings,
         transformation: current.transformation,
+        deboning: current.deboning,
       }));
     },
     saveToHistory,
@@ -226,6 +297,41 @@ export function useCalculator(): CalculatorController {
     removeHistoryEntry: (id) => {
       setHistory((entries) => entries.filter((entry) => entry.id !== id));
     },
+    patchDeboning: (patch) => {
+      patchDeboningForm((current) => ({ ...current, ...patch }));
+    },
+    patchDeboningProduct: (id, patch) => {
+      patchDeboningForm((current) => ({
+        ...current,
+        products: current.products.map((product) =>
+          product.id === id ? { ...product, ...patch } : product,
+        ),
+      }));
+    },
+    addDeboningProduct: () => {
+      const product: DeboningProductForm = {
+        id: crypto.randomUUID(),
+        name: '',
+        weightKg: null,
+        pricePerKg: null,
+      };
+      patchDeboningForm((current) => ({ ...current, products: [...current.products, product] }));
+    },
+    removeDeboningProduct: (id) => {
+      patchDeboningForm((current) => ({
+        ...current,
+        products: current.products.filter((product) => product.id !== id),
+      }));
+    },
+    saveDeboningToHistory,
+    loadDeboningEntry: (id) => {
+      const entry = deboningHistory.find((candidate) => candidate.id === id);
+      if (entry === undefined) return;
+      setState((current) => ({ ...current, deboning: entry.deboning }));
+    },
+    removeDeboningEntry: (id) => {
+      setDeboningHistory((entries) => entries.filter((entry) => entry.id !== id));
+    },
   };
 
   return {
@@ -237,6 +343,9 @@ export function useCalculator(): CalculatorController {
     transformation,
     commercialAdjustmentPct,
     history,
+    deboning,
+    deboningIssues,
+    deboningHistory,
     actions,
   };
 }

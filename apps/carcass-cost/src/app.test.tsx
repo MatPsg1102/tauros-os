@@ -537,3 +537,261 @@ describe('Formação do custo (Estimativa) — só valores do domínio', () => {
     ).toBe('secondary');
   });
 });
+
+describe('Desossa (indicador comercial da desossa) — cenário da planilha', () => {
+  const plain = (text: string): string => text.replace(/\u00a0/g, ' ');
+  const openDeboning = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Desossa' }));
+    expect(screen.getByRole('heading', { name: 'Desossa' })).toBeDefined();
+  };
+  const product = (name: string) => within(screen.getByRole('group', { name }));
+  const formation = () =>
+    within(screen.getByRole('group', { name: 'Formação do valor comercial' }));
+
+  it('a navegação tem as quatro telas e a Desossa é uma área própria (fora da Transformação)', () => {
+    renderApp();
+    const nav = within(screen.getByRole('navigation', { name: 'Telas' }));
+    expect(nav.getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'Transformação',
+      'Desossa',
+      'Histórico',
+      'Configurações',
+    ]);
+  });
+
+  it('abre com a estatística atual: R$ 16.829,56, + R$ 3.800,00, 22,58%, 1.128,81 kg, 100,06%', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await openDeboning(user);
+
+    // Margem em destaque (card) e na barra fixa; divisão que a gera.
+    expect(screen.getAllByText('22,58%').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(plain('R$ 3.800,00 ÷ R$ 16.829,56'))).toBeDefined();
+    // Formação do valor: carcaça → + acréscimo → valor comercial.
+    const f = formation();
+    expect(f.getByText('Carcaça')).toBeDefined();
+    expect(f.getByText(plain('R$ 13.029,56'))).toBeDefined();
+    expect(f.getByText('Acréscimo comercial')).toBeDefined();
+    expect(f.getByText(plain('+ R$ 3.800,00'))).toBeDefined();
+    expect(f.getByText('Valor comercial da desossa')).toBeDefined();
+    expect(f.getByText(plain('R$ 16.829,56'))).toBeDefined();
+    expect(f.getByText('12 produtos')).toBeDefined();
+    // Pesos: carcaça, produtos e rendimento de peso (100,06% real, não corrigido).
+    const pesos = within(screen.getByRole('group', { name: 'Pesos da desossa' }));
+    expect(pesos.getByText('1.128,10 kg')).toBeDefined();
+    expect(pesos.getByText('1.128,81 kg')).toBeDefined();
+    expect(pesos.getByText('100,06%')).toBeDefined();
+    // Carcaça editável com os valores da planilha (o NumberInput não agrupa milhar).
+    expect((screen.getByLabelText('Peso da carcaça') as HTMLInputElement).value).toBe('1128,1');
+    expect((screen.getByLabelText('Valor inicial') as HTMLInputElement).value).toContain(
+      '13.029,56',
+    );
+    // 12 produtos, cada um com total e percentual; nada da Transformação aqui.
+    expect(product('Pernil').getByText(plain('R$ 4.437,90'))).toBeDefined();
+    expect(product('Pernil').getByText('26,23%')).toBeDefined();
+    expect(product('Osso').getByText(plain('R$ 50,40'))).toBeDefined();
+    expect(product('Toucinho torresmo').getByText(plain('R$ 1.434,57'))).toBeDefined();
+    expect(screen.queryByRole('group', { name: 'Papada' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Cabeça' })).toBeNull();
+  });
+
+  it('alterar o R$/kg do Pernil recalcula o total do produto e a margem (percentual não muda)', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await openDeboning(user);
+    const price = product('Pernil').getByLabelText('R$/Kg');
+    await user.clear(price);
+    await user.type(price, '16,00');
+    expect(await product('Pernil').findByText(plain('R$ 4.733,76'))).toBeDefined();
+    expect(product('Pernil').getByText('26,23%')).toBeDefined();
+    expect(screen.getAllByText('23,92%').length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText('22,58%')).toBeNull();
+  });
+
+  it('alterar o peso do Pernil recalcula percentual, total, peso dos produtos e margem', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await openDeboning(user);
+    const weight = product('Pernil').getByLabelText('Peso');
+    await user.clear(weight);
+    await user.type(weight, '300');
+    expect(await product('Pernil').findByText(plain('R$ 4.500,00'))).toBeDefined();
+    expect(product('Pernil').getByText('26,59%')).toBeDefined();
+    expect(screen.getAllByText('22,86%').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('1.132,95 kg')).toBeDefined();
+  });
+
+  it('adicionar produto entra em modo de edição, ganha nome, peso e preço e entra no total', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await openDeboning(user);
+    await user.click(screen.getByRole('button', { name: 'Adicionar produto' }));
+    expect(screen.getByRole('button', { name: 'Concluir' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    const row = product('Produto 13');
+    await user.type(row.getByLabelText('Nome do produto 13'), 'Filezinho');
+    await user.type(row.getByLabelText('Peso'), '10');
+    await user.type(row.getByLabelText('R$/Kg'), '20,00');
+    expect(screen.getByRole('group', { name: 'Filezinho' })).toBeDefined();
+    expect(screen.getAllByText('23,49%').length).toBeGreaterThanOrEqual(2);
+    expect(formation().getByText('13 produtos')).toBeDefined();
+    await user.click(screen.getByRole('button', { name: 'Concluir' }));
+    expect(product('Filezinho').getByText(plain('R$ 200,00'))).toBeDefined();
+  });
+
+  it('remover produto (Osso) sai do total, do peso e da margem', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await openDeboning(user);
+    await user.click(screen.getByRole('button', { name: 'Editar' }));
+    await user.click(product('Osso').getByRole('button', { name: 'Remover' }));
+    expect(screen.queryByRole('group', { name: 'Osso' })).toBeNull();
+    expect(screen.getAllByText('22,35%').length).toBeGreaterThanOrEqual(2);
+    expect(formation().getByText('11 produtos')).toBeDefined();
+    expect(screen.getByText('1.056,81 kg')).toBeDefined();
+    expect(screen.getByText('93,68%')).toBeDefined();
+  });
+
+  it('carcaça sem peso: mensagem no campo e nenhum resultado inventado', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await openDeboning(user);
+    await user.clear(screen.getByLabelText('Peso da carcaça'));
+    expect(await screen.findByText('Informe este valor.')).toBeDefined();
+    expect(
+      screen.getByText('Informe o peso e o valor inicial da carcaça para ver o resultado.'),
+    ).toBeDefined();
+    expect(screen.queryByText('22,58%')).toBeNull();
+    expect(
+      (screen.getByRole('button', { name: 'Salvar análise no histórico' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it('salvar análise leva ao Histórico; abrir restaura; excluir exige confirmação', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await openDeboning(user);
+    const price = product('Pernil').getByLabelText('R$/Kg');
+    await user.clear(price);
+    await user.type(price, '16,00');
+    await screen.findAllByText('23,92%');
+
+    const save = screen.getByRole('button', { name: 'Salvar análise no histórico' });
+    expect(save.getAttribute('data-variant')).toBe('primary');
+    await user.click(save);
+    expect(
+      (screen.getByRole('button', { name: 'Análise salva no histórico' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      screen.getByText('Análise salva. Altere algum valor para salvar de novo.'),
+    ).toBeDefined();
+
+    // Volta à referência para provar que "Abrir" restaura o snapshot salvo.
+    await user.clear(price);
+    await user.type(price, '15,00');
+    await screen.findAllByText('22,58%');
+
+    await user.click(screen.getByRole('button', { name: 'Voltar' }));
+    await user.click(screen.getByRole('button', { name: 'Histórico' }));
+    expect(screen.getByRole('heading', { name: 'Desossas' })).toBeDefined();
+    const card = within(screen.getByRole('article', { name: /Desossa de/ }));
+    expect(card.getByText('DESOSSA')).toBeDefined();
+    expect(card.getByText('23,92%')).toBeDefined();
+    expect(card.getByText(/12 produtos/)).toBeDefined();
+    expect(card.getByRole('button', { name: 'Excluir análise' }).getAttribute('data-variant')).toBe(
+      'danger',
+    );
+
+    await user.click(card.getByRole('button', { name: 'Abrir esta desossa' }));
+    expect(screen.getByRole('heading', { name: 'Desossa' })).toBeDefined();
+    expect((await screen.findAllByText('23,92%')).length).toBeGreaterThanOrEqual(2);
+    expect((product('Pernil').getByLabelText('R$/Kg') as HTMLInputElement).value).toContain(
+      '16,00',
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Voltar' }));
+    await user.click(screen.getByRole('button', { name: 'Histórico' }));
+    await user.click(screen.getByRole('button', { name: 'Excluir análise' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Excluir desossa salva?')).toBeDefined();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+    expect(screen.getByRole('article', { name: /Desossa de/ })).toBeDefined();
+    await user.click(screen.getByRole('button', { name: 'Excluir análise' }));
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Excluir' }),
+    );
+    expect(screen.queryByRole('article', { name: /Desossa de/ })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Desossas' })).toBeNull();
+  });
+
+  it('NÃO alimenta a Transformação nem a Estimativa (6,92/kg e 1,63% intactos)', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.type(screen.getByLabelText('Peso vivo médio'), '115');
+    expect((await screen.findAllByText(/6,92\/kg/)).length).toBeGreaterThan(0);
+
+    await openDeboning(user);
+    const price = product('Pernil').getByLabelText('R$/Kg');
+    await user.clear(price);
+    await user.type(price, '30,00');
+    const carcass = screen.getByLabelText('Valor inicial');
+    await user.clear(carcass);
+    await user.type(carcass, '10.000,00');
+    expect(screen.queryByText('22,58%')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Voltar' }));
+    expect((await screen.findAllByText(/6,92\/kg/)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('1,63%').length).toBeGreaterThan(0);
+    expect(
+      within(screen.getByRole('group', { name: 'Formação do custo por kg' })).getByText(
+        'Indicador 1,63% dos subprodutos',
+      ),
+    ).toBeDefined();
+
+    await user.click(screen.getByRole('button', { name: 'Transformação' }));
+    expect(screen.getAllByText('1,63%').length).toBeGreaterThan(0);
+    expect(screen.getByText('8,00 kg')).toBeDefined();
+  });
+
+  it('a desossa persiste ao reabrir o app e sobrevive a "novo lote"', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await openDeboning(user);
+    const price = product('Pernil').getByLabelText('R$/Kg');
+    await user.clear(price);
+    await user.type(price, '16,00');
+    await screen.findAllByText('23,92%');
+
+    cleanup();
+    renderApp();
+    await user.click(screen.getByRole('button', { name: 'Configurações' }));
+    await user.click(screen.getByRole('button', { name: 'Iniciar novo lote com estes padrões' }));
+    await openDeboning(user);
+    expect((await screen.findAllByText('23,92%')).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('"?" acessível, hierarquia de botões do DS e sem violações de acessibilidade (axe)', async () => {
+    const user = userEvent.setup();
+    const { container } = renderApp();
+    await openDeboning(user);
+    const help = screen.getByRole('button', { name: 'Sobre: margem comercial' });
+    expect(help.getAttribute('aria-expanded')).toBe('false');
+    await user.click(help);
+    expect(screen.getByText(/Margem = acréscimo ÷ valor comercial/)).toBeDefined();
+    expect(
+      screen.getByRole('button', { name: 'Adicionar produto' }).getAttribute('data-variant'),
+    ).toBe('secondary');
+    expect(
+      screen
+        .getByRole('button', { name: 'Salvar análise no histórico' })
+        .getAttribute('data-variant'),
+    ).toBe('primary');
+    expect(screen.getByRole('button', { name: 'Voltar' }).getAttribute('data-variant')).toBe(
+      'secondary',
+    );
+    expect((await axe(container)).violations).toEqual([]);
+  });
+});

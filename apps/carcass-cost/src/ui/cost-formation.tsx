@@ -1,13 +1,15 @@
-// Formação do custo por kg — sequência visual "parcela → subtotal → total"
-// com os valores JÁ calculados pelo domínio (nenhuma conta aqui). A coluna de
-// sinal à esquerda (+ / =) diz a operação; uma nota curta diz a origem de
+// Formação de um valor — sequência visual "parcela → subtotal → total" com
+// os valores JÁ calculados pelo domínio (nenhuma conta aqui). A coluna de
+// sinal à esquerda (+ / − / =) diz a operação; uma nota curta diz a origem de
 // cada parcela; linhas "=" recebem um traço acima, como numa conta armada.
+// Usada na formação do custo por kg (Estimativa/Lote Real) e na formação do
+// valor comercial da Desossa.
 
 import { cssVar } from '@tauros/tokens';
 import { Divider, Flex, Stack, Text } from '@tauros/ui-primitives';
 import { Fragment, type CSSProperties, type ReactElement } from 'react';
 
-export type FormationKind = 'start' | 'add' | 'subtotal' | 'total';
+export type FormationKind = 'start' | 'add' | 'subtract' | 'subtotal' | 'total';
 
 export interface FormationStep {
   readonly kind: FormationKind;
@@ -22,7 +24,13 @@ export interface CostFormationProps {
   readonly steps: readonly FormationStep[];
 }
 
-const SIGNS: Record<FormationKind, string> = { start: '', add: '+', subtotal: '=', total: '=' };
+const SIGNS: Record<FormationKind, string> = {
+  start: '',
+  add: '+',
+  subtract: '−',
+  subtotal: '=',
+  total: '=',
+};
 const CAPTION: CSSProperties = { fontSize: cssVar('emphasis-level4-size') };
 const SIGN: CSSProperties = { width: cssVar('space-gap-300'), flexShrink: 0, textAlign: 'center' };
 const VALUE: CSSProperties = { flexShrink: 0 };
@@ -55,7 +63,7 @@ function FormationRow({ step }: { readonly step: FormationStep }): ReactElement 
       </Stack>
       <Text
         role="data"
-        tone={step.kind === 'add' ? 'secondary' : 'primary'}
+        tone={step.kind === 'add' || step.kind === 'subtract' ? 'secondary' : 'primary'}
         style={step.kind === 'total' ? TOTAL_VALUE : VALUE}
       >
         {step.value}

@@ -55,6 +55,7 @@ export interface CalculatorScreenProps {
   readonly onOpenSettings: () => void;
   readonly onOpenHistory: () => void;
   readonly onOpenTransformation: () => void;
+  readonly onOpenDeboning: () => void;
 }
 
 /** Números compartilhados do resultado dominante nos dois modos. */
@@ -90,6 +91,7 @@ export function CalculatorScreen({
   onOpenSettings,
   onOpenHistory,
   onOpenTransformation,
+  onOpenDeboning,
 }: CalculatorScreenProps): ReactElement {
   const {
     state,
@@ -198,9 +200,15 @@ export function CalculatorScreen({
   return (
     <Stack gap={200}>
       <PageHeader title="Custo da Carcaça" />
-      <Grid columns={3} gap={50} role="navigation" aria-label="Telas">
+      {/* Quatro telas em 2×2: quatro botões lado a lado não cabem em 390 px
+          ("Transformação"/"Configurações" quebrariam); duas colunas mantêm
+          o rótulo inteiro e o alvo de toque do DS. */}
+      <Grid columns={2} gap={50} role="navigation" aria-label="Telas">
         <Button variant="secondary" size="sm" fullWidth onClick={onOpenTransformation}>
           Transformação
+        </Button>
+        <Button variant="secondary" size="sm" fullWidth onClick={onOpenDeboning}>
+          Desossa
         </Button>
         <Button variant="secondary" size="sm" fullWidth onClick={onOpenHistory}>
           Histórico

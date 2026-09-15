@@ -3,6 +3,7 @@
 // escrita protegidas por try/catch (localStorage pode estar indisponível).
 // Todo valor lido é saneado campo a campo: storage corrompido nunca derruba o app.
 
+import type { DeboningForm, DeboningProductForm } from '../domain/deboning.js';
 import { SUBPRODUCT_KEYS, type SubproductKey } from '../domain/transformation.js';
 import type { CostsForm, QuickForm, RealForm } from '../domain/validation.js';
 import {
@@ -10,6 +11,7 @@ import {
   initialState,
   type CalculatorMode,
   type CalculatorState,
+  type DeboningHistoryEntry,
   type DefaultSettings,
   type HistoryEntry,
   type TransformationForm,
@@ -17,10 +19,14 @@ import {
 
 export const STATE_STORAGE_KEY = 'tauros.carcass-cost.state.v1';
 export const HISTORY_STORAGE_KEY = 'tauros.carcass-cost.history.v1';
+export const DEBONING_HISTORY_STORAGE_KEY = 'tauros.carcass-cost.deboning-history.v1';
 export const HISTORY_LIMIT = 50;
 // v4: aba Transformação (subprodutos + preço da carcaça de exportação) e o
 // ajuste comercial deixou de ser campo (vem do indicador). Envelope anterior
 // é rejeitado — sem migração implícita (o app volta aos padrões).
+// A Desossa entrou como sub-árvore ADITIVA do mesmo envelope: um v4 gravado
+// antes dela não muda de significado — `deboning` ausente cai nos padrões
+// pelo saneamento campo a campo, e o restante do estado é preservado.
 const STORAGE_VERSION = 4;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -73,6 +79,40 @@ function sanitizeTransformation(value: unknown, fallback: TransformationForm): T
       raw['exportCarcassPricePerKg'],
       fallback.exportCarcassPricePerKg,
     ),
+  };
+}
+
+// Produto sem id (string não vazia) é descartado; id repetido fica com a
+// primeira ocorrência (id é a chave de edição/remoção na tela).
+function sanitizeDeboningProducts(value: unknown): readonly DeboningProductForm[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const products: DeboningProductForm[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    const id = item['id'];
+    if (typeof id !== 'string' || id.length === 0 || seen.has(id)) continue;
+    seen.add(id);
+    products.push({
+      id,
+      name: typeof item['name'] === 'string' ? item['name'] : '',
+      weightKg: numberOrNull(item['weightKg'], null),
+      pricePerKg: numberOrNull(item['pricePerKg'], null),
+    });
+  }
+  return products;
+}
+
+// Lista de produtos: ausente → padrão da estatística; presente (mesmo vazia,
+// após o operador remover tudo) → respeitada. Nunca ressuscita produto removido.
+function sanitizeDeboning(value: unknown, fallback: DeboningForm): DeboningForm {
+  const raw = isRecord(value) ? value : {};
+  return {
+    carcassWeightKg: numberOrNull(raw['carcassWeightKg'], fallback.carcassWeightKg),
+    carcassValueBRL: numberOrNull(raw['carcassValueBRL'], fallback.carcassValueBRL),
+    products: Array.isArray(raw['products'])
+      ? sanitizeDeboningProducts(raw['products'])
+      : fallback.products,
   };
 }
 
@@ -146,6 +186,7 @@ export function loadState(): CalculatorState {
     costs: sanitizeCosts(data['costs'], fallback.costs),
     settings: sanitizeSettings(data['settings']),
     transformation: sanitizeTransformation(data['transformation'], fallback.transformation),
+    deboning: sanitizeDeboning(data['deboning'], fallback.deboning),
   };
 }
 
@@ -187,4 +228,46 @@ export function loadHistory(): readonly HistoryEntry[] {
 
 export function saveHistory(entries: readonly HistoryEntry[]): void {
   writeEnvelope(HISTORY_STORAGE_KEY, entries.slice(0, HISTORY_LIMIT));
+}
+
+// Uma análise salva sem lista de produtos não faz sentido reabrir: a
+// sub-árvore `deboning` é obrigatória (sem fallback para a estatística).
+function sanitizeDeboningHistoryEntry(value: unknown): DeboningHistoryEntry | null {
+  if (!isRecord(value)) return null;
+  const { id, savedAt } = value;
+  if (typeof id !== 'string' || typeof savedAt !== 'string') return null;
+  const deboning = value['deboning'];
+  if (!isRecord(deboning) || !Array.isArray(deboning['products'])) return null;
+  const summary = isRecord(value['summary']) ? value['summary'] : {};
+  const products = sanitizeDeboningProducts(deboning['products']);
+  return {
+    id,
+    savedAt,
+    deboning: {
+      carcassWeightKg: numberOrNull(deboning['carcassWeightKg'], null),
+      carcassValueBRL: numberOrNull(deboning['carcassValueBRL'], null),
+      products,
+    },
+    summary: {
+      carcassWeightKg: numberOrNull(summary['carcassWeightKg'], null),
+      carcassValueBRL: numberOrNull(summary['carcassValueBRL'], null),
+      commercialValueBRL: numberOrNull(summary['commercialValueBRL'], null),
+      commercialGainBRL: numberOrNull(summary['commercialGainBRL'], null),
+      marginPct: numberOrNull(summary['marginPct'], null),
+      productCount: products.length,
+    },
+  };
+}
+
+export function loadDeboningHistory(): readonly DeboningHistoryEntry[] {
+  const data = readEnvelope(DEBONING_HISTORY_STORAGE_KEY);
+  if (!Array.isArray(data)) return [];
+  return data
+    .map(sanitizeDeboningHistoryEntry)
+    .filter((entry): entry is DeboningHistoryEntry => entry !== null)
+    .slice(0, HISTORY_LIMIT);
+}
+
+export function saveDeboningHistory(entries: readonly DeboningHistoryEntry[]): void {
+  writeEnvelope(DEBONING_HISTORY_STORAGE_KEY, entries.slice(0, HISTORY_LIMIT));
 }

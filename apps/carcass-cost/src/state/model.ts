@@ -1,8 +1,10 @@
 // Modelo do estado persistido: formas em edição + premissas padrão +
-// transformação (subprodutos). As premissas padrão (tela Configurações)
-// alimentam lotes novos; o lote atual guarda os valores efetivamente em uso;
-// a transformação é uma premissa global (como as premissas padrão) — não
-// reinicia ao começar um lote novo.
+// transformação (subprodutos) + desossa (análise comercial). As premissas
+// padrão (tela Configurações) alimentam lotes novos; o lote atual guarda os
+// valores efetivamente em uso; a transformação e a desossa são análises
+// globais (como as premissas padrão) — não reiniciam ao começar um lote novo.
+// Transformação e Desossa são INDEPENDENTES: nada da desossa alimenta o
+// indicador de transformação nem o custo equivalente da carcaça.
 
 import type { CostsForm, QuickForm, RealForm } from '../domain/validation.js';
 import {
@@ -11,6 +13,11 @@ import {
   SUBPRODUCT_KEYS,
   type SubproductKey,
 } from '../domain/transformation.js';
+import {
+  DEFAULT_DEBONING_CARCASS,
+  DEFAULT_DEBONING_PRODUCTS,
+  type DeboningForm,
+} from '../domain/deboning.js';
 
 export type CalculatorMode = 'quick' | 'real';
 
@@ -54,6 +61,14 @@ export const DEFAULT_TRANSFORMATION: TransformationForm = {
   exportCarcassPricePerKg: DEFAULT_EXPORT_CARCASS_PRICE_PER_KG,
 };
 
+/** Desossa inicial = estatística comercial atual da operação (cenário da
+ * planilha): a tela abre com a referência preenchida e o operador ajusta. */
+export const DEFAULT_DEBONING: DeboningForm = {
+  carcassWeightKg: DEFAULT_DEBONING_CARCASS.weightKg,
+  carcassValueBRL: DEFAULT_DEBONING_CARCASS.valueBRL,
+  products: DEFAULT_DEBONING_PRODUCTS.map((product) => ({ ...product })),
+};
+
 export interface CalculatorState {
   readonly mode: CalculatorMode;
   readonly quick: QuickForm;
@@ -61,6 +76,7 @@ export interface CalculatorState {
   readonly costs: CostsForm;
   readonly settings: DefaultSettings;
   readonly transformation: TransformationForm;
+  readonly deboning: DeboningForm;
 }
 
 /** Snapshot de um lote salvo no histórico (recarregável na calculadora). */
@@ -81,9 +97,25 @@ export interface HistoryEntry {
   };
 }
 
+/** Snapshot de uma análise de desossa salva no histórico (recarregável na
+ * tela Desossa). Os números do resumo vêm do domínio no momento do salvar. */
+export interface DeboningHistoryEntry {
+  readonly id: string;
+  readonly savedAt: string;
+  readonly deboning: DeboningForm;
+  readonly summary: {
+    readonly carcassWeightKg: number | null;
+    readonly carcassValueBRL: number | null;
+    readonly commercialValueBRL: number | null;
+    readonly commercialGainBRL: number | null;
+    readonly marginPct: number | null;
+    readonly productCount: number;
+  };
+}
+
 export function lotFromSettings(
   settings: DefaultSettings,
-): Omit<CalculatorState, 'settings' | 'transformation'> {
+): Omit<CalculatorState, 'settings' | 'transformation' | 'deboning'> {
   return {
     mode: 'quick',
     quick: {
@@ -115,5 +147,6 @@ export function initialState(): CalculatorState {
     ...lotFromSettings(DEFAULT_SETTINGS),
     settings: DEFAULT_SETTINGS,
     transformation: DEFAULT_TRANSFORMATION,
+    deboning: DEFAULT_DEBONING,
   };
 }
