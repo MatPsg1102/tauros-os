@@ -1,6 +1,6 @@
 // Testes do domínio da Desossa — indicador comercial da desossa (cenário da
-// planilha da operação: carcaça 1.128,10 kg / R$ 13.029,56 → R$ 16.829,56,
-// acréscimo R$ 3.800,00, margem 22,58%).
+// planilha da operação: carcaça 1.128,10 kg × R$ 11,55/kg = R$ 13.029,56 →
+// R$ 16.829,56, acréscimo R$ 3.800,00, margem 22,58%).
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -16,7 +16,7 @@ import {
 
 const SHEET: DeboningInput = {
   carcassWeightKg: DEFAULT_DEBONING_CARCASS.weightKg,
-  carcassValueBRL: DEFAULT_DEBONING_CARCASS.valueBRL,
+  carcassCostPerKg: DEFAULT_DEBONING_CARCASS.costPerKg,
   products: DEFAULT_DEBONING_PRODUCTS,
 };
 
@@ -52,6 +52,14 @@ describe('DEFAULT_DEBONING_PRODUCTS — produtos da estatística atual', () => {
 });
 
 describe('calculateDeboning — fórmulas unitárias', () => {
+  it('0. valor inicial da carcaça = peso × custo do kg (derivado): 1.128,10 × 11,55 = 13.029,555 → exibe 13.029,56', () => {
+    const r = calculateDeboning(SHEET);
+    expect(r.carcassCostPerKg).toBe(11.55);
+    expect(r.carcassValueBRL).toBeCloseTo(1128.1 * 11.55, 9);
+    expect(r.carcassValueBRL).toBeCloseTo(13029.555, 6);
+    expect(round2(r.carcassValueBRL)).toBe(13029.56);
+  });
+
   it('1. valor total por produto = peso × preço/kg', () => {
     const items = byId(SHEET);
     expect(items['pernil']?.totalBRL).toBeCloseTo(295.86 * 15, 12); // 4.437,90
@@ -87,7 +95,7 @@ describe('calculateDeboning — fórmulas unitárias', () => {
 
   it('4. acréscimo comercial = valor comercial − valor inicial da carcaça', () => {
     const r = calculateDeboning(SHEET);
-    expect(r.commercialGainBRL).toBeCloseTo(r.commercialValueBRL - 13029.56, 9);
+    expect(r.commercialGainBRL).toBeCloseTo(r.commercialValueBRL - r.carcassValueBRL, 9);
     expect(round2(r.commercialGainBRL)).toBe(3800);
   });
 
@@ -105,7 +113,7 @@ describe('calculateDeboning — 6. cenário completo da planilha', () => {
     const r = calculateDeboning(SHEET);
     expect(r.items).toHaveLength(12);
     expect(r.carcassWeightKg).toBe(1128.1);
-    expect(r.carcassValueBRL).toBe(13029.56);
+    expect(round2(r.carcassValueBRL)).toBe(13029.56);
     expect(round2(r.commercialValueBRL)).toBe(16829.56);
     expect(round2(r.commercialGainBRL)).toBe(3800);
     expect(round2(r.marginPct)).toBe(22.58);
@@ -179,8 +187,18 @@ describe('calculateDeboning — reatividade', () => {
     expect(round2(removed.weightYieldPct)).toBe(93.68);
   });
 
+  it('alterar o custo do kg recalcula valor inicial, acréscimo e margem (valor comercial não muda)', () => {
+    const base = calculateDeboning(SHEET);
+    const pricier = calculateDeboning({ ...SHEET, carcassCostPerKg: 12 });
+    expect(pricier.carcassValueBRL).toBeCloseTo(1128.1 * 12, 9); // 13.537,20
+    expect(pricier.commercialValueBRL).toBeCloseTo(base.commercialValueBRL, 9);
+    expect(pricier.commercialGainBRL).toBeCloseTo(base.commercialValueBRL - 1128.1 * 12, 9);
+    expect(pricier.marginPct ?? 0).toBeLessThan(base.marginPct ?? 0);
+    expect(round2(pricier.marginPct)).toBe(19.56);
+  });
+
   it('acréscimo negativo quando a desossa vale menos que a carcaça (margem negativa, não escondida)', () => {
-    const r = calculateDeboning({ ...SHEET, carcassValueBRL: 17000 });
+    const r = calculateDeboning({ ...SHEET, carcassCostPerKg: 15.5 }); // 17.485,55 > 16.829,56
     expect(r.commercialGainBRL).toBeLessThan(0);
     expect(r.marginPct ?? 0).toBeLessThan(0);
   });
@@ -198,27 +216,27 @@ describe('11. valores inválidos — não inventar resultado', () => {
     const r = calculateDeboning({ ...SHEET, products: [] });
     expect(r.commercialValueBRL).toBe(0);
     expect(r.marginPct).toBeNull();
-    expect(r.commercialGainBRL).toBeCloseTo(-13029.56, 9);
+    expect(r.commercialGainBRL).toBeCloseTo(-(1128.1 * 11.55), 9); // −13.029,555
   });
 
   const validForm: DeboningForm = {
     carcassWeightKg: 1128.1,
-    carcassValueBRL: 13029.56,
+    carcassCostPerKg: 11.55,
     products: DEFAULT_DEBONING_PRODUCTS,
   };
 
-  it('carcaça sem peso/valor ou com peso 0 ⇒ problema no campo e entrada nula', () => {
+  it('carcaça sem peso/custo ou com peso 0 ⇒ problema no campo e entrada nula', () => {
     expect(validateDeboning({ ...validForm, carcassWeightKg: null })).toEqual([
       { field: 'carcassWeightKg', code: 'REQUIRED' },
     ]);
     expect(validateDeboning({ ...validForm, carcassWeightKg: 0 })).toEqual([
       { field: 'carcassWeightKg', code: 'NOT_POSITIVE' },
     ]);
-    expect(validateDeboning({ ...validForm, carcassValueBRL: null })).toEqual([
-      { field: 'carcassValueBRL', code: 'REQUIRED' },
+    expect(validateDeboning({ ...validForm, carcassCostPerKg: null })).toEqual([
+      { field: 'carcassCostPerKg', code: 'REQUIRED' },
     ]);
-    expect(validateDeboning({ ...validForm, carcassValueBRL: -1 })).toEqual([
-      { field: 'carcassValueBRL', code: 'NEGATIVE' },
+    expect(validateDeboning({ ...validForm, carcassCostPerKg: -1 })).toEqual([
+      { field: 'carcassCostPerKg', code: 'NEGATIVE' },
     ]);
     expect(buildDeboningInput({ ...validForm, carcassWeightKg: null })).toBeNull();
   });

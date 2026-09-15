@@ -2,10 +2,11 @@
 // da Transformação (indicador econômico dos subprodutos): nada daqui alimenta
 // a Estimativa, o ajuste comercial nem o custo equivalente da carcaça.
 // Reproduz a estatística comercial da operação (planilha): a carcaça entra
-// com peso e valor inicial; cada produto da desossa tem peso e preço de
-// venda; o valor comercial é a soma dos produtos; o acréscimo é o que a
-// desossa gera acima do valor inicial; a margem é o acréscimo sobre o valor
-// comercial.
+// com peso e CUSTO DO KG (o valor inicial é derivado: peso × custo, nunca
+// digitado); cada produto da desossa tem peso e preço de venda; o valor
+// comercial é a soma dos produtos; o acréscimo é o que a desossa gera acima
+// do valor inicial; a margem é o acréscimo sobre o valor comercial.
+//   valor inicial    = peso da carcaça × custo do kg
 //   valor do produto = peso × preço/kg
 //   percentual       = peso ÷ peso da carcaça × 100
 //   valor comercial  = Σ valor dos produtos
@@ -26,7 +27,8 @@ export interface DeboningProductAmount {
 
 export interface DeboningInput {
   readonly carcassWeightKg: number;
-  readonly carcassValueBRL: number;
+  /** Custo do kg da carcaça (R$/kg) — o valor inicial é derivado daqui. */
+  readonly carcassCostPerKg: number;
   readonly products: readonly DeboningProductAmount[];
 }
 
@@ -45,6 +47,8 @@ export interface DeboningProductValue {
 export interface DeboningResult {
   readonly items: readonly DeboningProductValue[];
   readonly carcassWeightKg: number;
+  readonly carcassCostPerKg: number;
+  /** valor inicial da carcaça = peso × custo do kg (derivado, não editável). */
   readonly carcassValueBRL: number;
   readonly productsWeightKg: number;
   /** Σ valor dos produtos. */
@@ -58,8 +62,9 @@ export interface DeboningResult {
   readonly weightYieldPct: number | null;
 }
 
-/** Carcaça de referência da estatística atual (cenário da planilha). */
-export const DEFAULT_DEBONING_CARCASS = { weightKg: 1128.1, valueBRL: 13029.56 } as const;
+/** Carcaça de referência da estatística atual (cenário da planilha):
+ * 1.128,10 kg × R$ 11,55/kg = R$ 13.029,555 → exibe R$ 13.029,56. */
+export const DEFAULT_DEBONING_CARCASS = { weightKg: 1128.1, costPerKg: 11.55 } as const;
 
 /** Produtos da estatística comercial atual, na ordem da planilha. Cabeça,
  * papada, banha, mãozinha, orelha etc. NÃO entram aqui — pertencem à
@@ -81,6 +86,7 @@ export const DEFAULT_DEBONING_PRODUCTS: readonly DeboningProductAmount[] = [
 
 export function calculateDeboning(input: DeboningInput): DeboningResult {
   const carcassPositive = input.carcassWeightKg > 0;
+  const carcassValueBRL = input.carcassWeightKg * input.carcassCostPerKg;
   const items: DeboningProductValue[] = input.products.map((product) => ({
     id: product.id,
     name: product.name,
@@ -92,14 +98,15 @@ export function calculateDeboning(input: DeboningInput): DeboningResult {
 
   const productsWeightKg = items.reduce((sum, item) => sum + item.weightKg, 0);
   const commercialValueBRL = items.reduce((sum, item) => sum + item.totalBRL, 0);
-  const commercialGainBRL = commercialValueBRL - input.carcassValueBRL;
+  const commercialGainBRL = commercialValueBRL - carcassValueBRL;
   const marginPct = commercialValueBRL > 0 ? (commercialGainBRL / commercialValueBRL) * 100 : null;
   const weightYieldPct = carcassPositive ? (productsWeightKg / input.carcassWeightKg) * 100 : null;
 
   return {
     items,
     carcassWeightKg: input.carcassWeightKg,
-    carcassValueBRL: input.carcassValueBRL,
+    carcassCostPerKg: input.carcassCostPerKg,
+    carcassValueBRL,
     productsWeightKg,
     commercialValueBRL,
     commercialGainBRL,
@@ -119,7 +126,7 @@ export interface DeboningProductForm {
 
 export interface DeboningForm {
   readonly carcassWeightKg: number | null;
-  readonly carcassValueBRL: number | null;
+  readonly carcassCostPerKg: number | null;
   readonly products: readonly DeboningProductForm[];
 }
 
@@ -129,10 +136,10 @@ export function deboningProductField(id: string, key: 'weightKg' | 'pricePerKg')
 }
 
 /**
- * Carcaça: peso obrigatório e > 0 (denominador dos percentuais); valor
- * inicial obrigatório e ≥ 0. Produto: campo vazio ainda não foi pesado /
- * precificado e contribui 0 (como a célula vazia da planilha); valor
- * negativo é inválido — nenhum resultado é inventado enquanto existir.
+ * Carcaça: peso obrigatório e > 0 (denominador dos percentuais); custo do kg
+ * obrigatório e ≥ 0. Produto: campo vazio ainda não foi pesado / precificado
+ * e contribui 0 (como a célula vazia da planilha); valor negativo é
+ * inválido — nenhum resultado é inventado enquanto existir.
  */
 export function validateDeboning(form: DeboningForm): readonly ValidationIssue[] {
   const issues: ValidationIssue[] = [];
@@ -142,11 +149,11 @@ export function validateDeboning(form: DeboningForm): readonly ValidationIssue[]
     const code = positiveIssue(form.carcassWeightKg);
     if (code !== null) issues.push({ field: 'carcassWeightKg', code });
   }
-  if (form.carcassValueBRL === null) {
-    issues.push({ field: 'carcassValueBRL', code: 'REQUIRED' });
+  if (form.carcassCostPerKg === null) {
+    issues.push({ field: 'carcassCostPerKg', code: 'REQUIRED' });
   } else {
-    const code = nonNegativeIssue(form.carcassValueBRL);
-    if (code !== null) issues.push({ field: 'carcassValueBRL', code });
+    const code = nonNegativeIssue(form.carcassCostPerKg);
+    if (code !== null) issues.push({ field: 'carcassCostPerKg', code });
   }
   for (const product of form.products) {
     for (const key of ['weightKg', 'pricePerKg'] as const) {
@@ -162,10 +169,10 @@ export function validateDeboning(form: DeboningForm): readonly ValidationIssue[]
 /** Constrói a entrada da desossa; null enquanto houver problema de validação. */
 export function buildDeboningInput(form: DeboningForm): DeboningInput | null {
   if (validateDeboning(form).length > 0) return null;
-  if (form.carcassWeightKg === null || form.carcassValueBRL === null) return null;
+  if (form.carcassWeightKg === null || form.carcassCostPerKg === null) return null;
   return {
     carcassWeightKg: form.carcassWeightKg,
-    carcassValueBRL: form.carcassValueBRL,
+    carcassCostPerKg: form.carcassCostPerKg,
     products: form.products.map((product) => ({
       id: product.id,
       name: product.name,

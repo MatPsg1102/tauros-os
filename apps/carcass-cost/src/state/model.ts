@@ -62,10 +62,11 @@ export const DEFAULT_TRANSFORMATION: TransformationForm = {
 };
 
 /** Desossa inicial = estatística comercial atual da operação (cenário da
- * planilha): a tela abre com a referência preenchida e o operador ajusta. */
+ * planilha): a tela abre com a referência preenchida e o operador ajusta.
+ * O valor inicial da carcaça NÃO é estado: deriva de peso × custo do kg. */
 export const DEFAULT_DEBONING: DeboningForm = {
   carcassWeightKg: DEFAULT_DEBONING_CARCASS.weightKg,
-  carcassValueBRL: DEFAULT_DEBONING_CARCASS.valueBRL,
+  carcassCostPerKg: DEFAULT_DEBONING_CARCASS.costPerKg,
   products: DEFAULT_DEBONING_PRODUCTS.map((product) => ({ ...product })),
 };
 

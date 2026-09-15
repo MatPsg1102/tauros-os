@@ -105,11 +105,13 @@ function sanitizeDeboningProducts(value: unknown): readonly DeboningProductForm[
 
 // Lista de produtos: ausente → padrão da estatística; presente (mesmo vazia,
 // após o operador remover tudo) → respeitada. Nunca ressuscita produto removido.
+// A chave antiga `carcassValueBRL` (valor digitado, #54) é simplesmente
+// ignorada: o valor inicial passou a derivar de peso × custo do kg.
 function sanitizeDeboning(value: unknown, fallback: DeboningForm): DeboningForm {
   const raw = isRecord(value) ? value : {};
   return {
     carcassWeightKg: numberOrNull(raw['carcassWeightKg'], fallback.carcassWeightKg),
-    carcassValueBRL: numberOrNull(raw['carcassValueBRL'], fallback.carcassValueBRL),
+    carcassCostPerKg: numberOrNull(raw['carcassCostPerKg'], fallback.carcassCostPerKg),
     products: Array.isArray(raw['products'])
       ? sanitizeDeboningProducts(raw['products'])
       : fallback.products,
@@ -245,7 +247,7 @@ function sanitizeDeboningHistoryEntry(value: unknown): DeboningHistoryEntry | nu
     savedAt,
     deboning: {
       carcassWeightKg: numberOrNull(deboning['carcassWeightKg'], null),
-      carcassValueBRL: numberOrNull(deboning['carcassValueBRL'], null),
+      carcassCostPerKg: numberOrNull(deboning['carcassCostPerKg'], null),
       products,
     },
     summary: {

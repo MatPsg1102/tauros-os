@@ -2,7 +2,8 @@
 // Transformação (nada daqui alimenta a Estimativa). Resultado no topo (mesma
 // regra das outras telas): margem comercial em destaque com a divisão que a
 // gera, a formação do valor (carcaça → + acréscimo → valor comercial) e os
-// pesos. Depois a carcaça (peso e valor inicial) e os produtos em linhas
+// pesos. Depois a carcaça (peso e custo do kg; valor inicial derivado, só
+// leitura) e os produtos em linhas
 // compactas — nome + total na mesma linha, peso e R$/kg lado a lado,
 // percentual derivado como informação secundária. A lista muda sem tela
 // nova: "Editar" mostra o nome editável e "Remover" por linha;
@@ -41,6 +42,7 @@ import {
   formatBRL,
   formatKg,
   formatPct,
+  formatPerKg,
   formatSignedBRL,
   fromMinorUnits,
   toMinorUnits,
@@ -56,7 +58,7 @@ export interface DeboningScreenProps {
 }
 
 const HELP_MARGIN =
-  'Valor comercial = soma de peso × R$/kg dos produtos. Acréscimo = valor comercial − valor inicial da carcaça. Margem = acréscimo ÷ valor comercial. Análise independente da Transformação: não altera a Estimativa.';
+  'Valor inicial = peso da carcaça × custo do kg. Valor comercial = soma de peso × R$/kg dos produtos. Acréscimo = valor comercial − valor inicial. Margem = acréscimo ÷ valor comercial. Análise independente da Transformação: não altera a Estimativa.';
 const HELP_PRODUCTS =
   'Informe o peso e o preço de venda de cada produto; o total e o percentual do peso da carcaça são calculados. Campo vazio conta como zero. “Editar” permite renomear e remover produtos.';
 
@@ -267,7 +269,7 @@ export function DeboningScreen({ calc, onBack }: DeboningScreenProps): ReactElem
           <HelpNote help={help}>{HELP_MARGIN}</HelpNote>
           {result === null ? (
             <Text as="p" tone="secondary">
-              Informe o peso e o valor inicial da carcaça para ver o resultado.
+              Informe o peso e o custo do kg da carcaça para ver o resultado.
             </Text>
           ) : (
             <>
@@ -293,29 +295,44 @@ export function DeboningScreen({ calc, onBack }: DeboningScreenProps): ReactElem
       </Surface>
 
       <Section title="Carcaça">
-        <Grid columns={2} gap={100}>
-          <GridField label="Peso da carcaça" {...errorProp(issues, 'carcassWeightKg')}>
-            <NumberInput
-              size="md"
-              endAdornment="kg"
-              value={form.carcassWeightKg}
-              onValueChange={(change) => {
-                actions.patchDeboning({ carcassWeightKg: change.value });
-              }}
+        <Stack gap={100}>
+          <Grid columns={2} gap={100}>
+            <GridField label="Peso da carcaça" {...errorProp(issues, 'carcassWeightKg')}>
+              <NumberInput
+                size="md"
+                endAdornment="kg"
+                value={form.carcassWeightKg}
+                onValueChange={(change) => {
+                  actions.patchDeboning({ carcassWeightKg: change.value });
+                }}
+              />
+            </GridField>
+            <GridField label="Custo do kg" {...errorProp(issues, 'carcassCostPerKg')}>
+              <CurrencyInput
+                size="md"
+                valueInMinorUnits={toMinorUnits(form.carcassCostPerKg)}
+                onValueChange={(change) => {
+                  actions.patchDeboning({
+                    carcassCostPerKg: fromMinorUnits(change.valueInMinorUnits),
+                  });
+                }}
+              />
+            </GridField>
+          </Grid>
+          {/* Valor inicial é DERIVADO (peso × custo do kg) — só leitura, nunca
+              digitado; a nota mostra a conta com os números do domínio. */}
+          <Stack gap={50} role="group" aria-label="Valor inicial da carcaça">
+            <LedgerRow
+              label="Valor inicial"
+              value={result === null ? '—' : formatBRL(result.carcassValueBRL)}
+              {...(result === null
+                ? {}
+                : {
+                    note: `${formatKg(result.carcassWeightKg)} × ${formatPerKg(result.carcassCostPerKg)}`,
+                  })}
             />
-          </GridField>
-          <GridField label="Valor inicial" {...errorProp(issues, 'carcassValueBRL')}>
-            <CurrencyInput
-              size="md"
-              valueInMinorUnits={toMinorUnits(form.carcassValueBRL)}
-              onValueChange={(change) => {
-                actions.patchDeboning({
-                  carcassValueBRL: fromMinorUnits(change.valueInMinorUnits),
-                });
-              }}
-            />
-          </GridField>
-        </Grid>
+          </Stack>
+        </Stack>
       </Section>
 
       <HelpSection
