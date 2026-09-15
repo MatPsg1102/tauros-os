@@ -52,17 +52,17 @@ pelo git desde o PR #60) ainda não existe; é criada localmente ao iniciar um l
 ## Current Loop
 
 Seção escrita pela bridge — na fase manual, pelo executor ao fechar cada iteração — conforme o design
-(§3.5). Nenhum loop ativo; L-0002 fechado por DECISION DONE do GPT (transporte manual).
+(§3.5). Loop L-0003 em execução (iteração 1): Agent Bridge PR 2, subcomando `run`.
 
 ```text
-LOOP_ID: none
+LOOP_ID: L-0003
 LAST_LOOP_ID: L-0002
-ITERATION: 0
-HANDOFF_REF: none
-STARTED: none
+ITERATION: 1
+HANDOFF_REF: .agent-loop/inbox/L-0003.handoff.md
+STARTED: 2026-09-15T16:00Z
 HUMAN_INTERVENTIONS: 0
 FAILED_ITERATIONS: 0
-LOOPS_THIS_SESSION: 2
+LOOPS_THIS_SESSION: 3
 ```
 
 ## Approved Decisions
@@ -119,17 +119,17 @@ GATE 1 (`packages/domain/**`) foi decidida e corrigida nesta iteração.
 
 ## Next Action
 
-Aguardar o GATE 6 do PR #63. Após o merge, a bridge `decide` está entregue; a proposta informativa
-do GPT (avaliar ROI e desenho mínimo do PR 2, DECISION → Claude Code) só vira trabalho com aprovação
-humana. Verificável: PR #63 mergeado e `main` sincronizada.
+L-0003 iteração 1 em execução na branch `feat/agent-bridge-run` (HANDOFF aprovado em 2026-09-15):
+subcomando `run` (Claude headless → RESULT → `decide` → DECISION), testes sem rede, PR, CI,
+RESULT, DECISION pelo `decide` mergeado e **parar**. Sem execução real do `run` antes do merge.
 
 ## Human Gate
 
-**HUMAN_APPROVAL_REQUIRED** — (a) GATE 6 do PR #63 (L-0002); (b) DECISION do GPT após
+**HUMAN_APPROVAL_REQUIRED** — (a) GATE 6 do PR de L-0003; (b) DECISION do GPT após
 cada RESULT de L-0001, entregue por transporte manual; (c) qualquer implementação da bridge ou
 automação do transporte; (d) FASE 1 (Auth Supabase) só começa com aprovação explícita
 (GATE 3 / GATE 4 / GATE 8).
 
 ## Last Updated
 
-2026-09-15T15:36Z — Claude Code (fechamento de L-0002 após DECISION DONE do GPT; bookkeeping).
+2026-09-15T16:00Z — Claude Code (L-0003 iteração 1 iniciada; bookkeeping de início do loop).

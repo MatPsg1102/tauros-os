@@ -1,15 +1,20 @@
 // Testes sem rede do subcomando `decide` (L-0002). O fetch é injetado; nenhuma chamada real.
-import { mkdtemp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { EventEmitter } from 'node:events';
+
 import {
   BridgeError,
+  CLAUDE_DISALLOWED_TOOLS,
   DECISION_SCHEMA,
+  RUN_DEPENDENCIES,
   decide,
   matchesScope,
   parseContract,
+  run as runLoop,
 } from './agent-bridge.mjs';
 
 const HANDOFF = `LOOP_ID: L-0001
@@ -306,5 +311,218 @@ describe('agent-bridge decide', () => {
   it('schema estrito: additionalProperties false e todas as chaves required', () => {
     expect(DECISION_SCHEMA.additionalProperties).toBe(false);
     expect(DECISION_SCHEMA.required).toEqual(Object.keys(DECISION_SCHEMA.properties));
+  });
+});
+
+// --- run: Claude falso injetado; GPT falso via fetchImpl do decide; nenhuma rede ---------------
+
+describe('agent-bridge run', () => {
+  const HANDOFF_RUN = `${HANDOFF}  # max_iterations acima vale para o run\n`;
+
+  // Claude falso: por padrão grava o RESULT da iteração atual e sai com 0.
+  function fakeSpawn(behavior = {}) {
+    const calls = [];
+    const spawnImpl = (bin, args, options) => {
+      const child = new EventEmitter();
+      child.stdin = { end: (prompt) => calls.push({ bin, args, prompt, cwd: options.cwd }) };
+      child.kill = () => {
+        child.killed = true;
+        setImmediate(() => child.emit('close', null));
+      };
+      setImmediate(async () => {
+        if (behavior.hang) return;
+        const handoff = parseContract(
+          await readFile(path.join(root, '.agent-loop', 'inbox', 'L-0001.handoff.md'), 'utf8'),
+        );
+        const iteration = handoff.get('ITERATION');
+        if (!behavior.noResult) {
+          await writeFile(
+            path.join(root, '.agent-loop', 'outbox', `L-0001.${iteration}.result.md`),
+            RESULT.replace('ITERATION: 1', `ITERATION: ${iteration}`),
+          );
+        }
+        child.emit('close', behavior.exitCode ?? 0);
+      });
+      return child;
+    };
+    return { spawnImpl, calls };
+  }
+
+  // GPT falso: devolve as decisões na ordem informada.
+  function fakeGpt(decisions) {
+    let call = 0;
+    const fetchImpl = async () => {
+      const payload = decisions[Math.min(call, decisions.length - 1)];
+      call += 1;
+      return { ok: true, status: 200, text: async () => JSON.stringify(openaiResponse(payload)) };
+    };
+    return { fetchImpl, calls: () => call };
+  }
+
+  function runWith({ decisions = [decisionPayload('DONE')], spawn = fakeSpawn(), ...overrides }) {
+    const gpt = fakeGpt(decisions);
+    const promise = runLoop({
+      root,
+      loopId: 'L-0001',
+      env: { OPENAI_API_KEY: 'sk-test', OPENAI_MODEL: 'gpt-test' },
+      spawnImpl: spawn.spawnImpl,
+      trackedChanges: () => '',
+      decideOptions: {
+        fetchImpl: gpt.fetchImpl,
+        gitChangedFiles: async () => ['CLAUDE.md'],
+        sleep: async () => {},
+        now: () => 1000,
+      },
+      ...overrides,
+    });
+    return { promise, spawn, gpt };
+  }
+
+  beforeEach(async () => {
+    await writeFixtures({ handoff: HANDOFF_RUN });
+    // O RESULT é produzido pelo Claude falso: a fixture do `decide` não pode existir antes do run.
+    await rm(path.join(root, '.agent-loop', 'outbox', 'L-0001.1.result.md'));
+    await writeFile(path.join(root, 'tooling', 'agent-bridge-executor.md'), 'Você é o executor.');
+  });
+
+  it('1. Claude → RESULT DONE → GPT DONE → stop', async () => {
+    const { promise, spawn, gpt } = runWith({});
+    const summary = await promise;
+    expect(summary.status).toBe('DONE');
+    expect(spawn.calls).toHaveLength(1);
+    expect(gpt.calls()).toBe(1);
+    expect(spawn.calls[0].prompt).toContain('LOOP_ID: L-0001');
+    expect(spawn.calls[0].prompt).toContain('DECISION_ANTERIOR: none');
+  });
+
+  it('2. RESULT → GPT RETRY → Claude de novo → DONE', async () => {
+    const retry = decisionPayload('RETRY', {
+      next_handoff: HANDOFF_RUN.replace('ITERATION: 1', 'ITERATION: 2'),
+    });
+    const { promise, spawn, gpt } = runWith({ decisions: [retry, decisionPayload('DONE')] });
+    const summary = await promise;
+    expect(summary.status).toBe('DONE');
+    expect(summary.iterations.map((i) => i.decision)).toEqual(['RETRY', 'DONE']);
+    expect(spawn.calls).toHaveLength(2);
+    expect(gpt.calls()).toBe(2);
+    expect(spawn.calls[1].prompt).toContain(
+      'DECISION_ANTERIOR (RETRY): .agent-loop/inbox/L-0001.1.decision.md',
+    );
+    const handoff = await readFile(
+      path.join(root, '.agent-loop', 'inbox', 'L-0001.handoff.md'),
+      'utf8',
+    );
+    expect(handoff).toContain('ITERATION: 2');
+    expect(handoff).toContain('- CLAUDE.md');
+  });
+
+  it('3. GPT BLOCKED → stop para humano', async () => {
+    const blocked = decisionPayload('BLOCKED', { human_question: 'Falta decidir X.' });
+    const { promise, spawn } = runWith({ decisions: [blocked] });
+    const summary = await promise;
+    expect(summary.status).toBe('BLOCKED');
+    expect(spawn.calls).toHaveLength(1);
+  });
+
+  it('4. GPT HUMAN_GATE → stop para humano', async () => {
+    const gate = decisionPayload('HUMAN_GATE', { human_question: 'Precisa de ADR?' });
+    const { promise } = runWith({ decisions: [gate] });
+    expect((await promise).status).toBe('HUMAN_GATE');
+  });
+
+  it('5. max_iterations atingido → HUMAN_GATE sem novo spawn', async () => {
+    await writeFile(
+      path.join(root, '.agent-loop', 'inbox', 'L-0001.handoff.md'),
+      HANDOFF_RUN.replace('max_iterations: 3', 'max_iterations: 1'),
+    );
+    const retry = decisionPayload('RETRY', {
+      next_handoff: HANDOFF_RUN.replace('ITERATION: 1', 'ITERATION: 2'),
+    });
+    const { promise, spawn } = runWith({ decisions: [retry] });
+    await expectBridgeError(promise, 'HUMAN_GATE', 'max_iterations');
+    expect(spawn.calls).toHaveLength(1);
+  });
+
+  it('6. Claude exit != 0 → falha fechada, GPT não chamado', async () => {
+    const { promise, gpt } = runWith({ spawn: fakeSpawn({ exitCode: 1 }) });
+    await expectBridgeError(promise, 'IO', 'código 1');
+    expect(gpt.calls()).toBe(0);
+  });
+
+  it('7. Claude não cria RESULT → falha fechada, GPT não chamado', async () => {
+    const { promise, gpt } = runWith({ spawn: fakeSpawn({ noResult: true }) });
+    await expectBridgeError(promise, 'IO', 'sem gravar');
+    expect(gpt.calls()).toBe(0);
+  });
+
+  it('8. timeout → processo encerrado e falha', async () => {
+    const spawn = fakeSpawn({ hang: true });
+    const { promise } = runWith({ spawn, timeoutMs: 20 });
+    await expectBridgeError(promise, 'IO', 'timeout');
+  });
+
+  it('9. argv nunca contém bypassPermissions e usa dontAsk', async () => {
+    const { promise, spawn } = runWith({});
+    await promise;
+    const args = spawn.calls[0].args;
+    expect(args.join(' ')).not.toContain('bypassPermissions');
+    expect(
+      args.slice(args.indexOf('--permission-mode'), args.indexOf('--permission-mode') + 2),
+    ).toEqual(['--permission-mode', 'dontAsk']);
+    expect(args).toContain('--max-budget-usd');
+    expect(args).toContain('--no-session-persistence');
+  });
+
+  it('10. merge/deploy/destrutivos estão negados e nunca permitidos', async () => {
+    const { promise, spawn } = runWith({});
+    await promise;
+    const args = spawn.calls[0].args;
+    const allowed = args.slice(
+      args.indexOf('--allowedTools') + 1,
+      args.indexOf('--disallowedTools'),
+    );
+    const denied = args.slice(args.indexOf('--disallowedTools') + 1);
+    for (const tool of CLAUDE_DISALLOWED_TOOLS) {
+      expect(denied).toContain(tool);
+      expect(allowed).not.toContain(tool);
+    }
+    expect(allowed.join(' ')).not.toMatch(/merge|vercel|--force|reset --hard|rm -rf/);
+  });
+
+  it('11. RETRY que amplia o SCOPE é rejeitado pelo decide e o run para', async () => {
+    const widened = HANDOFF_RUN.replace('- CLAUDE.md', '- CLAUDE.md\n- package.json');
+    const retry = decisionPayload('RETRY', { next_handoff: widened });
+    const { promise, spawn } = runWith({ decisions: [retry, decisionPayload('DONE')] });
+    await expectBridgeError(promise, 'CONTRACT', 'SCOPE diferente');
+    expect(spawn.calls).toHaveLength(1);
+  });
+
+  it('12. run reutiliza o decide existente, sem duplicação', async () => {
+    expect(RUN_DEPENDENCIES.decide).toBe(decide);
+    const seen = [];
+    const { promise } = runWith({
+      decideImpl: async (options) => {
+        seen.push(options);
+        return { decision: 'DONE', outPath: 'x' };
+      },
+    });
+    await promise;
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ root, loopId: 'L-0001', iteration: '1' });
+  });
+
+  it('pré-condições: worktree sujo, RESULT existente e ambiente ausente falham antes do spawn', async () => {
+    const dirty = runWith({ trackedChanges: () => ' M apps/web/x.ts' });
+    await expectBridgeError(dirty.promise, 'HUMAN_GATE', 'worktree');
+    expect(dirty.spawn.calls).toHaveLength(0);
+
+    await writeFile(path.join(root, '.agent-loop', 'outbox', 'L-0001.1.result.md'), RESULT);
+    const existing = runWith({});
+    await expectBridgeError(existing.promise, 'IO', 'já existe');
+    expect(existing.spawn.calls).toHaveLength(0);
+
+    const noEnv = runWith({ env: { OPENAI_MODEL: 'gpt-test' } });
+    await expectBridgeError(noEnv.promise, 'IO', 'ausentes');
+    expect(noEnv.spawn.calls).toHaveLength(0);
   });
 });

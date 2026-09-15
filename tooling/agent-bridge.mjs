@@ -9,7 +9,7 @@
 // Uso: node tooling/agent-bridge.mjs decide <LOOP_ID> <ITERATION> [--out <caminho>]
 // Saída: 0 = DECISION gravada; 2 = HUMAN_GATE (guarda); 3 = contrato/schema; 4 = OpenAI; 5 = IO/segredo.
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { access, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -467,11 +467,227 @@ export async function decide({
   return { ...meta, decision: decision.decision, sha256, outPath: finalPath };
 }
 
+// --- run: orquestração de processo (L-0003) — Claude headless → RESULT → decide → DECISION -------
+// Transporte apenas: nenhuma política nova. Guardas, OpenAI e validação continuam em `decide`.
+
+export const CLAUDE_MAX_BUDGET_USD = '2.00'; // teto de segurança por execução headless, não meta
+export const CLAUDE_WALL_TIMEOUT_MS = 30 * 60_000;
+export const CLAUDE_ALLOWED_TOOLS = [
+  'Read',
+  'Glob',
+  'Grep',
+  'Edit',
+  'Write',
+  'Bash(pnpm *)',
+  'Bash(git status*)',
+  'Bash(git diff*)',
+  'Bash(git log*)',
+  'Bash(git checkout -b*)',
+  'Bash(git add*)',
+  'Bash(git commit*)',
+  'Bash(git push -u origin*)',
+  'Bash(gh pr create*)',
+  'Bash(gh pr view*)',
+  'Bash(gh api *)',
+];
+export const CLAUDE_DISALLOWED_TOOLS = [
+  'Bash(gh pr merge*)',
+  'Bash(git merge*)',
+  'Bash(vercel *)',
+  'Bash(git push --force*)',
+  'Bash(git reset --hard*)',
+  'Bash(git branch -D*)',
+  'Bash(rm -rf*)',
+];
+const DEFAULT_MAX_ITERATIONS = 3;
+// Dependência explícita: `run` reutiliza o `decide` deste módulo, nunca uma cópia.
+export const RUN_DEPENDENCIES = { decide };
+
+export function resolveClaudeBin(env = process.env) {
+  if (env.CLAUDE_BIN) return env.CLAUDE_BIN; // só para testes (Claude falso)
+  if (process.platform === 'win32' && env.APPDATA) {
+    return path.join(
+      env.APPDATA,
+      'npm',
+      'node_modules',
+      '@anthropic-ai',
+      'claude-code',
+      'bin',
+      'claude.exe',
+    );
+  }
+  return 'claude';
+}
+
+export function claudeArgs() {
+  return [
+    '-p',
+    '--output-format',
+    'json',
+    '--permission-mode',
+    'dontAsk',
+    '--no-session-persistence',
+    '--max-budget-usd',
+    CLAUDE_MAX_BUDGET_USD,
+    '--allowedTools',
+    ...CLAUDE_ALLOWED_TOOLS,
+    '--disallowedTools',
+    ...CLAUDE_DISALLOWED_TOOLS,
+  ];
+}
+
+export function maxIterationsOf(handoff) {
+  const match = (handoff.get('AUTONOMY') ?? '').match(/max_iterations:\s*(\d+)/);
+  return match ? Number(match[1]) : DEFAULT_MAX_ITERATIONS;
+}
+
+export function buildExecutorPrompt({ template, loopId, iteration, decisionPath }) {
+  return [
+    template.trim(),
+    '',
+    `LOOP_ID: ${loopId}`,
+    `ITERATION: ${iteration}`,
+    `HANDOFF: .agent-loop/inbox/${loopId}.handoff.md`,
+    `RESULT_ESPERADO: .agent-loop/outbox/${loopId}.${iteration}.result.md`,
+    decisionPath ? `DECISION_ANTERIOR (RETRY): ${decisionPath}` : 'DECISION_ANTERIOR: none',
+    '',
+  ].join('\n');
+}
+
+export function runClaude({ bin, args, prompt, cwd, timeoutMs, spawnImpl }) {
+  return new Promise((resolve) => {
+    const child = spawnImpl(bin, args, { cwd, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    let stdout = '';
+    let stderr = '';
+    let killed = false;
+    const timer = setTimeout(() => {
+      killed = true;
+      child.kill();
+    }, timeoutMs);
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      resolve({ code: null, killed, stdout, stderr: String(error) });
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code, killed, stdout, stderr });
+    });
+    child.stdin?.end(prompt);
+  });
+}
+
+export async function bumpHandoffIteration(handoffPath, next) {
+  const text = await readFile(handoffPath, 'utf8');
+  const updated = text.replace(/^ITERATION:.*$/m, `ITERATION: ${next}`);
+  if (updated === text) throw new BridgeError('CONTRACT', 'HANDOFF sem linha ITERATION');
+  await writeFile(handoffPath, updated, 'utf8');
+}
+
+export function defaultTrackedChanges(root) {
+  return execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).trim();
+}
+
+export async function run({
+  root,
+  loopId,
+  env = process.env,
+  spawnImpl = spawn,
+  decideImpl = RUN_DEPENDENCIES.decide,
+  decideOptions = {},
+  trackedChanges = defaultTrackedChanges,
+  timeoutMs = CLAUDE_WALL_TIMEOUT_MS,
+}) {
+  const loopDir = path.join(root, '.agent-loop');
+  const handoffPath = path.join(loopDir, 'inbox', `${loopId}.handoff.md`);
+  if (!(await exists(handoffPath)))
+    throw new BridgeError('HUMAN_GATE', `HANDOFF ausente: ${handoffPath}`);
+  if (!env.OPENAI_API_KEY || !env.OPENAI_MODEL) {
+    throw new BridgeError('IO', 'OPENAI_API_KEY/OPENAI_MODEL ausentes (nenhum processo iniciado)');
+  }
+  const dirty = trackedChanges(root);
+  if (dirty) throw new BridgeError('HUMAN_GATE', `worktree com alterações rastreadas:\n${dirty}`);
+  const template = await readFile(path.join(root, 'tooling', 'agent-bridge-executor.md'), 'utf8');
+  const bin = resolveClaudeBin(env);
+  const iterations = [];
+
+  for (;;) {
+    const handoff = parseContract(await readFile(handoffPath, 'utf8'));
+    if (firstToken(handoff.get('LOOP_ID')) !== loopId)
+      throw new BridgeError('HUMAN_GATE', `LOOP_ID do HANDOFF ≠ ${loopId}`);
+    const iteration = firstToken(handoff.get('ITERATION'));
+    const maxIterations = maxIterationsOf(handoff);
+    if (!/^\d+$/.test(iteration) || Number(iteration) > maxIterations) {
+      throw new BridgeError(
+        'HUMAN_GATE',
+        `max_iterations (${maxIterations}) esgotado na iteração ${iteration}`,
+      );
+    }
+    const resultPath = path.join(loopDir, 'outbox', `${loopId}.${iteration}.result.md`);
+    if (await exists(resultPath)) throw new BridgeError('IO', `RESULT já existe: ${resultPath}`);
+    const previousPath = path.join(
+      loopDir,
+      'inbox',
+      `${loopId}.${Number(iteration) - 1}.decision.md`,
+    );
+    const decisionPath =
+      Number(iteration) > 1 && (await exists(previousPath))
+        ? path.relative(root, previousPath).replaceAll('\\', '/')
+        : null;
+    const prompt = buildExecutorPrompt({ template, loopId, iteration, decisionPath });
+
+    const outcome = await runClaude({
+      bin,
+      args: claudeArgs(),
+      prompt,
+      cwd: root,
+      timeoutMs,
+      spawnImpl,
+    });
+    if (outcome.killed)
+      throw new BridgeError('IO', `Claude excedeu o timeout de ${timeoutMs} ms e foi encerrado`);
+    if (outcome.code !== 0) {
+      throw new BridgeError(
+        'IO',
+        `Claude saiu com código ${outcome.code}: ${outcome.stderr.slice(0, 300)}`,
+      );
+    }
+    if (!(await exists(resultPath)))
+      throw new BridgeError('IO', `Claude terminou sem gravar ${resultPath}`);
+
+    const summary = await decideImpl({ root, loopId, iteration, env, ...decideOptions });
+    iterations.push({ iteration, decision: summary.decision, decisionPath: summary.outPath });
+    if (summary.decision === 'DONE') return { status: 'DONE', loopId, iterations };
+    if (summary.decision !== 'RETRY') return { status: summary.decision, loopId, iterations };
+    const next = Number(iteration) + 1;
+    if (next > maxIterations) {
+      throw new BridgeError(
+        'HUMAN_GATE',
+        `RETRY solicitado, mas max_iterations (${maxIterations}) esgotado`,
+      );
+    }
+    await bumpHandoffIteration(handoffPath, next);
+  }
+}
+
 // --- CLI -------------------------------------------------------------------------------------------
 
+const USAGE =
+  'Uso: node tooling/agent-bridge.mjs decide <LOOP_ID> <ITERATION> [--out <caminho>]\n' +
+  '     node tooling/agent-bridge.mjs run <LOOP_ID>';
+
 function parseArgs(argv) {
-  const [command, loopId, iteration, ...rest] = argv;
-  const options = { command, loopId, iteration, outPath: undefined };
+  const [command, loopId, ...rest] = argv;
+  const options = { command, loopId, iteration: undefined, outPath: undefined };
+  if (command === 'decide') options.iteration = rest.shift();
   for (let i = 0; i < rest.length; i += 1) {
     if (rest[i] === '--out') options.outPath = path.resolve(rest[++i] ?? '');
     else throw new BridgeError('IO', `argumento desconhecido: ${rest[i]}`);
@@ -482,19 +698,20 @@ function parseArgs(argv) {
 async function main() {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const options = parseArgs(process.argv.slice(2));
-  if (
-    options.command !== 'decide' ||
-    !/^L-\d{4}$/.test(options.loopId ?? '') ||
-    !/^\d+$/.test(options.iteration ?? '')
-  ) {
-    console.error(
-      'Uso: node tooling/agent-bridge.mjs decide <LOOP_ID> <ITERATION> [--out <caminho>]',
-    );
+  const validLoop = /^L-\d{4}$/.test(options.loopId ?? '');
+  const isDecide =
+    options.command === 'decide' && validLoop && /^\d+$/.test(options.iteration ?? '');
+  const isRun = options.command === 'run' && validLoop && options.outPath === undefined;
+  if (!isDecide && !isRun) {
+    console.error(USAGE);
     process.exit(EXIT_CODES.IO);
   }
   try {
-    const summary = await decide({ root, ...options });
+    const summary = isRun
+      ? await run({ root, loopId: options.loopId })
+      : await decide({ root, ...options });
     console.log(JSON.stringify(summary));
+    if (isRun && summary.status !== 'DONE') process.exit(EXIT_CODES.HUMAN_GATE);
   } catch (error) {
     if (error instanceof BridgeError) {
       console.error(`${error.code}: ${error.message}`);
