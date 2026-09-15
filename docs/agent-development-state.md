@@ -52,17 +52,17 @@ pelo git desde o PR #60) ainda não existe; é criada localmente ao iniciar um l
 ## Current Loop
 
 Seção escrita pela bridge — na fase manual, pelo executor ao fechar cada iteração — conforme o design
-(§3.5). Nenhum loop ativo; L-0001 fechado por DECISION DONE do GPT (transporte manual).
+(§3.5). Loop L-0002 em execução (iteração 1): Agent Bridge MVP, subcomando `decide`.
 
 ```text
-LOOP_ID: none
+LOOP_ID: L-0002
 LAST_LOOP_ID: L-0001
-ITERATION: 0
-HANDOFF_REF: none
-STARTED: none
-HUMAN_INTERVENTIONS: 0
+ITERATION: 2
+HANDOFF_REF: .agent-loop/inbox/L-0002.handoff.md
+STARTED: 2026-09-15T14:52Z
+HUMAN_INTERVENTIONS: 1
 FAILED_ITERATIONS: 0
-LOOPS_THIS_SESSION: 1
+LOOPS_THIS_SESSION: 2
 ```
 
 ## Approved Decisions
@@ -118,17 +118,17 @@ GATE 1 (`packages/domain/**`) foi decidida e corrigida nesta iteração.
 
 ## Next Action
 
-Aguardar o GATE 6 do PR #62. Após o merge, a vertical slice manual L-0001 está concluída e o
-próximo trabalho é a implementação mínima do Agent Bridge executável, preservando os contratos e
-gates validados — somente após aprovação humana. Verificável: PR #62 mergeado e `main` sincronizada.
+L-0002 iteração 2 (RETRY humano após GATE 8 de orçamento) na branch `feat/agent-bridge-decide` (HANDOFF aprovado em
+2026-09-15): implementar `tooling/agent-bridge.mjs decide`, testes sem rede, prova real com os
+artefatos de L-0001, RESULT em `.agent-loop/outbox/L-0002.1.result.md` e **parar** até a DECISION.
 
 ## Human Gate
 
-**HUMAN_APPROVAL_REQUIRED** — (a) GATE 6 do PR #62 (L-0001); (b) DECISION do GPT após
+**HUMAN_APPROVAL_REQUIRED** — (a) GATE 6 do PR de L-0002; (b) DECISION do GPT após
 cada RESULT de L-0001, entregue por transporte manual; (c) qualquer implementação da bridge ou
 automação do transporte; (d) FASE 1 (Auth Supabase) só começa com aprovação explícita
 (GATE 3 / GATE 4 / GATE 8).
 
 ## Last Updated
 
-2026-09-15T14:22Z — Claude Code (fechamento de L-0001 após DECISION DONE do GPT; bookkeeping).
+2026-09-15T15:02Z — Claude Code (L-0002 iteração 2 após HUMAN_GATE de orçamento → RETRY humano).
