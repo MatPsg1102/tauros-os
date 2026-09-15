@@ -324,6 +324,8 @@ describe('agent-bridge run', () => {
     const calls = [];
     const spawnImpl = (bin, args, options) => {
       const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
       child.stdin = { end: (prompt) => calls.push({ bin, args, prompt, cwd: options.cwd }) };
       child.kill = () => {
         child.killed = true;
@@ -338,9 +340,10 @@ describe('agent-bridge run', () => {
         if (!behavior.noResult) {
           await writeFile(
             path.join(root, '.agent-loop', 'outbox', `L-0001.${iteration}.result.md`),
-            RESULT.replace('ITERATION: 1', `ITERATION: ${iteration}`),
+            (behavior.result ?? RESULT).replace('ITERATION: 1', `ITERATION: ${iteration}`),
           );
         }
+        if (behavior.stdout) child.stdout.emit('data', behavior.stdout);
         child.emit('close', behavior.exitCode ?? 0);
       });
       return child;
@@ -524,5 +527,143 @@ describe('agent-bridge run', () => {
     const noEnv = runWith({ env: { OPENAI_MODEL: 'gpt-test' } });
     await expectBridgeError(noEnv.promise, 'IO', 'ausentes');
     expect(noEnv.spawn.calls).toHaveLength(0);
+  });
+
+  // --- PR_READY: o executor encerra; a bridge observa o CI e promove a CI_VERIFIED --------------
+
+  const RESULT_PR_READY = RESULT.replace('DONE_LEVEL: CI_VERIFIED', 'DONE_LEVEL: PR_READY').replace(
+    '- run 1 — verify success; architecture success',
+    '- pendente: observado pela bridge',
+  );
+  const PENDING = { verify: null, architecture: null };
+  const GREEN = { verify: 'success', architecture: 'success' };
+  const HEAD_OK = '1b643d5ffffffffffffffffffffffffffffffffff';
+
+  function fakeCi(sequence) {
+    let call = 0;
+    const ciStatus = () => {
+      const status = sequence[Math.min(call, sequence.length - 1)];
+      call += 1;
+      return status;
+    };
+    return { ciStatus, calls: () => call };
+  }
+
+  function ciOverrides(sequence, extra = {}) {
+    const ci = fakeCi(sequence);
+    return {
+      ci,
+      overrides: {
+        spawn: fakeSpawn({ result: RESULT_PR_READY }),
+        ciStatus: ci.ciStatus,
+        prHead: () => HEAD_OK,
+        ciPollMs: 0,
+        ...extra,
+      },
+    };
+  }
+
+  it('PR_READY: Claude encerra sem esperar CI; a bridge observa o CI, promove e chama o decide', async () => {
+    const seen = [];
+    const { ci, overrides } = ciOverrides(
+      [PENDING, { verify: 'success', architecture: null }, GREEN],
+      {
+        decideImpl: async (options) => {
+          const text = await readFile(
+            path.join(root, '.agent-loop', 'outbox', 'L-0001.1.result.md'),
+            'utf8',
+          );
+          seen.push({ options, text });
+          return { decision: 'DONE', outPath: 'x' };
+        },
+      },
+    );
+    const { promise, spawn } = runWith(overrides);
+    expect((await promise).status).toBe('DONE');
+    expect(spawn.calls).toHaveLength(1);
+    expect(ci.calls()).toBe(3);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].text).toContain('DONE_LEVEL: CI_VERIFIED');
+    expect(seen[0].text).toContain('promovido para CI_VERIFIED');
+    expect(seen[0].text).toContain('- pendente: observado pela bridge');
+  });
+
+  it('CI vermelho → HUMAN_GATE sem chamar o decide', async () => {
+    const decided = [];
+    const { overrides } = ciOverrides([{ verify: 'failure', architecture: null }], {
+      decideImpl: async () => {
+        decided.push(1);
+        return { decision: 'DONE' };
+      },
+    });
+    const { promise } = runWith(overrides);
+    await expectBridgeError(promise, 'HUMAN_GATE', 'CI vermelho');
+    expect(decided).toHaveLength(0);
+  });
+
+  it('CI timeout → HUMAN_GATE (falha fechada)', async () => {
+    let clock = 0;
+    const { overrides } = ciOverrides([PENDING], { ciTimeoutMs: 2500, now: () => (clock += 1000) });
+    const { promise } = runWith(overrides);
+    await expectBridgeError(promise, 'HUMAN_GATE', 'não concluiu');
+  });
+
+  it('head do PR divergente do COMMIT do RESULT → HUMAN_GATE', async () => {
+    const { overrides } = ciOverrides([GREEN], {
+      prHead: () => 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+    });
+    const { promise } = runWith(overrides);
+    await expectBridgeError(promise, 'HUMAN_GATE', 'head do PR');
+  });
+
+  it('stdout de erro do Claude torna a causa observável, sem segredos', async () => {
+    // Valor montado em tempo de execução: nenhum literal parecido com chave fica no repositório.
+    const fakeKey = ['sk', 'fake-key-not-real-0000'].join('-');
+    const stdout = JSON.stringify({
+      type: 'result',
+      subtype: 'success',
+      is_error: true,
+      api_error_status: 400,
+      total_cost_usd: 0.78,
+      result: `API Error: 400 modelo não suportado; token ${fakeKey} Bearer abc.def`,
+    });
+    const { promise } = runWith({ spawn: fakeSpawn({ exitCode: 1, stdout }) });
+    const error = await promise.then(
+      () => null,
+      (caught) => caught,
+    );
+    expect(error.code).toBe('IO');
+    expect(error.message).toContain('api_error_status=400');
+    expect(error.message).toContain('total_cost_usd=0.78');
+    expect(error.message).toContain('is_error=true');
+    expect(error.message).toContain('result="API Error: 400');
+    expect(error.message).not.toContain(fakeKey);
+    expect(error.message).toContain('sk-***');
+    expect(error.message).not.toContain('abc.def');
+  });
+
+  it('retomada: RESULT PR_READY sem DECISION continua na bridge sem reexecutar o Claude', async () => {
+    await writeFile(
+      path.join(root, '.agent-loop', 'outbox', 'L-0001.1.result.md'),
+      RESULT_PR_READY,
+    );
+    const { ci, overrides } = ciOverrides([GREEN]);
+    const { promise, spawn, gpt } = runWith(overrides);
+    expect((await promise).status).toBe('DONE');
+    expect(spawn.calls).toHaveLength(0);
+    expect(ci.calls()).toBe(1);
+    expect(gpt.calls()).toBe(1);
+  });
+
+  it('RESULT PR_READY já com DECISION → IO, sem retomada', async () => {
+    await writeFile(
+      path.join(root, '.agent-loop', 'outbox', 'L-0001.1.result.md'),
+      RESULT_PR_READY,
+    );
+    await writeFile(path.join(root, '.agent-loop', 'inbox', 'L-0001.1.decision.md'), 'DECISION\n');
+    const { overrides } = ciOverrides([GREEN]);
+    const { promise, spawn } = runWith(overrides);
+    await expectBridgeError(promise, 'IO', 'já existe');
+    expect(spawn.calls).toHaveLength(0);
   });
 });

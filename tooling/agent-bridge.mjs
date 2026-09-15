@@ -582,6 +582,118 @@ export function runClaude({ bin, args, prompt, cwd, timeoutMs, spawnImpl }) {
   });
 }
 
+// Saída não zero do Claude: o motivo vem no stdout (JSON de resultado), não no stderr. Sanitizado.
+export function summarizeClaudeOutput(stdout, stderr) {
+  const redact = (text) =>
+    String(text)
+      .replace(/sk-[A-Za-z0-9_-]{8,}/g, 'sk-***')
+      .replace(/Bearer\s+\S+/g, 'Bearer ***');
+  const parts = [];
+  try {
+    const json = JSON.parse(stdout.trim());
+    for (const key of ['subtype', 'is_error', 'api_error_status', 'total_cost_usd']) {
+      if (json[key] !== undefined) parts.push(`${key}=${JSON.stringify(json[key])}`);
+    }
+    if (typeof json.result === 'string')
+      parts.push(`result="${redact(json.result.slice(0, 300))}"`);
+  } catch {
+    if (stdout.trim()) parts.push(`stdout="${redact(stdout.trim().slice(0, 300))}"`);
+  }
+  if (stderr.trim()) parts.push(`stderr="${redact(stderr.trim().slice(0, 300))}"`);
+  return parts.join(' ');
+}
+
+// --- CI observado pela bridge: o executor encerra em PR_READY; a bridge promove a CI_VERIFIED -----
+
+export const CI_WALL_TIMEOUT_MS = 30 * 60_000;
+export const CI_POLL_MS = 30_000;
+const CI_JOBS = ['verify', 'architecture'];
+
+export function defaultCiStatus(commit, root) {
+  const out = execFileSync(
+    'gh',
+    [
+      'api',
+      `repos/{owner}/{repo}/commits/${commit}/check-runs`,
+      '--jq',
+      '.check_runs[] | "\\(.name)=\\(.status)/\\(.conclusion)"',
+    ],
+    { cwd: root, encoding: 'utf8' },
+  );
+  const status = {};
+  for (const line of out.split('\n')) {
+    const match = line.match(/^(.+?)=(\w+)\/(\w+)$/);
+    if (match && CI_JOBS.includes(match[1]))
+      status[match[1]] = match[2] === 'completed' ? match[3] : null;
+  }
+  return status;
+}
+
+export function defaultPrHead(prNumber, root) {
+  return execFileSync(
+    'gh',
+    ['pr', 'view', String(prNumber), '--json', 'headRefOid', '--jq', '.headRefOid'],
+    {
+      cwd: root,
+      encoding: 'utf8',
+    },
+  ).trim();
+}
+
+export async function awaitCiVerified({
+  commit,
+  prNumber,
+  ciStatus,
+  prHead,
+  sleep,
+  now,
+  timeoutMs = CI_WALL_TIMEOUT_MS,
+  pollMs = CI_POLL_MS,
+}) {
+  const head = prHead(prNumber);
+  if (!head || !(head.startsWith(commit) || commit.startsWith(head))) {
+    throw new BridgeError(
+      'HUMAN_GATE',
+      `head do PR #${prNumber} (${head.slice(0, 7)}) ≠ COMMIT do RESULT (${commit})`,
+    );
+  }
+  const startedAt = now();
+  for (;;) {
+    const status = ciStatus(head);
+    const failed = CI_JOBS.filter((job) => status[job] && status[job] !== 'success');
+    if (failed.length > 0) {
+      throw new BridgeError(
+        'HUMAN_GATE',
+        `CI vermelho em ${head.slice(0, 7)}: ${failed.map((job) => `${job}=${status[job]}`).join(', ')}`,
+      );
+    }
+    if (CI_JOBS.every((job) => status[job] === 'success')) return { head };
+    if (now() - startedAt >= timeoutMs) {
+      throw new BridgeError(
+        'HUMAN_GATE',
+        `CI não concluiu em ${timeoutMs} ms (head ${head.slice(0, 7)})`,
+      );
+    }
+    await sleep(pollMs);
+  }
+}
+
+export async function promoteResultToCiVerified(resultPath, head, generatedAt) {
+  const text = await readFile(resultPath, 'utf8');
+  if (!/^DONE_LEVEL: PR_READY\b/m.test(text)) {
+    throw new BridgeError('CONTRACT', 'RESULT não está em PR_READY; nada a promover');
+  }
+  const evidence = `- bridge: verify success; architecture success no head ${head.slice(0, 7)} (promovido para CI_VERIFIED em ${generatedAt})`;
+  let updated = text.replace(
+    /^DONE_LEVEL: PR_READY\b.*$/m,
+    'DONE_LEVEL: CI_VERIFIED (promovido pela bridge)',
+  );
+  updated = /^CI_EVIDENCE:/m.test(updated)
+    ? updated.replace(/^CI_EVIDENCE:.*$/m, (line) => `${line}\n${evidence}`)
+    : `${updated.trimEnd()}\nCI_EVIDENCE:\n${evidence}\n`;
+  await writeFile(resultPath, updated, 'utf8');
+}
+
 export async function bumpHandoffIteration(handoffPath, next) {
   const text = await readFile(handoffPath, 'utf8');
   const updated = text.replace(/^ITERATION:.*$/m, `ITERATION: ${next}`);
@@ -605,6 +717,12 @@ export async function run({
   decideOptions = {},
   trackedChanges = defaultTrackedChanges,
   timeoutMs = CLAUDE_WALL_TIMEOUT_MS,
+  ciStatus = defaultCiStatus,
+  prHead = defaultPrHead,
+  ciTimeoutMs = CI_WALL_TIMEOUT_MS,
+  ciPollMs = CI_POLL_MS,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  now = () => Date.now(),
 }) {
   const loopDir = path.join(root, '.agent-loop');
   const handoffPath = path.join(loopDir, 'inbox', `${loopId}.handoff.md`);
@@ -632,36 +750,69 @@ export async function run({
       );
     }
     const resultPath = path.join(loopDir, 'outbox', `${loopId}.${iteration}.result.md`);
-    if (await exists(resultPath)) throw new BridgeError('IO', `RESULT já existe: ${resultPath}`);
-    const previousPath = path.join(
-      loopDir,
-      'inbox',
-      `${loopId}.${Number(iteration) - 1}.decision.md`,
-    );
-    const decisionPath =
-      Number(iteration) > 1 && (await exists(previousPath))
-        ? path.relative(root, previousPath).replaceAll('\\', '/')
-        : null;
-    const prompt = buildExecutorPrompt({ template, loopId, iteration, decisionPath });
-
-    const outcome = await runClaude({
-      bin,
-      args: claudeArgs(),
-      prompt,
-      cwd: root,
-      timeoutMs,
-      spawnImpl,
-    });
-    if (outcome.killed)
-      throw new BridgeError('IO', `Claude excedeu o timeout de ${timeoutMs} ms e foi encerrado`);
-    if (outcome.code !== 0) {
-      throw new BridgeError(
-        'IO',
-        `Claude saiu com código ${outcome.code}: ${outcome.stderr.slice(0, 300)}`,
-      );
+    const decisionFile = path.join(loopDir, 'inbox', `${loopId}.${iteration}.decision.md`);
+    // Retomada: um RESULT em PR_READY sem DECISION continua na bridge (CI → decide) sem reexecutar
+    // o Claude. Qualquer outro RESULT existente é fail closed.
+    let resumed = false;
+    if (await exists(resultPath)) {
+      const existing = parseContract(await readFile(resultPath, 'utf8'));
+      if (firstToken(existing.get('DONE_LEVEL')) !== 'PR_READY' || (await exists(decisionFile))) {
+        throw new BridgeError('IO', `RESULT já existe: ${resultPath}`);
+      }
+      resumed = true;
     }
-    if (!(await exists(resultPath)))
-      throw new BridgeError('IO', `Claude terminou sem gravar ${resultPath}`);
+
+    if (!resumed) {
+      const previousPath = path.join(
+        loopDir,
+        'inbox',
+        `${loopId}.${Number(iteration) - 1}.decision.md`,
+      );
+      const decisionPath =
+        Number(iteration) > 1 && (await exists(previousPath))
+          ? path.relative(root, previousPath).replaceAll('\\', '/')
+          : null;
+      const prompt = buildExecutorPrompt({ template, loopId, iteration, decisionPath });
+
+      const outcome = await runClaude({
+        bin,
+        args: claudeArgs(),
+        prompt,
+        cwd: root,
+        timeoutMs,
+        spawnImpl,
+      });
+      if (outcome.killed)
+        throw new BridgeError('IO', `Claude excedeu o timeout de ${timeoutMs} ms e foi encerrado`);
+      if (outcome.code !== 0) {
+        throw new BridgeError(
+          'IO',
+          `Claude saiu com código ${outcome.code}: ${summarizeClaudeOutput(outcome.stdout, outcome.stderr)}`,
+        );
+      }
+      if (!(await exists(resultPath)))
+        throw new BridgeError('IO', `Claude terminou sem gravar ${resultPath}`);
+    }
+
+    // PR_READY: a bridge observa verify + architecture no head do PR e promove a CI_VERIFIED.
+    const result = parseContract(await readFile(resultPath, 'utf8'));
+    if (firstToken(result.get('DONE_LEVEL')) === 'PR_READY') {
+      const commit = firstToken(result.get('COMMIT'));
+      const prNumber = (result.get('PR') ?? '').match(/#(\d+)/)?.[1];
+      if (!commit || !prNumber)
+        throw new BridgeError('HUMAN_GATE', 'RESULT em PR_READY sem COMMIT ou PR identificáveis');
+      const ci = await awaitCiVerified({
+        commit,
+        prNumber,
+        ciStatus: (sha) => ciStatus(sha, root),
+        prHead: (number) => prHead(number, root),
+        sleep,
+        now,
+        timeoutMs: ciTimeoutMs,
+        pollMs: ciPollMs,
+      });
+      await promoteResultToCiVerified(resultPath, ci.head, new Date(now()).toISOString());
+    }
 
     const summary = await decideImpl({ root, loopId, iteration, env, ...decideOptions });
     iterations.push({ iteration, decision: summary.decision, decisionPath: summary.outPath });
