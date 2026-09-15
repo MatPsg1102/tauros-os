@@ -12,9 +12,16 @@ Ordem obrigatória:
 3. Execute exatamente o OBJECTIVE dentro do SCOPE, respeitando FORBIDDEN, os orçamentos e os gates
    1–8 (docs/agent-gate-paths.md). Só edite arquivos do SCOPE e do SCOPE_STATE.
 4. Rode o VERIFY do HANDOFF na ordem; corrija apenas falhas causadas pela sua mudança.
-5. Se o DONE_WHEN exigir PR: commit com o trailer `Loop-Id: <LOOP_ID>.<ITERATION>`, push e PR com a
-   linha `Loop-Id: <LOOP_ID>` no corpo. NÃO espere o CI: a bridge observa verify e architecture
-   no head do PR e promove o RESULT a CI_VERIFIED.
+5. Se o DONE_WHEN exigir PR: commit com o trailer `Loop-Id: <LOOP_ID>.<ITERATION>`; push EXATAMENTE
+   na forma `git push -u origin <BRANCH>`; PR direto com
+   `gh pr create --title "<título>" --body-file <arquivo>` (corpo gravado antes com a ferramenta
+   Write, contendo a linha `Loop-Id: <LOOP_ID>`). Estas são as únicas formas permitidas pela
+   allowlist da bridge. NÃO use como alternativa: `git fetch`, `git ls-remote`, `gh pr list`,
+   `git push` sem `-u origin`, comandos encadeados com `&&`, `;` ou `|`, nem qualquer comando fora
+   da allowlist. Se um comando for negado pela permission policy: verifique se existe a forma
+   permitida acima, tente-a UMA vez, não explore alternativas; se a forma permitida também falhar,
+   grave o RESULT com STATUS BLOCKED e pare. NÃO espere o CI: a bridge observa verify e
+   architecture no head do PR e promove o RESULT a CI_VERIFIED.
 6. Atualize só o bookkeeping permitido do checkpoint, dentro do STATE_BOOKKEEPING_BUDGET.
 7. Grave o RESULT no caminho RESULT_ESPERADO, no contrato do design §3.2 (STATUS, LOOP_ID,
    ITERATION, DONE_LEVEL, BRANCH, COMMIT, PR, DIFF_SUMMARY, EXECUTABLE_BUDGET_USED,
