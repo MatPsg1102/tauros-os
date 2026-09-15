@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Tauros OS — PWA operacional de gestão de açougue (evoluindo para SaaS multi-loja), monorepo pnpm + Turborepo.
 
-**Estado atual:** `main` na tag `design-system-v1.0`; 587 testes no monorepo; CI com dois jobs (`verify` + `architecture`). **Nunca fazer merge com CI vermelho.**
+**Estado atual:** obtenha o estado operacional real pelo Git (`git status`, `git log`, `git branch`) e pelo checkpoint canônico [docs/agent-development-state.md](docs/agent-development-state.md); última tag de milestone: `design-system-v1.0` (histórica, não é o estado da `main`); CI com dois jobs (`verify` + `architecture`). **Nunca fazer merge com CI vermelho.**
 
 **A arquitetura está congelada.** A SAS, os ADRs — em especial **ADR-018** (permissões efetivas), **ADR-019** (Configuration Engine) e **ADR-020** (UI Metadata Engine) — o Configuration Baseline v1.0 e os documentos de design são a **fonte de verdade**. Não re-arquitetar nem trocar tecnologia sem novo ADR. Se uma implementação revelar necessidade de mudança estrutural: **interromper, explicar o problema, apresentar alternativas, recomendar e aguardar aprovação** antes de alterar qualquer artefato congelado. Se dois documentos divergirem: **parar e apresentar a divergência — nunca decidir silenciosamente.**
 
