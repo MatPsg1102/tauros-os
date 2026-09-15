@@ -67,11 +67,13 @@ carcaça de exportação`, ≈ 6,97% com os dados iniciais; fallback 7%).
 ## Desossa (indicador comercial) — independente da Transformação
 
 Tela própria ("Desossa" na navegação), reproduzindo a estatística comercial
-da operação: a carcaça entra com **peso** e **valor inicial**; cada produto
+da operação: a carcaça entra com **peso** e **custo do kg** (o **valor
+inicial = peso × custo do kg** é derivado e só leitura); cada produto
 da desossa (Pernil, Lombo, Pazinha, Costelinha, Copa lombo, Toucinho
 torresmo, Suã, Pezinho, Barriga, Rabinho, Retalho, Osso — lista editável)
 tem **peso** e **R$/kg**. Fórmulas (`domain/deboning.ts`):
 
+- `valor inicial da carcaça = peso × custo do kg` (derivado, nunca digitado);
 - `valor do produto = peso × R$/kg`; `percentual = peso ÷ peso da carcaça × 100`
   (derivado, nunca digitado);
 - `valor comercial = Σ valor dos produtos`;
@@ -95,7 +97,8 @@ Análises podem ser salvas no Histórico (lista "Desossas", chave própria).
 - Custos da estimativa (caso realista): 100 suínos, abate R$ 50/cabeça +
   serviço R$ 3 + diária R$ 150 + combustível R$ 250 = R$ 5.700 ÷ 9.306,375 kg
   = R$ 0,6125/kg ⇒ final 6,8755 + 0,6125 ≈ **R$ 7,49/kg**.
-- Desossa (planilha): carcaça 1.128,10 kg / R$ 13.029,56; 12 produtos ⇒
+- Desossa (planilha): carcaça 1.128,10 kg × R$ 11,55/kg = R$ 13.029,555 →
+  **R$ 13.029,56**; 12 produtos ⇒
   valor comercial **R$ 16.829,56** (soma exata 16.829,5573), acréscimo
   **R$ 3.800,00**, margem **22,58%**; peso dos produtos 1.128,81 kg ⇒
   rendimento de peso **100,06%**; Pernil 295,86 kg × R$ 15,00 = R$ 4.437,90

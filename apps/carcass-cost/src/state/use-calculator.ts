@@ -61,7 +61,7 @@ import {
 } from './storage.js';
 
 export type DeboningCarcassPatch = Partial<
-  Pick<DeboningForm, 'carcassWeightKg' | 'carcassValueBRL'>
+  Pick<DeboningForm, 'carcassWeightKg' | 'carcassCostPerKg'>
 >;
 export type DeboningProductPatch = Partial<Omit<DeboningProductForm, 'id'>>;
 
@@ -226,7 +226,7 @@ export function useCalculator(): CalculatorController {
       deboning: state.deboning,
       summary: {
         carcassWeightKg: state.deboning.carcassWeightKg,
-        carcassValueBRL: state.deboning.carcassValueBRL,
+        carcassValueBRL: deboning === null ? null : deboning.carcassValueBRL,
         commercialValueBRL: deboning === null ? null : deboning.commercialValueBRL,
         commercialGainBRL: deboning === null ? null : deboning.commercialGainBRL,
         marginPct: deboning === null ? null : deboning.marginPct,

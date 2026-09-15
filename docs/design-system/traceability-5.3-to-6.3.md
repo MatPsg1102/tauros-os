@@ -1702,3 +1702,22 @@ Campos vazios de produto contam 0; carcaça sem peso ou valor negativo ⇒
 resultado nulo com mensagem no campo (nada inventado).
 Testes: 19 de domínio (11 casos do pedido), +6 de storage, +11 de UI
 (jornada, isolamento, persistência, "?" e axe) — 132 no app.
+
+## Custo da Carcaça V3.4.1 — Desossa: custo do kg editável, valor inicial derivado (feat/carcass-deboning-cost-per-kg)
+
+Pedido do responsável após o uso do #54 (só `apps/carcass-cost`): na seção
+Carcaça da Desossa o operador informa **peso** e **custo do kg**; o **valor
+inicial = peso × custo do kg** passou a ser derivado no domínio e exibido só
+leitura (LedgerRow com a conta ao lado: "1.128,10 kg × R$ 11,55/kg"). Cenário
+da planilha preservado com custo 11,55/kg: 1.128,10 × 11,55 = 13.029,555 →
+exibe R$ 13.029,56; acréscimo 3.800,00; margem 22,58% (verificado em ponto
+flutuante antes de trocar o modelo). Domínio: `carcassValueBRL` saiu da
+entrada e virou saída (`DeboningInput.carcassCostPerKg`; validação
+REQUIRED/NEGATIVE no custo). Estado: `DeboningForm.carcassCostPerKg`;
+`STORAGE_VERSION` 4 mantida — a chave antiga `carcassValueBRL` (valor
+digitado, vigente por menos de um dia) é ignorada e o custo volta ao padrão
+11,55 com peso e produtos preservados (teste de storage). Análises salvas no
+#54 reabrem com o custo pendente ("Informe este valor"), nunca com valor
+inventado. Transformação, Estimativa e o cálculo de 6,67/kg intocados.
+Testes: +1 domínio (custo → valor inicial/acréscimo/margem), +1 storage
+(chave antiga), +1 UI (custo 12,00 → 13.537,20 / +3.292,36 / 19,56%).

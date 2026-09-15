@@ -107,7 +107,7 @@ describe('loadState / saveState', () => {
       ...state,
       deboning: {
         carcassWeightKg: 1200,
-        carcassValueBRL: 14000,
+        carcassCostPerKg: 12,
         products: [
           ...state.deboning.products
             .filter((p) => p.id !== 'osso')
@@ -120,6 +120,21 @@ describe('loadState / saveState', () => {
     };
     saveState(edited);
     expect(loadState().deboning).toEqual(edited.deboning);
+  });
+
+  it('chave antiga carcassValueBRL (valor digitado) é ignorada: custo do kg volta ao padrão, resto preservado', () => {
+    saveState({ ...initialState(), deboning: { ...DEFAULT_DEBONING, carcassWeightKg: 1200 } });
+    const raw = JSON.parse(localStorage.getItem(STATE_STORAGE_KEY) ?? '{}') as {
+      data: { deboning: Record<string, unknown> };
+    };
+    delete raw.data.deboning['carcassCostPerKg'];
+    raw.data.deboning['carcassValueBRL'] = 14000;
+    localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify({ version: 4, data: raw.data }));
+    const loaded = loadState();
+    expect(loaded.deboning.carcassWeightKg).toBe(1200);
+    expect(loaded.deboning.carcassCostPerKg).toBe(11.55);
+    expect(loaded.deboning.products).toHaveLength(12);
+    expect('carcassValueBRL' in loaded.deboning).toBe(false);
   });
 
   it('lista de produtos vazia gravada é respeitada — não ressuscita a estatística', () => {

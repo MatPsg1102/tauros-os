@@ -581,11 +581,15 @@ describe('Desossa (indicador comercial da desossa) — cenário da planilha', ()
     expect(pesos.getByText('1.128,10 kg')).toBeDefined();
     expect(pesos.getByText('1.128,81 kg')).toBeDefined();
     expect(pesos.getByText('100,06%')).toBeDefined();
-    // Carcaça editável com os valores da planilha (o NumberInput não agrupa milhar).
+    // Carcaça: peso e custo do kg editáveis (o NumberInput não agrupa milhar);
+    // valor inicial DERIVADO (peso × custo), só leitura, com a conta ao lado.
     expect((screen.getByLabelText('Peso da carcaça') as HTMLInputElement).value).toBe('1128,1');
-    expect((screen.getByLabelText('Valor inicial') as HTMLInputElement).value).toContain(
-      '13.029,56',
-    );
+    expect((screen.getByLabelText('Custo do kg') as HTMLInputElement).value).toContain('11,55');
+    expect(screen.queryByLabelText('Valor inicial')).toBeNull();
+    const inicial = within(screen.getByRole('group', { name: 'Valor inicial da carcaça' }));
+    expect(inicial.getByText('Valor inicial')).toBeDefined();
+    expect(inicial.getByText(plain('R$ 13.029,56'))).toBeDefined();
+    expect(inicial.getByText(plain('1.128,10 kg × R$ 11,55/kg'))).toBeDefined();
     // 12 produtos, cada um com total e percentual; nada da Transformação aqui.
     expect(product('Pernil').getByText(plain('R$ 4.437,90'))).toBeDefined();
     expect(product('Pernil').getByText('26,23%')).toBeDefined();
@@ -653,6 +657,23 @@ describe('Desossa (indicador comercial da desossa) — cenário da planilha', ()
     expect(screen.getByText('93,68%')).toBeDefined();
   });
 
+  it('alterar o custo do kg recalcula o valor inicial (só leitura), o acréscimo e a margem', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await openDeboning(user);
+    const cost = screen.getByLabelText('Custo do kg');
+    await user.clear(cost);
+    await user.type(cost, '12,00');
+    const inicial = within(screen.getByRole('group', { name: 'Valor inicial da carcaça' }));
+    expect(await inicial.findByText(plain('R$ 13.537,20'))).toBeDefined();
+    expect(inicial.getByText(plain('1.128,10 kg × R$ 12,00/kg'))).toBeDefined();
+    expect(formation().getByText(plain('R$ 13.537,20'))).toBeDefined();
+    // acréscimo 16.829,56 − 13.537,20 = 3.292,36 → margem 19,56%; valor comercial não muda.
+    expect(formation().getByText(plain('+ R$ 3.292,36'))).toBeDefined();
+    expect(formation().getByText(plain('R$ 16.829,56'))).toBeDefined();
+    expect(screen.getAllByText('19,56%').length).toBeGreaterThanOrEqual(2);
+  });
+
   it('carcaça sem peso: mensagem no campo e nenhum resultado inventado', async () => {
     const user = userEvent.setup();
     renderApp();
@@ -660,7 +681,10 @@ describe('Desossa (indicador comercial da desossa) — cenário da planilha', ()
     await user.clear(screen.getByLabelText('Peso da carcaça'));
     expect(await screen.findByText('Informe este valor.')).toBeDefined();
     expect(
-      screen.getByText('Informe o peso e o valor inicial da carcaça para ver o resultado.'),
+      screen.getByText('Informe o peso e o custo do kg da carcaça para ver o resultado.'),
+    ).toBeDefined();
+    expect(
+      within(screen.getByRole('group', { name: 'Valor inicial da carcaça' })).getByText('—'),
     ).toBeDefined();
     expect(screen.queryByText('22,58%')).toBeNull();
     expect(
@@ -737,9 +761,9 @@ describe('Desossa (indicador comercial da desossa) — cenário da planilha', ()
     const price = product('Pernil').getByLabelText('R$/Kg');
     await user.clear(price);
     await user.type(price, '30,00');
-    const carcass = screen.getByLabelText('Valor inicial');
-    await user.clear(carcass);
-    await user.type(carcass, '10.000,00');
+    const cost = screen.getByLabelText('Custo do kg');
+    await user.clear(cost);
+    await user.type(cost, '9,00');
     expect(screen.queryByText('22,58%')).toBeNull();
 
     await user.click(screen.getByRole('button', { name: 'Voltar' }));
