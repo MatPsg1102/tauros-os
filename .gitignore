@@ -13,3 +13,4 @@ playwright-report/
 .DS_Store
 .vercel/
 *.tsbuildinfo
+.agent-loop/
