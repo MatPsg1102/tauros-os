@@ -395,3 +395,23 @@ describe('Ajuda contextual ("?")', () => {
     expect(screen.queryByText(/Quebra de abate incide sobre o peso vivo/)).toBeNull();
   });
 });
+
+describe('Auditoria matemática — Estimativa 4,80 / 17% / 2,5% / indicador 1,63%', () => {
+  it('exibe R$ 6,67/kg com a cadeia 5,93 → +0,10 → 6,03 → +0,58 → +0,06 (nunca 6,71)', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.type(screen.getByLabelText('Peso vivo médio'), '115');
+    const ajuste = within(screen.getByRole('region', { name: 'Ajuste rápido' })).getByLabelText(
+      'Preço do suíno vivo (R$/kg)',
+    );
+    await user.clear(ajuste);
+    await user.type(ajuste, '4,80');
+    expect((await screen.findAllByText(/6,67\/kg/)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/5,93\/kg/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/0,10\/kg/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/6,03\/kg/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/0,58\/kg/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('1,63%').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/6,71\/kg/)).toBeNull();
+  });
+});
