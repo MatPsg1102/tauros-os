@@ -7,6 +7,15 @@ import { axe } from 'jest-axe';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { App } from './app.js';
+import { calculateQuickEstimate } from './domain/carcass-cost.js';
+import {
+  DEFAULT_EXPORT_CARCASS_PRICE_PER_KG,
+  DEFAULT_SUBPRODUCTS,
+  REFERENCE_COOLING_LOSS_PCT,
+  REFERENCE_SLAUGHTER_LOSS_PCT,
+  calculateTransformation,
+} from './domain/transformation.js';
+import { formatPerKg } from './ui/format.js';
 
 function renderApp() {
   return render(
@@ -48,18 +57,15 @@ describe('Calculadora — modo estimativa', () => {
     // Cadeia econômica: equivalente antes dos custos adicionais = 6,28/kg.
     expect(screen.getAllByText(/6,28\/kg/).length).toBeGreaterThan(0);
     // Custos adicionais explícitos: total da operação e impacto por kg.
-    expect(screen.getByText('Custos adicionais da operação')).toBeDefined();
+    expect(screen.getByText('Abate + serviço + frete')).toBeDefined();
     expect(screen.getAllByText(/5\.980,00/).length).toBeGreaterThan(0);
-    expect(screen.getByText('Impacto dos custos adicionais')).toBeDefined();
     expect(screen.getAllByText(/0,58\/kg/).length).toBeGreaterThan(0);
     // Acréscimos fixos visíveis: oportunidade + CENAR + impacto total.
     expect(screen.getByText('Custo de oportunidade')).toBeDefined();
     expect(screen.getByText('Descarga não realizada')).toBeDefined();
     expect(screen.getAllByText(/0,05\/kg/).length).toBeGreaterThan(0);
-    expect(screen.getByText('Imposto CENAR')).toBeDefined();
+    expect(screen.getByText('CENAR')).toBeDefined();
     expect(screen.getAllByText(/0,01\/kg/).length).toBeGreaterThan(0);
-    expect(screen.getByText('Impacto total dos acréscimos')).toBeDefined();
-    expect(screen.getAllByText(/0,06\/kg/).length).toBeGreaterThan(0);
   });
 
   it('a seção “E se eu pagar…” não existe mais', async () => {
@@ -339,7 +345,6 @@ describe('Transformação (indicador econômico de transformação)', () => {
     // Os acréscimos fixos NÃO recebem o indicador — seguem 0,05 / 0,01 / 0,06.
     expect(screen.getAllByText(/0,05\/kg/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/0,01\/kg/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/0,06\/kg/).length).toBeGreaterThan(0);
   });
 
   it('REDUZIR o preço da papada AUMENTA o indicador', async () => {
@@ -413,5 +418,122 @@ describe('Auditoria matemática — Estimativa 4,80 / 17% / 2,5% / indicador 1,6
     expect(screen.getAllByText(/0,58\/kg/).length).toBeGreaterThan(0);
     expect(screen.getAllByText('1,63%').length).toBeGreaterThan(0);
     expect(screen.queryByText(/6,71\/kg/)).toBeNull();
+  });
+});
+
+describe('Formação do custo (Estimativa) — só valores do domínio', () => {
+  const COSTS = { slaughterFeePerHead: 50, servicePerHead: 3, driverDailyRate: 150, fuelCost: 0 };
+  // Intl usa espaço não-quebrável em "R$ 6,18/kg"; a Testing Library normaliza o
+  // DOM (NBSP → espaço) mas não o matcher — por isso o esperado é normalizado.
+  const plain = (text: string): string => text.replace(/\u00a0/g, ' ');
+  const indicatorPct = (jowlPrice = 12.99): number =>
+    calculateTransformation({
+      subproducts: { ...DEFAULT_SUBPRODUCTS, jowl: { weightKg: 2.5, pricePerKg: jowlPrice } },
+      exportCarcassPricePerKg: DEFAULT_EXPORT_CARCASS_PRICE_PER_KG,
+      referenceLiveWeightKg: 115,
+      slaughterLossPct: REFERENCE_SLAUGHTER_LOSS_PCT,
+      coolingLossPct: REFERENCE_COOLING_LOSS_PCT,
+    }).indicatorPct ?? 0;
+  const expected = (livePrice: number, pct: number) =>
+    calculateQuickEstimate({
+      animals: 110,
+      avgLiveWeightKg: 115,
+      livePricePerKg: livePrice,
+      slaughterLossPct: 17,
+      coolingLossPct: 2.5,
+      commercialAdjustmentPct: pct,
+      costs: COSTS,
+    });
+  const formation = () => within(screen.getByRole('group', { name: 'Formação do custo por kg' }));
+  const expectFormation = (livePrice: number, pct: number): void => {
+    const r = expected(livePrice, pct);
+    const f = formation();
+    expect(f.getByText('Carcaça antes do ajuste')).toBeDefined();
+    expect(f.getByText(plain(formatPerKg(r.baseCarcassPerKg)))).toBeDefined();
+    expect(f.getByText('Ajuste transformação')).toBeDefined();
+    expect(f.getByText(plain(`+ ${formatPerKg(r.commercialAdjustmentPerKg)}`))).toBeDefined();
+    expect(f.getByText('Carcaça equivalente')).toBeDefined();
+    expect(f.getByText(plain(formatPerKg(r.equivalentPerKg)))).toBeDefined();
+    expect(f.getByText('Abate + serviço + frete')).toBeDefined();
+    expect(f.getByText(plain(`+ ${formatPerKg(r.additionalPerKg)}`))).toBeDefined();
+    expect(f.getByText('Custo de oportunidade')).toBeDefined();
+    expect(f.getByText('CENAR')).toBeDefined();
+    expect(f.getByText('Custo final')).toBeDefined();
+    expect(f.getByText(plain(formatPerKg(r.costPerKg)))).toBeDefined();
+  };
+
+  it('cenário 110 × 115 kg, R$ 4,80: 5,93 → +0,10 → 6,03 → +0,58 → +0,05 → +0,01 → 6,67', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.type(screen.getByLabelText('Peso vivo médio'), '115');
+    const ajuste = within(screen.getByRole('region', { name: 'Ajuste rápido' })).getByLabelText(
+      'Preço do suíno vivo (R$/kg)',
+    );
+    await user.clear(ajuste);
+    await user.type(ajuste, '4,80');
+    await screen.findAllByText(/6,67\/kg/);
+    const f = formation();
+    for (const text of [
+      'R$ 5,93/kg',
+      '+ R$ 0,10/kg',
+      'R$ 6,03/kg',
+      '+ R$ 0,58/kg',
+      '+ R$ 0,05/kg',
+      '+ R$ 0,01/kg',
+      'R$ 6,67/kg',
+    ]) {
+      expect(f.getByText(plain(text))).toBeDefined();
+    }
+    // origem das parcelas
+    expect(f.getByText(plain('R$ 4,80/kg vivo ÷ 80,93% de rendimento'))).toBeDefined();
+    expect(f.getByText('Indicador 1,63% dos subprodutos')).toBeDefined();
+    expect(f.getByText(plain('R$ 5.980,00 ÷ 10.237,01 kg'))).toBeDefined();
+    expect(f.getByText('Descarga não realizada')).toBeDefined();
+    expectFormation(4.8, indicatorPct());
+  });
+
+  it('alterar o preço do suíno recalcula a composição inteira', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.type(screen.getByLabelText('Peso vivo médio'), '115');
+    await screen.findAllByText(/6,92\/kg/);
+    expectFormation(5, indicatorPct());
+    const ajuste = within(screen.getByRole('region', { name: 'Ajuste rápido' })).getByLabelText(
+      'Preço do suíno vivo (R$/kg)',
+    );
+    await user.clear(ajuste);
+    await user.type(ajuste, '5,50');
+    await screen.findAllByText(/7,55\/kg/);
+    expectFormation(5.5, indicatorPct());
+  });
+
+  it('alterar subprodutos atualiza o indicador e a parcela "Ajuste transformação"', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.type(screen.getByLabelText('Peso vivo médio'), '115');
+    await screen.findAllByText(/6,92\/kg/);
+    await user.click(screen.getByRole('button', { name: 'Transformação' }));
+    const papada = within(screen.getByRole('group', { name: 'Papada' })).getByLabelText('R$/Kg');
+    await user.clear(papada);
+    await user.type(papada, '15,00');
+    await screen.findAllByText('0,92%');
+    await user.click(screen.getByRole('button', { name: 'Voltar' }));
+    await screen.findAllByText(/6,88\/kg/);
+    expect(formation().getByText('Indicador 0,92% dos subprodutos')).toBeDefined();
+    expectFormation(5, indicatorPct(15));
+  });
+
+  it('o "?" continua acessível (nome, estado e nota) e a ação principal é o primário', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    const help = screen.getByRole('button', { name: 'Sobre: Custos' });
+    await user.click(help);
+    expect(help.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText(/Abate e serviço são por suíno/)).toBeDefined();
+    const save = screen.getByRole('button', { name: 'Salvar lote no histórico' });
+    expect(save.getAttribute('data-variant')).toBe('primary');
+    expect(
+      screen.getByRole('button', { name: 'Ajustar subprodutos' }).getAttribute('data-variant'),
+    ).toBe('secondary');
   });
 });

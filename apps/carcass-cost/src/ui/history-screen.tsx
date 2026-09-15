@@ -90,7 +90,7 @@ export function HistoryScreen({ calc, onBack, onOpenEntry }: HistoryScreenProps)
                   Abrir este lote
                 </Button>
                 <Button
-                  variant="secondary"
+                  variant="danger"
                   size="sm"
                   onClick={() => {
                     setPendingDelete(entry);

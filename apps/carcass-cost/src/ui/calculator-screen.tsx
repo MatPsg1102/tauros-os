@@ -25,11 +25,10 @@ import {
   Surface,
   Text,
 } from '@tauros/ui-primitives';
-import { useState, type ReactElement } from 'react';
+import { useState, type CSSProperties, type ReactElement } from 'react';
 
 import {
   CENAR_TAX_PER_KG,
-  FIXED_SURCHARGES_PER_KG,
   OPPORTUNITY_COST_PER_KG,
   calculateFinalYield,
   calculateTotalLiveWeight,
@@ -37,6 +36,7 @@ import {
 } from '../domain/carcass-cost.js';
 import type { ValidationIssue } from '../domain/validation.js';
 import type { CalculatorController } from '../state/use-calculator.js';
+import { CostFormation, type FormationStep } from './cost-formation.js';
 import { errorProp } from './field-messages.js';
 import {
   formatBRL,
@@ -64,6 +64,12 @@ interface HeadlineView {
   readonly totalCost: number;
   readonly additionalPerKg: number;
 }
+
+// Contorno na cor de destaque: ação que altera o indicador, ligada ao card dele.
+const ACCENT_OUTLINE: CSSProperties = {
+  color: cssVar('color-accent-default'),
+  borderColor: cssVar('color-accent-default'),
+};
 
 function hasIssue(issues: readonly ValidationIssue[], field: string): boolean {
   return issues.some((issue) => issue.field === field);
@@ -133,6 +139,61 @@ export function CalculatorScreen({
   );
   const indicatorText =
     commercialAdjustmentPct === null ? '—' : formatPct(commercialAdjustmentPct / 100);
+
+  // Formação do custo por kg — só valores já calculados pelo domínio (as
+  // notas dizem a origem de cada parcela; nenhuma conta é refeita aqui).
+  const formationSteps: readonly FormationStep[] =
+    !isReal && quickResult !== null
+      ? [
+          {
+            kind: 'start',
+            label: 'Carcaça antes do ajuste',
+            value: formatPerKg(quickResult.baseCarcassPerKg),
+            note: `${formatPerKg(state.quick.livePricePerKg ?? 0)} vivo ÷ ${formatPct(quickResult.finalYield)} de rendimento`,
+          },
+          {
+            kind: 'add',
+            label: 'Ajuste transformação',
+            value: `+ ${formatPerKg(quickResult.commercialAdjustmentPerKg)}`,
+            note: `Indicador ${indicatorText} dos subprodutos`,
+          },
+          {
+            kind: 'subtotal',
+            label: 'Carcaça equivalente',
+            value: formatPerKg(quickResult.equivalentPerKg),
+          },
+          {
+            kind: 'add',
+            label: 'Abate + serviço + frete',
+            value: `+ ${formatPerKg(quickResult.additionalPerKg)}`,
+            note: `${formatBRL(quickResult.additionalCostsTotal)} ÷ ${formatKg(quickResult.estimatedCarcassKg)}`,
+          },
+          {
+            kind: 'add',
+            label: 'Custo de oportunidade',
+            value: `+ ${formatPerKg(OPPORTUNITY_COST_PER_KG)}`,
+            note: 'Descarga não realizada',
+          },
+          { kind: 'add', label: 'CENAR', value: `+ ${formatPerKg(CENAR_TAX_PER_KG)}` },
+          { kind: 'total', label: 'Custo final', value: formatPerKg(quickResult.costPerKg) },
+        ]
+      : isReal && realResult !== null
+        ? [
+            {
+              kind: 'start',
+              label: 'Animal (vivo → carcaça)',
+              value: formatPerKg(realResult.basePerKg),
+              note: `${formatPerKg(state.real.livePricePerKg ?? 0)} vivo ÷ ${formatPct(realResult.finalYield)} de rendimento`,
+            },
+            {
+              kind: 'add',
+              label: 'Abate + serviço + frete',
+              value: `+ ${formatPerKg(realResult.additionalPerKg)}`,
+              note: `${formatBRL(realResult.additionalCostsTotal)} ÷ ${formatKg(realResult.finalWeightKg)}`,
+            },
+            { kind: 'total', label: 'Custo final', value: formatPerKg(realResult.costPerKg) },
+          ]
+        : [];
 
   return (
     <Stack gap={200}>
@@ -228,57 +289,7 @@ export function CalculatorScreen({
                 </Stack>
               </Flex>
               <Divider />
-              <Stack gap={50} role="group" aria-label="Composição do custo por kg">
-                {!isReal && quickResult !== null ? (
-                  <>
-                    <LedgerRow
-                      label="Carcaça antes do ajuste"
-                      value={formatPerKg(quickResult.baseCarcassPerKg)}
-                    />
-                    <LedgerRow
-                      label={`Ajuste comercial (+${indicatorText})`}
-                      value={`+ ${formatPerKg(quickResult.commercialAdjustmentPerKg)}`}
-                    />
-                    <LedgerRow
-                      label="Custo equivalente"
-                      value={formatPerKg(quickResult.equivalentPerKg)}
-                    />
-                    <LedgerRow
-                      label="Custos adicionais da operação"
-                      value={formatBRL(quickResult.additionalCostsTotal)}
-                    />
-                    <LedgerRow
-                      label="Impacto dos custos adicionais"
-                      value={`+ ${formatPerKg(quickResult.additionalPerKg)}`}
-                    />
-                    <LedgerRow
-                      label="Custo de oportunidade"
-                      note="Descarga não realizada"
-                      value={`+ ${formatPerKg(OPPORTUNITY_COST_PER_KG)}`}
-                    />
-                    <LedgerRow label="Imposto CENAR" value={`+ ${formatPerKg(CENAR_TAX_PER_KG)}`} />
-                    <LedgerRow
-                      label="Impacto total dos acréscimos"
-                      value={`+ ${formatPerKg(FIXED_SURCHARGES_PER_KG)}`}
-                    />
-                  </>
-                ) : realResult !== null ? (
-                  <>
-                    <LedgerRow
-                      label="Animal (vivo → carcaça)"
-                      value={formatPerKg(realResult.basePerKg)}
-                    />
-                    <LedgerRow
-                      label="Custos adicionais da operação"
-                      value={formatBRL(realResult.additionalCostsTotal)}
-                    />
-                    <LedgerRow
-                      label="Impacto dos custos adicionais"
-                      value={`+ ${formatPerKg(realResult.additionalPerKg)}`}
-                    />
-                  </>
-                ) : null}
-              </Stack>
+              <CostFormation label="Formação do custo por kg" steps={formationSteps} />
             </>
           )}
         </Stack>
@@ -436,7 +447,12 @@ export function CalculatorScreen({
               <Stack gap={100}>
                 <LedgerRow label="Indicador de transformação" value={indicatorText} />
                 {/* Abre os dados que geram o indicador acima (aba Transformação). */}
-                <Button variant="secondary" fullWidth onClick={onOpenTransformation}>
+                <Button
+                  variant="secondary"
+                  fullWidth
+                  style={ACCENT_OUTLINE}
+                  onClick={onOpenTransformation}
+                >
                   Ajustar subprodutos
                 </Button>
               </Stack>
@@ -545,7 +561,7 @@ export function CalculatorScreen({
 
       <Stack gap={50}>
         <Button
-          variant="secondary"
+          variant="primary"
           fullWidth
           disabled={headline === null || alreadySaved}
           onClick={() => {
