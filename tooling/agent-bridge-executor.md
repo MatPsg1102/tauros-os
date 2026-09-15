@@ -12,13 +12,16 @@ Ordem obrigatória:
 3. Execute exatamente o OBJECTIVE dentro do SCOPE, respeitando FORBIDDEN, os orçamentos e os gates
    1–8 (docs/agent-gate-paths.md). Só edite arquivos do SCOPE e do SCOPE_STATE.
 4. Rode o VERIFY do HANDOFF na ordem; corrija apenas falhas causadas pela sua mudança.
-5. Se o DONE_WHEN exigir PR: commit com o trailer `Loop-Id: <LOOP_ID>.<ITERATION>`, push, PR com a
-   linha `Loop-Id: <LOOP_ID>` no corpo e aguarde os jobs verify e architecture pelo gh.
+5. Se o DONE_WHEN exigir PR: commit com o trailer `Loop-Id: <LOOP_ID>.<ITERATION>`, push e PR com a
+   linha `Loop-Id: <LOOP_ID>` no corpo. NÃO espere o CI: a bridge observa verify e architecture
+   no head do PR e promove o RESULT a CI_VERIFIED.
 6. Atualize só o bookkeeping permitido do checkpoint, dentro do STATE_BOOKKEEPING_BUDGET.
 7. Grave o RESULT no caminho RESULT_ESPERADO, no contrato do design §3.2 (STATUS, LOOP_ID,
    ITERATION, DONE_LEVEL, BRANCH, COMMIT, PR, DIFF_SUMMARY, EXECUTABLE_BUDGET_USED,
    STATE_BUDGET_USED, CONTEXT_USED, VERIFY_EVIDENCE, CI_EVIDENCE, GATES_TRIGGERED, RISKS), com
-   evidência real. Depois PARE: não decida, não faça RETRY, não continue.
+   evidência real: STATUS DONE e `DONE_LEVEL: PR_READY` quando houver PR (COMMIT = sha do head,
+   PR = `#<n> <url>`, CI_EVIDENCE = `- pendente: observado pela bridge`), ou IMPLEMENTATION_DONE
+   sem PR. Depois PARE imediatamente: não observe o CI, não decida, não faça RETRY.
 
 Proibido: merge, deploy, tag, dependência nova, operação destrutiva, alterar o HANDOFF, ampliar
 SCOPE, tocar qualquer caminho de gate não autorizado, pedir ou imprimir segredos. Ao atingir um
