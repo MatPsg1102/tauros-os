@@ -52,17 +52,17 @@ pelo git desde o PR #60) ainda não existe; é criada localmente ao iniciar um l
 ## Current Loop
 
 Seção escrita pela bridge — na fase manual, pelo executor ao fechar cada iteração — conforme o design
-(§3.5). Nenhum loop ativo; L-0002 fechado por DECISION DONE do GPT (transporte manual).
+(§3.5). Nenhum loop ativo; L-0003 fechado por DECISION DONE (GPT via `decide`, confirmada pelo humano).
 
 ```text
 LOOP_ID: none
-LAST_LOOP_ID: L-0002
+LAST_LOOP_ID: L-0003
 ITERATION: 0
 HANDOFF_REF: none
 STARTED: none
 HUMAN_INTERVENTIONS: 0
 FAILED_ITERATIONS: 0
-LOOPS_THIS_SESSION: 2
+LOOPS_THIS_SESSION: 3
 ```
 
 ## Approved Decisions
@@ -109,6 +109,7 @@ Coletado em 2026-09-15T13:14Z:
 - **métricas (processo manual, primeiro registro)**: objetivo "design da bridge" — ITERATIONS 3 (v1, revisão 2, revisão 3), HUMAN_INTERVENTIONS 2 (pedido da revisão 2; ajustes da revisão 3), FAILED_ITERATIONS 0. Métricas de loop passam a viver em `Current Loop`; ao fechar cada loop, uma linha aqui consolida HUMAN_INTERVENTIONS, ITERATIONS, FAILED_ITERATIONS, DONE_LEVEL alcançado, `change_budget` previsto e consumido e arquivos de contexto usados.
 - **L-0001 fechado (DECISION DONE, 2026-09-15T14:22Z)**: DONE_LEVEL CI_VERIFIED; ITERATIONS 1; FAILED_ITERATIONS 0; HUMAN_INTERVENTIONS 0; EXECUTABLE_CHANGE_BUDGET previsto files=1/net_lines=5/dependencies=0, consumido files=1/net_lines=0/dependencies=0; STATE_BOOKKEEPING_BUDGET previsto files=1/net_lines=12, consumido na iteração 1 files=1/net_lines=−3; contexto 3 de 4 arquivos; PR #62; commit `1b643d5`; CI run `34975231171` com `verify` e `architecture` verdes.
 - **L-0002 fechado (DECISION DONE, 2026-09-15T15:36Z)**: DONE_LEVEL CI_VERIFIED; ITERATIONS 2; FAILED_ITERATIONS 1 (iteração 1 parou em GATE 8 por orçamento); HUMAN_INTERVENTIONS 1 (RETRY humano com orçamento 500 → 1000); EXECUTABLE_CHANGE_BUDGET previsto files=5/net_lines=1000/dependencies=0, consumido files=4/net_lines=860/dependencies=0; STATE_BOOKKEEPING_BUDGET previsto files=1/net_lines=12, consumido net_lines=1; contexto 8 de 8; PR #63; commit `e8dfb28`; CI run `34986148097` verde. Prova real da bridge: BRIDGE_LATENCY_MS 25291; OPENAI_MODEL gpt-5.6-sol; OPENAI_INPUT_TOKENS 3052; OPENAI_OUTPUT_TOKENS 666; OPENAI_DECISION DONE; MANUAL_DECISION DONE; SEMANTIC_MATCH yes.
+- **L-0003 fechado (DECISION DONE, 2026-09-15T16:17Z)**: DONE_LEVEL CI_VERIFIED; ITERATIONS_PER_OBJECTIVE 1; FAILED_ITERATIONS_PER_OBJECTIVE 0; HUMAN_INTERVENTIONS_PER_OBJECTIVE 0; PRODUCTION_CODE_LINES 245 (limite 350); TEST_CODE_LINES 218 (limite 350); TOTAL_EXECUTABLE_NET_LINES 463; bookkeeping net 0/12; PR #64; commit `fcb28ec`; CI run `34992866550` verde. DECISION gerada pelo `decide` mergeado: GPT DONE, modelo gpt-5.6-sol, latência 12368 ms, 4568/419 tokens; confirmada pelo humano. Subcomando `run` entregue sem execução real (prova end-to-end = L-0004).
 
 ## Open Questions
 
@@ -119,17 +120,17 @@ GATE 1 (`packages/domain/**`) foi decidida e corrigida nesta iteração.
 
 ## Next Action
 
-Aguardar o GATE 6 do PR #63. Após o merge, a bridge `decide` está entregue; a proposta informativa
-do GPT (avaliar ROI e desenho mínimo do PR 2, DECISION → Claude Code) só vira trabalho com aprovação
-humana. Verificável: PR #63 mergeado e `main` sincronizada.
+Aguardar o GATE 6 do PR #64. Após o merge, o próximo objective é L-0004: prova real end-to-end do
+Agent Bridge mergeado (um comando humano → `run` → Claude headless real → RESULT → GPT → DECISION →
+CI_VERIFIED → GATE 6), meta HUMAN_INTERVENTIONS_PER_OBJECTIVE = 0. **Não iniciar sem HANDOFF aprovado.**
 
 ## Human Gate
 
-**HUMAN_APPROVAL_REQUIRED** — (a) GATE 6 do PR #63 (L-0002); (b) DECISION do GPT após
+**HUMAN_APPROVAL_REQUIRED** — (a) GATE 6 do PR #64 (L-0003) e HANDOFF de L-0004; (b) DECISION do GPT após
 cada RESULT de L-0001, entregue por transporte manual; (c) qualquer implementação da bridge ou
 automação do transporte; (d) FASE 1 (Auth Supabase) só começa com aprovação explícita
 (GATE 3 / GATE 4 / GATE 8).
 
 ## Last Updated
 
-2026-09-15T15:36Z — Claude Code (fechamento de L-0002 após DECISION DONE do GPT; bookkeeping).
+2026-09-15T16:17Z — Claude Code (fechamento de L-0003 após DECISION DONE; bookkeeping).
