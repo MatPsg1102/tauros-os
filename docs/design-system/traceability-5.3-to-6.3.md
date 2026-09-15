@@ -1662,3 +1662,43 @@ domínio via `calculateQuickEstimate`; preço e subprodutos recalculam a
 composição; "?" acessível; variantes). NBSP do `Intl` nos matchers:
 normalizar o esperado (`plain()`), a Testing Library só normaliza o DOM.
 93 testes. Altura da Estimativa 2.218 → 2.274 px (+56, as 4 notas).
+
+## Custo da Carcaça V3.4 — indicador comercial de Desossa (feat/carcass-deboning)
+
+Nova área **Desossa**, independente da Transformação (só `apps/carcass-cost`;
+Transformação, Estimativa e o custo equivalente da carcaça intocados — teste
+de UI prova 6,92/kg e 1,63% inalterados após editar a desossa).
+Reproduz a estatística comercial da operação: carcaça (peso, valor inicial)
+
+- produtos (peso, R$/kg) → `valor = peso × preço`, `percentual = peso ÷ peso
+da carcaça`, `valor comercial = Σ`, `acréscimo = comercial − carcaça`,
+`margem = acréscimo ÷ comercial`. Cenário da planilha fixado em teste:
+1.128,10 kg / R$ 13.029,56 → **R$ 16.829,56 · + R$ 3.800,00 · 22,58%**;
+  peso dos produtos 1.128,81 kg → **100,06%** (exibido como está, não
+  corrigido). A planilha arredonda linha a linha; o domínio soma com precisão
+  total (16.829,5573 / 3.799,9973) e a apresentação coincide — registrado,
+  não silenciado.
+
+Decisões: (1) domínio puro novo `domain/deboning.ts` (cálculo, forma,
+validação — `positiveIssue`/`nonNegativeIssue` reutilizados); (2) estado na
+sub-árvore `deboning` do MESMO envelope (`STORAGE_VERSION` 4 mantida: mudança
+aditiva, o saneamento campo a campo preenche os padrões quando ausente e
+preserva o restante — sem migração, sem apagar o estado do operador);
+(3) histórico de desossas em chave própria
+(`tauros.carcass-cost.deboning-history.v1`), listado na tela Histórico
+(seção "Desossas", só quando há registro; lotes ganharam o título "Lotes");
+(4) navegação passou de 3 para 4 telas em `Grid columns={2}` (2×2): quatro
+botões lado a lado não cabem em 390 px ("Transformação"/"Configurações"
+quebrariam) e `ResponsiveGrid`/`Tabs`/`NavigationBar` seriam navegação
+paralela ou dependeriam de medida em `ch`; (5) lista de produtos editável
+sem tela nova — "Editar" (ghost, `aria-pressed`) revela nome editável
+e "Remover" por linha; "Adicionar produto" (secondary) já entra em edição;
+(6) `CostFormation` ganhou o tipo `subtract` (acréscimo negativo) e
+`format.ts` o `formatSignedBRL` — aditivos, sem tocar na formação do custo.
+Botões: Salvar análise `primary`, Excluir análise `danger` (ConfirmDialog),
+Adicionar `secondary`, Voltar `secondary`. Nenhuma alteração no DS; nenhum
+ADR necessário (app isolado, mesmas camadas e regras do dependency-cruiser).
+Campos vazios de produto contam 0; carcaça sem peso ou valor negativo ⇒
+resultado nulo com mensagem no campo (nada inventado).
+Testes: 19 de domínio (11 casos do pedido), +6 de storage, +11 de UI
+(jornada, isolamento, persistência, "?" e axe) — 132 no app.

@@ -1,14 +1,24 @@
-// Tela de histórico — lotes salvos manualmente na calculadora. Tocar em
-// "Abrir este lote" restaura o snapshot completo (modo, pesos e custos).
+// Tela de histórico — lotes salvos manualmente na calculadora e análises de
+// desossa salvas na tela Desossa (listas separadas: são registros de
+// naturezas diferentes). Tocar em "Abrir" restaura o snapshot completo.
 // Exclusão é irreversível: sempre passa pelo ConfirmDialog (destrutivo).
 
-import { Badge, Button, ConfirmDialog, Flex, Stack, Surface, Text } from '@tauros/ui-primitives';
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  Flex,
+  Section,
+  Stack,
+  Surface,
+  Text,
+} from '@tauros/ui-primitives';
 import { cssVar } from '@tauros/tokens';
-import { useState, type ReactElement } from 'react';
+import { useState, type CSSProperties, type ReactElement } from 'react';
 
-import type { HistoryEntry } from '../state/model.js';
+import type { DeboningHistoryEntry, HistoryEntry } from '../state/model.js';
 import type { CalculatorController } from '../state/use-calculator.js';
-import { formatBRL, formatDateTime, formatKg, formatPerKg } from './format.js';
+import { formatBRL, formatDateTime, formatKg, formatPct, formatPerKg } from './format.js';
 import { ScreenHeader } from './screen-header.js';
 
 export interface HistoryScreenProps {
@@ -16,92 +26,171 @@ export interface HistoryScreenProps {
   readonly onBack: () => void;
   /** Chamado após restaurar um lote (a tela volta para a calculadora). */
   readonly onOpenEntry: (id: string) => void;
+  /** Chamado após restaurar uma desossa (a tela vai para a Desossa). */
+  readonly onOpenDeboningEntry: (id: string) => void;
 }
 
-export function HistoryScreen({ calc, onBack, onOpenEntry }: HistoryScreenProps): ReactElement {
-  const { history } = calc;
-  const [pendingDelete, setPendingDelete] = useState<HistoryEntry | null>(null);
+type PendingDelete =
+  | { readonly kind: 'lot'; readonly entry: HistoryEntry }
+  | { readonly kind: 'deboning'; readonly entry: DeboningHistoryEntry };
+
+const HEADLINE: CSSProperties = {
+  fontSize: cssVar('emphasis-level2-size'),
+  fontWeight: cssVar('emphasis-level2-weight'),
+};
+
+export function HistoryScreen({
+  calc,
+  onBack,
+  onOpenEntry,
+  onOpenDeboningEntry,
+}: HistoryScreenProps): ReactElement {
+  const { history, deboningHistory } = calc;
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
 
   return (
     <Stack gap={200}>
       <ScreenHeader title="Histórico" onBack={onBack} />
 
-      {history.length === 0 ? (
-        <Surface elevation="card" style={{ padding: cssVar('space-inset-md') }}>
-          <Stack gap={50}>
-            <Text role="label">Nenhum lote salvo ainda.</Text>
-            <Text role="caption" tone="secondary">
-              Use “Salvar lote no histórico” na calculadora para registrar um lote.
-            </Text>
-          </Stack>
-        </Surface>
-      ) : (
-        history.map((entry) => (
-          <Surface
-            as="article"
-            key={entry.id}
-            aria-label={`Lote de ${formatDateTime(entry.savedAt)}`}
-            elevation="card"
-            style={{ padding: cssVar('space-inset-md') }}
-          >
-            <Stack gap={50}>
-              <Flex justify="between" align="center" gap={100}>
-                <Text role="label">{formatDateTime(entry.savedAt)}</Text>
-                {entry.mode === 'real' ? (
-                  <Badge status="info">LOTE REAL</Badge>
-                ) : (
-                  <Badge status="neutral">ESTIMATIVA</Badge>
-                )}
-              </Flex>
-              <Text
-                role="data"
-                style={{
-                  fontSize: cssVar('emphasis-level2-size'),
-                  fontWeight: cssVar('emphasis-level2-weight'),
-                }}
+      <Section title="Lotes">
+        <Stack gap={100}>
+          {history.length === 0 ? (
+            <Surface elevation="card" style={{ padding: cssVar('space-inset-md') }}>
+              <Stack gap={50}>
+                <Text role="label">Nenhum lote salvo ainda.</Text>
+                <Text role="caption" tone="secondary">
+                  Use “Salvar lote no histórico” na calculadora para registrar um lote.
+                </Text>
+              </Stack>
+            </Surface>
+          ) : (
+            history.map((entry) => (
+              <Surface
+                as="article"
+                key={entry.id}
+                aria-label={`Lote de ${formatDateTime(entry.savedAt)}`}
+                elevation="card"
+                style={{ padding: cssVar('space-inset-md') }}
               >
-                {entry.summary.costPerKg === null ? '—' : formatPerKg(entry.summary.costPerKg)}
-              </Text>
-              <Text role="caption" tone="secondary">
-                {[
-                  entry.summary.animals === null ? null : `${entry.summary.animals} suínos`,
-                  entry.summary.referenceWeightKg === null
-                    ? null
-                    : formatKg(entry.summary.referenceWeightKg),
-                  entry.summary.finalWeightKg === null
-                    ? null
-                    : `→ ${formatKg(entry.summary.finalWeightKg)}`,
-                  entry.summary.livePricePerKg === null
-                    ? null
-                    : `vivo ${formatBRL(entry.summary.livePricePerKg)}/kg`,
-                ]
-                  .filter((part) => part !== null)
-                  .join(' · ')}
-              </Text>
-              <Flex gap={100} wrap>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    calc.actions.loadHistoryEntry(entry.id);
-                    onOpenEntry(entry.id);
-                  }}
-                >
-                  Abrir este lote
-                </Button>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={() => {
-                    setPendingDelete(entry);
-                  }}
-                >
-                  Excluir
-                </Button>
-              </Flex>
-            </Stack>
-          </Surface>
-        ))
+                <Stack gap={50}>
+                  <Flex justify="between" align="center" gap={100}>
+                    <Text role="label">{formatDateTime(entry.savedAt)}</Text>
+                    {entry.mode === 'real' ? (
+                      <Badge status="info">LOTE REAL</Badge>
+                    ) : (
+                      <Badge status="neutral">ESTIMATIVA</Badge>
+                    )}
+                  </Flex>
+                  <Text role="data" style={HEADLINE}>
+                    {entry.summary.costPerKg === null ? '—' : formatPerKg(entry.summary.costPerKg)}
+                  </Text>
+                  <Text role="caption" tone="secondary">
+                    {[
+                      entry.summary.animals === null ? null : `${entry.summary.animals} suínos`,
+                      entry.summary.referenceWeightKg === null
+                        ? null
+                        : formatKg(entry.summary.referenceWeightKg),
+                      entry.summary.finalWeightKg === null
+                        ? null
+                        : `→ ${formatKg(entry.summary.finalWeightKg)}`,
+                      entry.summary.livePricePerKg === null
+                        ? null
+                        : `vivo ${formatBRL(entry.summary.livePricePerKg)}/kg`,
+                    ]
+                      .filter((part) => part !== null)
+                      .join(' · ')}
+                  </Text>
+                  <Flex gap={100} wrap>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        calc.actions.loadHistoryEntry(entry.id);
+                        onOpenEntry(entry.id);
+                      }}
+                    >
+                      Abrir este lote
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => {
+                        setPendingDelete({ kind: 'lot', entry });
+                      }}
+                    >
+                      Excluir
+                    </Button>
+                  </Flex>
+                </Stack>
+              </Surface>
+            ))
+          )}
+        </Stack>
+      </Section>
+
+      {deboningHistory.length > 0 && (
+        <Section title="Desossas">
+          <Stack gap={100}>
+            {deboningHistory.map((entry) => (
+              <Surface
+                as="article"
+                key={entry.id}
+                aria-label={`Desossa de ${formatDateTime(entry.savedAt)}`}
+                elevation="card"
+                style={{ padding: cssVar('space-inset-md') }}
+              >
+                <Stack gap={50}>
+                  <Flex justify="between" align="center" gap={100}>
+                    <Text role="label">{formatDateTime(entry.savedAt)}</Text>
+                    <Badge status="success">DESOSSA</Badge>
+                  </Flex>
+                  <Text role="data" style={HEADLINE}>
+                    {entry.summary.marginPct === null
+                      ? '—'
+                      : formatPct(entry.summary.marginPct / 100)}
+                  </Text>
+                  <Text role="caption" tone="secondary">
+                    {[
+                      entry.summary.carcassWeightKg === null
+                        ? null
+                        : `carcaça ${formatKg(entry.summary.carcassWeightKg)}`,
+                      entry.summary.carcassValueBRL === null
+                        ? null
+                        : formatBRL(entry.summary.carcassValueBRL),
+                      entry.summary.commercialValueBRL === null
+                        ? null
+                        : `→ ${formatBRL(entry.summary.commercialValueBRL)}`,
+                      `${entry.summary.productCount} produtos`,
+                    ]
+                      .filter((part) => part !== null)
+                      .join(' · ')}
+                  </Text>
+                  <Flex gap={100} wrap>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        calc.actions.loadDeboningEntry(entry.id);
+                        onOpenDeboningEntry(entry.id);
+                      }}
+                    >
+                      Abrir esta desossa
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => {
+                        setPendingDelete({ kind: 'deboning', entry });
+                      }}
+                    >
+                      Excluir análise
+                    </Button>
+                  </Flex>
+                </Stack>
+              </Surface>
+            ))}
+          </Stack>
+        </Section>
       )}
 
       <ConfirmDialog
@@ -109,17 +198,23 @@ export function HistoryScreen({ calc, onBack, onOpenEntry }: HistoryScreenProps)
         onOpenChange={(open) => {
           if (!open) setPendingDelete(null);
         }}
-        title="Excluir lote salvo?"
+        title={
+          pendingDelete?.kind === 'deboning' ? 'Excluir desossa salva?' : 'Excluir lote salvo?'
+        }
         {...(pendingDelete !== null
           ? {
-              description: `O lote de ${formatDateTime(pendingDelete.savedAt)} será apagado. Isso não pode ser desfeito.`,
+              description: `${pendingDelete.kind === 'deboning' ? 'A desossa' : 'O lote'} de ${formatDateTime(pendingDelete.entry.savedAt)} será apagad${pendingDelete.kind === 'deboning' ? 'a' : 'o'}. Isso não pode ser desfeito.`,
             }
           : {})}
         destructive
         confirmLabel="Excluir"
         cancelLabel="Cancelar"
         onConfirm={() => {
-          if (pendingDelete !== null) calc.actions.removeHistoryEntry(pendingDelete.id);
+          if (pendingDelete?.kind === 'lot')
+            calc.actions.removeHistoryEntry(pendingDelete.entry.id);
+          if (pendingDelete?.kind === 'deboning') {
+            calc.actions.removeDeboningEntry(pendingDelete.entry.id);
+          }
           setPendingDelete(null);
         }}
       />

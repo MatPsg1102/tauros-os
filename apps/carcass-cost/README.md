@@ -17,13 +17,15 @@ pnpm --filter @tauros/carcass-cost build    # SPA estática em dist/ (PWA)
 
 - **`src/domain/`** — fonte de verdade matemática, TypeScript puro sem React.
   `calculateQuickEstimate` (modo Estimativa), `calculateRealLot` (modo Lote
-  Real) e a validação (`validation.ts`).
+  Real), a validação (`validation.ts`), `calculateTransformation`
+  (indicador econômico dos subprodutos) e `calculateDeboning` (indicador
+  comercial da desossa, `deboning.ts`).
   Nenhuma fórmula vive na UI; nada é arredondado internamente (apresentação em
   2 casas só em `ui/format.ts`).
 - **`src/state/`** — estado + persistência: `use-calculator.ts` (controller,
   padrão dos controllers do apps/web) e `storage.ts` (localStorage com envelope
-  versionado e saneamento defensivo; chaves `tauros.carcass-cost.state.v1` e
-  `tauros.carcass-cost.history.v1`).
+  versionado e saneamento defensivo; chaves `tauros.carcass-cost.state.v1`,
+  `tauros.carcass-cost.history.v1` e `tauros.carcass-cost.deboning-history.v1`).
 - **`src/ui/`** — telas compostas exclusivamente com `@tauros/ui-primitives`
   (barrel público) + tokens via `cssVar`. Sem stylesheet paralelo.
   Composições locais reutilizadas pelas telas: `help.tsx` ("?" com nota
@@ -62,6 +64,28 @@ carcaça de exportação`, ≈ 6,97% com os dados iniciais; fallback 7%).
   balança − descontos; % quebra de abate sobre o peso pago; % quebra de frio
   sobre o peso abatido; custo/kg = custo total ÷ peso após frio.
 
+## Desossa (indicador comercial) — independente da Transformação
+
+Tela própria ("Desossa" na navegação), reproduzindo a estatística comercial
+da operação: a carcaça entra com **peso** e **valor inicial**; cada produto
+da desossa (Pernil, Lombo, Pazinha, Costelinha, Copa lombo, Toucinho
+torresmo, Suã, Pezinho, Barriga, Rabinho, Retalho, Osso — lista editável)
+tem **peso** e **R$/kg**. Fórmulas (`domain/deboning.ts`):
+
+- `valor do produto = peso × R$/kg`; `percentual = peso ÷ peso da carcaça × 100`
+  (derivado, nunca digitado);
+- `valor comercial = Σ valor dos produtos`;
+- `acréscimo comercial = valor comercial − valor inicial da carcaça`;
+- `margem comercial = acréscimo ÷ valor comercial × 100` (indicador principal);
+- `rendimento de peso = peso dos produtos ÷ peso da carcaça × 100` (pode passar
+  de 100% — dado real, nunca corrigido).
+
+Regra crítica: **nada da Desossa alimenta a Transformação nem a Estimativa**
+(o ajuste comercial continua vindo só do indicador de transformação; o
+custo equivalente da carcaça não muda). Campo vazio de produto conta como 0;
+valor negativo ou carcaça sem peso ⇒ nenhum resultado (sem valor inventado).
+Análises podem ser salvas no Histórico (lista "Desossas", chave própria).
+
 ## Vetores de teste canônicos
 
 - Física da estimativa: 100 suínos × 115 kg = 11.500 kg → ×0,83 = 9.545 kg →
@@ -71,6 +95,11 @@ carcaça de exportação`, ≈ 6,97% com os dados iniciais; fallback 7%).
 - Custos da estimativa (caso realista): 100 suínos, abate R$ 50/cabeça +
   serviço R$ 3 + diária R$ 150 + combustível R$ 250 = R$ 5.700 ÷ 9.306,375 kg
   = R$ 0,6125/kg ⇒ final 6,8755 + 0,6125 ≈ **R$ 7,49/kg**.
+- Desossa (planilha): carcaça 1.128,10 kg / R$ 13.029,56; 12 produtos ⇒
+  valor comercial **R$ 16.829,56** (soma exata 16.829,5573), acréscimo
+  **R$ 3.800,00**, margem **22,58%**; peso dos produtos 1.128,81 kg ⇒
+  rendimento de peso **100,06%**; Pernil 295,86 kg × R$ 15,00 = R$ 4.437,90
+  (26,23%).
 - Lote real: 110 suínos, balança 12.560 kg, graxaria 220 kg, abatido
   10.513,50 kg, após frio 10.217,20 kg, vivo R$ 4,80, abate R$ 50/cabeça,
   serviço R$ 3, diária R$ 150 + combustível R$ 0 ⇒ total R$ 65.212,00 ⇒

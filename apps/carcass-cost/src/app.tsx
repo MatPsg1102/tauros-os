@@ -1,4 +1,4 @@
-// Shell do aplicativo — três telas, sem roteador (estado local resolve;
+// Shell do aplicativo — cinco telas, sem roteador (estado local resolve;
 // nenhuma biblioteca extra). A calculadora é a tela inicial, sem menu.
 // Ao trocar de tela, o scroll volta ao topo e o foco vai para o início da
 // nova tela (as telas trocam dentro do MESMO container de scroll do
@@ -11,11 +11,12 @@ import { useEffect, useRef, useState, type ReactElement } from 'react';
 
 import { useCalculator } from './state/use-calculator.js';
 import { CalculatorScreen } from './ui/calculator-screen.js';
+import { DeboningScreen } from './ui/deboning-screen.js';
 import { HistoryScreen } from './ui/history-screen.js';
 import { SettingsScreen } from './ui/settings-screen.js';
 import { TransformationScreen } from './ui/transformation-screen.js';
 
-type View = 'calculator' | 'settings' | 'history' | 'transformation';
+type View = 'calculator' | 'settings' | 'history' | 'transformation' | 'deboning';
 
 export function App(): ReactElement {
   const calc = useCalculator();
@@ -55,6 +56,9 @@ export function App(): ReactElement {
                 onOpenTransformation={() => {
                   setView('transformation');
                 }}
+                onOpenDeboning={() => {
+                  setView('deboning');
+                }}
               />
             ) : view === 'settings' ? (
               <SettingsScreen
@@ -70,6 +74,13 @@ export function App(): ReactElement {
                   setView('calculator');
                 }}
               />
+            ) : view === 'deboning' ? (
+              <DeboningScreen
+                calc={calc}
+                onBack={() => {
+                  setView('calculator');
+                }}
+              />
             ) : (
               <HistoryScreen
                 calc={calc}
@@ -78,6 +89,9 @@ export function App(): ReactElement {
                 }}
                 onOpenEntry={() => {
                   setView('calculator');
+                }}
+                onOpenDeboningEntry={() => {
+                  setView('deboning');
                 }}
               />
             )}

@@ -6,6 +6,7 @@ import {
   formatKg,
   formatPct,
   formatPerKg,
+  formatSignedBRL,
   fromMinorUnits,
   toMinorUnits,
 } from './format.js';
@@ -22,6 +23,14 @@ describe('formatBRL / formatPerKg', () => {
 
   it('agrupa milhares no padrão pt-BR', () => {
     expect(formatBRL(65_212)).toBe(`R$${NBSP}65.212,00`);
+  });
+});
+
+describe('formatSignedBRL', () => {
+  it('sinal explícito: "+" para acréscimo, "−" (menos tipográfico) para perda', () => {
+    expect(formatSignedBRL(3_799.9973)).toBe(`+ R$${NBSP}3.800,00`);
+    expect(formatSignedBRL(-200)).toBe(`− R$${NBSP}200,00`);
+    expect(formatSignedBRL(0)).toBe(`+ R$${NBSP}0,00`);
   });
 });
 

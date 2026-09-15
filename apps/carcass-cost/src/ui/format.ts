@@ -13,6 +13,11 @@ export function formatBRL(value: number): string {
   return CURRENCY.format(value);
 }
 
+/** Valor com sinal explícito ("+ R$ 3.800,00" / "− R$ 200,00") para parcelas. */
+export function formatSignedBRL(value: number): string {
+  return value < 0 ? `− ${CURRENCY.format(-value)}` : `+ ${CURRENCY.format(value)}`;
+}
+
 export function formatPerKg(value: number): string {
   return `${CURRENCY.format(value)}/kg`;
 }
