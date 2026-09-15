@@ -104,3 +104,12 @@ Clean Architecture com as camadas materializadas como **pacotes**; o grafo de de
 - **Risco F-01 — credencial do banco**: a credencial real vive **somente** no `.env` (ignorado pelo Git). Nunca reproduzir, exibir em output/log/PR, nem commitar o valor; referir-se a ela apenas como `DATABASE_PASSWORD`. **Rotação obrigatória antes de produção ou de qualquer acesso externo.** O hook `pre-commit` bloqueia strings com cara de segredo; `.env.example` fica sem valores reais.
 - **Rastreabilidade**: [docs/design-system/traceability-5.3-to-6.3.md](docs/design-system/traceability-5.3-to-6.3.md) é o registro vivo de decisões e pendências — **atualizar a cada etapa**.
 - Mudanças em pacotes publicáveis pedem changeset (`@tauros/web` e `@tauros/storybook` são ignorados).
+
+## Fluxo supervisionado por agentes (GPT ↔ Claude Code)
+
+Estado canônico: [docs/agent-development-state.md](docs/agent-development-state.md) — **ler primeiro, sempre**. Contrato de execução, gates e formato de handoff: [docs/agent-execution-protocol.md](docs/agent-execution-protocol.md).
+
+- Ordem de contexto: estado → tarefa → `git status`/diff → arquivos envolvidos → contratos importados → ADR específico → SAS/traceability só se realmente necessário. Não reler este arquivo nem a traceability inteiros por tarefa.
+- **Uma iteração = uma mudança verificável.** Testes focados primeiro; pipeline completo só antes do PR.
+- Gates 1–8 do protocolo (regra de domínio, schema, segurança, arquitetura, operação destrutiva, merge, deploy, expansão de escopo) exigem **STOP + decisão humana**.
+- Sem subagents por padrão; sem automação executável do fluxo até aprovação explícita.
