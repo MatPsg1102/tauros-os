@@ -1640,3 +1640,25 @@ cenário (domínio: etapas, incidência única, denominador, contra-exemplos;
 UI: Ajuste rápido 4,80 → 6,67). Diagnóstico para o print: "Carcaça antes
 do ajuste" 5,93 = entradas como listadas; 5,97 = preço 4,83 ou abate 17,5%
 (neste caso "Rendimento final" mostra 80,44% em vez de 80,93%).
+
+## Custo da Carcaça V3.3 — formação visual do custo + refinamento de UX (feat/carcass-cost-formation)
+
+Só apresentação (src/ui + testes); domínio, estado e cálculo intocados.
+Card de resultado ganhou a sequência "parcela → subtotal → total"
+(`cost-formation.tsx`): coluna de sinal (+ / =), nota curta de origem por
+parcela ("R$ 4,80/kg vivo ÷ 80,93% de rendimento", "Indicador 1,63% dos
+subprodutos", "R$ 5.980,00 ÷ 10.237,01 kg", "Descarga não realizada"),
+traço acima das linhas "=", total em destaque — tudo com valores já
+calculados pelo domínio. Cenário 110×115, 4,80: 5,93 → +0,10 → 6,03 →
++0,58 → +0,05 → +0,01 → 6,67 (validado em Chromium 390×844; linha
+"Impacto total dos acréscimos +0,06" saiu — parcelas 0,05 e 0,01 já
+aparecem). "?" passou a `IconButton` ghost com glifo de 24 px (círculo,
+tokens do DS) mantendo o alvo de toque de 64 px e o nome acessível.
+Hierarquia de botões com variantes do DS: Salvar lote = `primary`; Excluir
+= `danger`; "Ajustar subprodutos" = `secondary` com contorno/texto em
+`color-accent-default` (ligado ao card do indicador); navegação e Voltar
+seguem `secondary` neutros. Testes de UI novos (composição = valores do
+domínio via `calculateQuickEstimate`; preço e subprodutos recalculam a
+composição; "?" acessível; variantes). NBSP do `Intl` nos matchers:
+normalizar o esperado (`plain()`), a Testing Library só normaliza o DOM.
+93 testes. Altura da Estimativa 2.218 → 2.274 px (+56, as 4 notas).
