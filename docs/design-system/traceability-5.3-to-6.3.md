@@ -1623,3 +1623,20 @@ Ajuste pós-rodada (fix/carcass-subproduct-price-label): rótulo do preço nas
 7 linhas de subproduto "Preço/kg" → "R$/Kg" (microcopy; libera largura para
 o campo mostrar "R$ 12,99" inteiro). Nenhuma outra alteração; domínio,
 estado e cálculo intocados.
+
+## Custo da Carcaça — auditoria matemática da Estimativa (test/carcass-estimate-audit)
+
+Print com R$ 6,71/kg para preço 4,80, quebras 17%/2,5%, indicador 1,63% e
+adicionais ≈ 0,59/kg. Auditoria da cadeia (código + reprodução em Chromium
+390×844 no build de produção): indicador aplicado UMA vez (só sobre o
+custo-base), acréscimos 0,05 + 0,01 somados UMA vez, adicionais rateados
+pelo MESMO peso final exibido ("Carcaça estimada"), nenhum valor oculto —
+`total = equivalente + adicionais/kg + 0,06` exatamente. Com essas entradas
+a tela exibe **R$ 6,67/kg** (5,93 → +0,10 → 6,03 → +0,58/0,59 → +0,06).
+**6,71 não é reprodutível com as entradas listadas**: só aparece com preço
+4,83 ou quebra de abate 17,5% (ambos verificados no app). Conclusão: sem
+divergência na cadeia; nenhuma regra alterada. Testes adicionados fixando o
+cenário (domínio: etapas, incidência única, denominador, contra-exemplos;
+UI: Ajuste rápido 4,80 → 6,67). Diagnóstico para o print: "Carcaça antes
+do ajuste" 5,93 = entradas como listadas; 5,97 = preço 4,83 ou abate 17,5%
+(neste caso "Rendimento final" mostra 80,44% em vez de 80,93%).

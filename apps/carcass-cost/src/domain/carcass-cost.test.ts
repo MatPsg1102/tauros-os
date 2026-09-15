@@ -303,3 +303,59 @@ describe('calculatePaidWeight', () => {
     expect(calculatePaidWeight(12_560, 220)).toBeCloseTo(12_340, 12);
   });
 });
+
+// Auditoria matemática (2026-09-14): print mostrando R$ 6,71/kg com preço
+// 4,80, quebras 17%/2,5%, indicador 1,63% e adicionais ≈ 0,59/kg. A cadeia
+// atual dá 6,67 — cada etapa abaixo é o que a tela exibe. 6,71 só aparece
+// com OUTRA entrada (preço 4,83 ou quebra de abate 17,5%).
+describe('auditoria — cenário 4,80 / 17% / 2,5% / indicador 1,6258% (print R$ 6,71)', () => {
+  // Indicador da Transformação com os dados iniciais e peso médio 115.
+  const INDICATOR_PCT = ((61.6 - 49.95) / (115 * 0.83 * 0.975 * 7.7)) * 100;
+  const scenario = (overrides: Partial<QuickEstimateInput> = {}): QuickEstimateInput => ({
+    animals: 100,
+    avgLiveWeightKg: 115,
+    livePricePerKg: 4.8,
+    slaughterLossPct: 17,
+    coolingLossPct: 2.5,
+    commercialAdjustmentPct: INDICATOR_PCT,
+    costs: { slaughterFeePerHead: 50, servicePerHead: 3, driverDailyRate: 150, fuelCost: 0 },
+    ...overrides,
+  });
+
+  it('cada etapa bate com o que a tela exibe e o total é R$ 6,67/kg (não 6,71)', () => {
+    const r = calculateQuickEstimate(scenario());
+    expect(r.baseCarcassPerKg).toBeCloseTo(4.8 / 0.83 / 0.975, 12); // 5,9314 → "5,93"
+    expect(r.commercialAdjustmentPerKg).toBeCloseTo((r.baseCarcassPerKg * INDICATOR_PCT) / 100, 12); // "+0,10"
+    expect(r.equivalentPerKg).toBeCloseTo(6.027848, 5); // "6,03"
+    expect(r.additionalCostsTotal).toBe(5450);
+    expect(r.additionalPerKg).toBeCloseTo(5450 / 9306.375, 12); // 0,5856 → "+0,59"
+    expect(r.costPerKg).toBeCloseTo(6.673465, 5);
+    expect(r.costPerKg.toFixed(2)).toBe('6.67');
+  });
+
+  it('indicador e acréscimos incidem UMA vez; nada além das parcelas exibidas entra no total', () => {
+    const r = calculateQuickEstimate(scenario());
+    // indicador só sobre o custo-base, uma vez
+    expect(r.equivalentPerKg).toBeCloseTo(r.baseCarcassPerKg * (1 + INDICATOR_PCT / 100), 12);
+    // acréscimos fixos uma vez (0,05 + 0,01), sem indicador por cima
+    expect(FIXED_SURCHARGES_PER_KG).toBeCloseTo(0.06, 12);
+    // total = exatamente a soma das parcelas exibidas — sem valor oculto
+    expect(
+      r.costPerKg - r.equivalentPerKg - r.additionalPerKg - FIXED_SURCHARGES_PER_KG,
+    ).toBeCloseTo(0, 12);
+    // rateio pelo peso FINAL exibido (carcaça estimada), não por outro denominador
+    expect(r.estimatedCarcassKg).toBeCloseTo(9306.375, 9);
+    expect(r.additionalPerKg * r.estimatedCarcassKg).toBeCloseTo(r.additionalCostsTotal, 9);
+  });
+
+  it('6,71 só aparece com outra entrada: preço 4,83 ou quebra de abate 17,5%', () => {
+    expect(calculateQuickEstimate(scenario({ livePricePerKg: 4.83 })).costPerKg.toFixed(2)).toBe(
+      '6.71',
+    );
+    expect(calculateQuickEstimate(scenario({ slaughterLossPct: 17.5 })).costPerKg.toFixed(2)).toBe(
+      '6.71',
+    );
+    // com 110 suínos (adicionais 0,58/kg) o total continua 6,67
+    expect(calculateQuickEstimate(scenario({ animals: 110 })).costPerKg.toFixed(2)).toBe('6.67');
+  });
+});
