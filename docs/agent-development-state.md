@@ -37,6 +37,7 @@ liberado operacionalmente só após o merge desta correção. Produto: V3.4.1 en
 ## Last Approved Baseline
 
 - `main` = `e3c1a87` = `origin/main` (confirmado por `git log -1` em 2026-09-15T16:41Z, início de L-0004) — PR #64 `feat(tooling): Agent Bridge PR 2 — subcomando run (Claude headless → RESULT → decide → DECISION)`, squash-merge em 2026-09-15T16:24Z; **L-0003 concluído**. Agent Bridge `decide` (PR #63, `aa3b693`) e `run` (PR #64) estão na `main`. CI do head do PR #64 (`fcb28ec`): run `34992866550` com `verify` e `architecture` verdes.
+- Correção L-0005 (PR #66, `d2a7da7`, squash-merge em 2026-09-15T17:06Z) mergeada durante L-0004: o executor headless encerra em PR_READY e a bridge observa o CI e promove a CI_VERIFIED; `main` atual = `d2a7da7`.
 - Design da bridge: PR #58 mergeado (`9c79160`, 2026-09-15T11:54Z); [agent-bridge-design.md](agent-bridge-design.md) está na `main`.
 - Etapa 0 (PR #56, `caaf0e9`) concluída e versionada; protocolo de execução em vigor.
 - Último PR de produto: #55 (`b096268`, Custo da Carcaça V3.4.1). Produção https://carcass-cost.vercel.app serve o bundle desse commit (`index-DaEjw6mv.js`).
@@ -52,17 +53,17 @@ pelo git desde o PR #60) ainda não existe; é criada localmente ao iniciar um l
 ## Current Loop
 
 Seção escrita pela bridge — na fase manual, pelo executor ao fechar cada iteração — conforme o design
-(§3.5). Loop ativo: L-0004 (teste de aceitação do Agent Bridge via `run`); L-0003 fechado por DECISION DONE.
+(§3.5). Nenhum loop ativo; L-0004 encerrado como teste de aceitação inválido (RESULT recuperado) após RECOVERY_VALIDATION = PASS; L-0005 fechado por DECISION DONE.
 
 ```text
-LOOP_ID: L-0004
-LAST_LOOP_ID: L-0003
-ITERATION: 1
-HANDOFF_REF: .agent-loop/inbox/L-0004.handoff.md
-STARTED: 2026-09-15T16:41Z
+LOOP_ID: none
+LAST_LOOP_ID: L-0004
+ITERATION: 0
+HANDOFF_REF: none
+STARTED: none
 HUMAN_INTERVENTIONS: 0
 FAILED_ITERATIONS: 0
-LOOPS_THIS_SESSION: 4
+LOOPS_THIS_SESSION: 5
 ```
 
 ## Approved Decisions
@@ -110,6 +111,8 @@ Coletado em 2026-09-15T13:14Z:
 - **L-0001 fechado (DECISION DONE, 2026-09-15T14:22Z)**: DONE_LEVEL CI_VERIFIED; ITERATIONS 1; FAILED_ITERATIONS 0; HUMAN_INTERVENTIONS 0; EXECUTABLE_CHANGE_BUDGET previsto files=1/net_lines=5/dependencies=0, consumido files=1/net_lines=0/dependencies=0; STATE_BOOKKEEPING_BUDGET previsto files=1/net_lines=12, consumido na iteração 1 files=1/net_lines=−3; contexto 3 de 4 arquivos; PR #62; commit `1b643d5`; CI run `34975231171` com `verify` e `architecture` verdes.
 - **L-0002 fechado (DECISION DONE, 2026-09-15T15:36Z)**: DONE_LEVEL CI_VERIFIED; ITERATIONS 2; FAILED_ITERATIONS 1 (iteração 1 parou em GATE 8 por orçamento); HUMAN_INTERVENTIONS 1 (RETRY humano com orçamento 500 → 1000); EXECUTABLE_CHANGE_BUDGET previsto files=5/net_lines=1000/dependencies=0, consumido files=4/net_lines=860/dependencies=0; STATE_BOOKKEEPING_BUDGET previsto files=1/net_lines=12, consumido net_lines=1; contexto 8 de 8; PR #63; commit `e8dfb28`; CI run `34986148097` verde. Prova real da bridge: BRIDGE_LATENCY_MS 25291; OPENAI_MODEL gpt-5.6-sol; OPENAI_INPUT_TOKENS 3052; OPENAI_OUTPUT_TOKENS 666; OPENAI_DECISION DONE; MANUAL_DECISION DONE; SEMANTIC_MATCH yes.
 - **L-0003 fechado (DECISION DONE, 2026-09-15T16:17Z)**: DONE_LEVEL CI_VERIFIED; ITERATIONS_PER_OBJECTIVE 1; FAILED_ITERATIONS_PER_OBJECTIVE 0; HUMAN_INTERVENTIONS_PER_OBJECTIVE 0; PRODUCTION_CODE_LINES 245 (limite 350); TEST_CODE_LINES 218 (limite 350); TOTAL_EXECUTABLE_NET_LINES 463; bookkeeping net 0/12; PR #64; commit `fcb28ec`; CI run `34992866550` verde. DECISION gerada pelo `decide` mergeado: GPT DONE, modelo gpt-5.6-sol, latência 12368 ms, 4568/419 tokens; confirmada pelo humano. Subcomando `run` entregue sem execução real (prova end-to-end = L-0004).
+- **L-0005 fechado (DECISION DONE, 2026-09-15T17:03Z; PR #66 mergeado `d2a7da7`)**: correção mínima da bridge (executor encerra em PR_READY; bridge observa CI, promove a CI_VERIFIED, chama o `decide`; stdout do Claude sanitizado no erro; retomada de PR_READY); ITERATIONS 1; FAILED 0; HUMAN_INTERVENTIONS 0; DONE_LEVEL CI_VERIFIED; produção +157, testes +141 (37 no total); CI run `34997982262`; GPT DONE gpt-5.6-sol 9906 ms. Bookkeeping feito aqui para não conflitar com o PR #65.
+- **L-0004 encerrado (teste de aceitação inválido; RECOVERY_VALIDATION PASS, 2026-09-15T17:07Z)**: tentativa 1 = falha ambiental (CLI 2.1.216 incompatível, corrigido para 2.1.272); tentativa 2 = Claude headless real fez branch, commit `0a2bc3f`, PR #65 (CI run `34996801935` verde) e saiu com código 1 sem RESULT durante a espera do CI; retomada com RESULT reconstruído (RECOVERED_RESULT true): bridge não reexecutou o Claude, confirmou head, reconfirmou CI, promoveu a CI_VERIFIED e chamou o `decide` → GPT BLOCKED (recuperação manual não prova HUMAN_INTERVENTIONS 0), 3272/764 tokens, 18042 ms; anomalia: abort do libuv no encerramento (exit 127 em vez de 2), artefatos íntegros. Métricas: ITERATIONS 1, FAILED 1, HUMAN_INTERVENTIONS 0 durante as execuções válidas; AGENT_BRIDGE_STATUS NOT_ACCEPTED até a prova final L-0006.
 
 ## Open Questions
 
@@ -120,17 +123,16 @@ GATE 1 (`packages/domain/**`) foi decidida e corrigida nesta iteração.
 
 ## Next Action
 
-L-0004 em execução (iteração 1, prova real end-to-end do Agent Bridge mergeado, meta
-HUMAN_INTERVENTIONS_PER_OBJECTIVE = 0): após o RESULT, o `run` chama o `decide` e grava a DECISION;
-em DONE, aguardar o GATE 6 do PR de L-0004. **Nenhum outro objective sem HANDOFF aprovado.**
+Aguardar o GATE 6 do PR #65 (L-0004). Depois, com HANDOFF aprovado, L-0006 = prova final end-to-end
+do Agent Bridge com um único comando humano (Claude headless real → RESULT PR_READY criado pelo
+Claude → bridge observa CI → GPT real → DECISION → GATE 6), meta HUMAN_INTERVENTIONS 0. **Não iniciar.**
 
 ## Human Gate
 
-**HUMAN_APPROVAL_REQUIRED** — (a) GATE 6 do PR de L-0004 após DECISION DONE; (b) L-0004 fora do
-envelope (RESULT HUMAN_GATE ou BLOCKED, ou `max_iterations` esgotado); (c) qualquer implementação da bridge ou
-automação do transporte; (d) FASE 1 (Auth Supabase) só começa com aprovação explícita
-(GATE 3 / GATE 4 / GATE 8).
+**HUMAN_APPROVAL_REQUIRED** — (a) GATE 6 do PR #65 (L-0004); (b) HANDOFF de L-0006 e a correção do
+código de saída do CLI (anomalia libuv); (c) qualquer outra alteração da bridge; (d) FASE 1 (Auth
+Supabase) só começa com aprovação explícita (GATE 3 / GATE 4 / GATE 8).
 
 ## Last Updated
 
-2026-09-15T16:41Z — Claude Code (L-0004 iteração 1: Last Approved Baseline atualizado para `e3c1a87`; bookkeeping).
+2026-09-15T17:08Z — Claude Code (fechamento de L-0004 após retomada validada; bookkeeping de L-0005).
