@@ -1,6 +1,6 @@
 # Bridge/Orquestrador local GPT ↔ Claude Code — Design (Etapa 1 do Loop Engineering)
 
-**Status:** PROPOSTA para decisão humana, revisão 2 (Autonomy Envelope). Documento de design;
+**Status:** PROPOSTA para decisão humana, revisão 3 (revisão 2 = Autonomy Envelope; revisão 3 = ajustes aprovados pelo responsável). Documento de design;
 **nada implementado**. Implementar a bridge é `HUMAN_APPROVAL_REQUIRED`.
 **Base:** [agent-execution-protocol.md](agent-execution-protocol.md) (ciclo, gates 1–8, handoff),
 [agent-development-state.md](agent-development-state.md) (checkpoint), processo Git do
@@ -66,18 +66,18 @@ Razão: versionar HANDOFF/RESULT inflaria o histórico com mensagens; a rastreab
 
 ### 1.6 Autonomy Envelope
 
-**Definição.** O envelope de um objetivo é o conjunto fechado de ações, caminhos, comandos e orçamentos dentro do qual GPT + Claude Code iteram até DONE **sem nova autorização humana**. É aprovado pelo humano junto com o OBJECTIVE, viaja no HANDOFF (bloco `AUTONOMY`, §3.1), **só o humano alarga**; o GPT pode estreitá-lo num RETRY, nunca ampliá-lo.
+**Definição.** O envelope de um objetivo é o conjunto fechado de ações, caminhos, comandos e orçamentos dentro do qual GPT + Claude Code iteram até DONE **sem nova autorização humana**. É aprovado pelo humano junto com o OBJECTIVE, viaja no HANDOFF (bloco `AUTONOMY`, §3.1), **só o humano alarga** (em um HANDOFF aprovado); durante o loop o GPT pode apenas manter ou estreitar o envelope, nunca ampliá-lo.
 
 #### 1.6.1 Campos
 
-| Campo               | Conteúdo                                                                                                           | Proposta inicial (parâmetro de segurança, revisável com dados reais) |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
-| `allowed_actions`   | lista fechada de ações permitidas sem humano (§1.6.2)                                                              | a lista de §1.6.2 inteira, salvo restrição explícita                 |
-| `forbidden_actions` | ações vedadas neste objetivo, além das estruturais (§1.6.3)                                                        | `new_dependency`, `new_package`, `rename_across_packages`            |
-| `retry_scope`       | o que um RETRY pode fazer: mesmo OBJECTIVE, mesma branch, SCOPE igual ou menor, HANDOFF obrigatoriamente diferente | fixo                                                                 |
-| `max_iterations`    | MAX_ITERATIONS_PER_LOOP                                                                                            | 3                                                                    |
-| `context_budget`    | MAX_CONTEXT_FILES listados no HANDOFF, mais um nível de imports diretos                                            | 8 arquivos                                                           |
-| `change_budget`     | teto do diff: arquivos tocados, linhas líquidas, arquivos novos só dentro do SCOPE, zero dependências              | 10 arquivos; 300 linhas líquidas; 0 dependências                     |
+| Campo               | Conteúdo                                                                                                           | DEFAULT (parâmetro de segurança, revisável com dados reais; o HANDOFF aprovado pelo humano pode definir outro valor) |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `allowed_actions`   | lista fechada de ações permitidas sem humano (§1.6.2)                                                              | a lista de §1.6.2 inteira, salvo restrição explícita                                                                 |
+| `forbidden_actions` | ações vedadas neste objetivo, além das estruturais (§1.6.3)                                                        | `new_dependency`, `new_package`, `rename_across_packages`                                                            |
+| `retry_scope`       | o que um RETRY pode fazer: mesmo OBJECTIVE, mesma branch, SCOPE igual ou menor, HANDOFF obrigatoriamente diferente | fixo                                                                                                                 |
+| `max_iterations`    | MAX_ITERATIONS_PER_LOOP                                                                                            | 3                                                                                                                    |
+| `context_budget`    | MAX_CONTEXT_FILES listados no HANDOFF, mais um nível de imports diretos                                            | 8 arquivos                                                                                                           |
+| `change_budget`     | teto do diff: arquivos tocados, linhas líquidas, arquivos novos só dentro do SCOPE, zero dependências              | 10 arquivos; 300 linhas líquidas; 0 dependências — **default, não limite universal**                                 |
 
 Limite de sessão (fora do HANDOFF, no STATE): MAX_LOOPS_PER_SESSION = 5. Sem work queue, todo loop já começa por uma aprovação humana; o teto vale como rede de segurança para a fase futura e como limite de objetivos por sessão.
 
@@ -99,29 +99,29 @@ Limite de sessão (fora do HANDOFF, no STATE): MAX_LOOPS_PER_SESSION = 5. Sem wo
 
 Cada item abaixo é **uma intervenção humana** e conta na métrica de §1.10. Além dos casos estruturais já protegidos pelos gates (§5):
 
-| Condição                                                                     | Saída        | Gate |
-| ---------------------------------------------------------------------------- | ------------ | ---- |
-| necessidade de ADR                                                           | HUMAN_GATE   | 4    |
-| alteração de Domain Rules não nomeada no OBJECTIVE                           | HUMAN_GATE   | 1    |
-| alteração estrutural de schema; migration não previamente autorizada         | HUMAN_GATE   | 2    |
-| mudança de contrato público não autorizada                                   | HUMAN_GATE   | 4    |
-| mudança do modelo de autorização/RBAC, de RLS, de secrets                    | HUMAN_GATE   | 3    |
-| mudança da arquitetura offline                                               | HUMAN_GATE   | 4    |
-| operação destrutiva de dados ou de git                                       | HUMAN_GATE   | 5    |
-| expansão do SCOPE ou estouro do `change_budget`                              | HUMAN_GATE   | 8    |
-| decisão de produto não especificada no OBJECTIVE/DONE_WHEN                   | BLOCKED      | —    |
-| conflito entre requisitos (DONE_WHEN contraditório ou contradiz o STATE)     | BLOCKED      | —    |
-| impossibilidade de satisfazer DONE_WHEN dentro do `change_budget`            | BLOCKED      | —    |
-| esgotamento dos limites anti-loop (`max_iterations`, mesma falha duas vezes) | BLOCKED      | —    |
-| nova dependência ou pacote                                                   | BLOCKED      | —    |
-| merge, deploy, tag                                                           | fora do loop | 6, 7 |
+| Condição                                                                                                                                                            | Saída        | Gate |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---- |
+| necessidade de ADR                                                                                                                                                  | HUMAN_GATE   | 4    |
+| alteração de Domain Rules não nomeada no OBJECTIVE                                                                                                                  | HUMAN_GATE   | 1    |
+| alteração estrutural de schema; migration não previamente autorizada                                                                                                | HUMAN_GATE   | 2    |
+| mudança de contrato público não autorizada                                                                                                                          | HUMAN_GATE   | 4    |
+| mudança do modelo de autorização/RBAC ou de secrets; qualquer mudança de política RLS cuja política exata não esteja explicitamente aprovada no OBJECTIVE/DONE_WHEN | HUMAN_GATE   | 3    |
+| mudança da arquitetura offline, de boundaries estruturais ou qualquer outra decisão estrutural                                                                      | HUMAN_GATE   | 4    |
+| operação destrutiva de dados ou de git                                                                                                                              | HUMAN_GATE   | 5    |
+| expansão do SCOPE ou estouro do `change_budget`                                                                                                                     | HUMAN_GATE   | 8    |
+| decisão de produto não especificada no OBJECTIVE/DONE_WHEN                                                                                                          | BLOCKED      | —    |
+| conflito entre requisitos (DONE_WHEN contraditório ou contradiz o STATE)                                                                                            | BLOCKED      | —    |
+| impossibilidade de satisfazer DONE_WHEN dentro do `change_budget`                                                                                                   | BLOCKED      | —    |
+| esgotamento de `max_iterations`                                                                                                                                     | BLOCKED      | —    |
+| nova dependência ou pacote                                                                                                                                          | BLOCKED      | —    |
+| merge, deploy, tag                                                                                                                                                  | fora do loop | 6, 7 |
 
 Teste prático da fronteira: **"o humano, lendo OBJECTIVE e DONE_WHEN, reconheceria esta mudança como parte do que aprovou?"** Se não, é categoria 2: interrompe.
 
 #### 1.6.4 RETRY × NEXT OBJECTIVE
 
 - **RETRY** = nova tentativa de atingir o **mesmo** objetivo aprovado: mesma branch, mesmo SCOPE (ou menor), HANDOFF n+1 diferente do n, dentro de `max_iterations`. Decisão exclusiva do GPT; sem humano.
-- **NEXT OBJECTIVE** = objetivo novo, com envelope novo. **Não pode ser criado nem executado autonomamente.** O GPT pode apenas **propor** (`NEXT_OBJECTIVE_PROPOSAL` na DECISION DONE, §3.3); o humano aprova ou não. Work queue pré-aprovada permanece **fora do escopo** desta versão.
+- **NEXT OBJECTIVE** = objetivo novo, com envelope novo. **Não pode ser criado nem executado autonomamente.** O GPT pode apenas **propor** (`NEXT_OBJECTIVE_PROPOSAL` na DECISION DONE, §3.3 — campo informacional, não executável, que nunca inicia outro loop); novo objetivo exige novo HANDOFF com aprovação humana. Work queue pré-aprovada permanece **fora do escopo** desta versão.
 
 ### 1.7 Limites de contexto e prevenção de releitura
 
@@ -147,13 +147,14 @@ Os caminhos, comandos e classes dos gates vivem em **um único arquivo versionad
 | RETRY dentro do envelope; pipeline completo; abrir PR; esperar CI             | Alterar artefatos congelados, o protocolo, a configuração de gates, a bridge                  |
 | Encerrar o loop em CI_VERIFIED                                                | Rotação de credenciais; qualquer acesso ao `.env`; abandonar loop; apagar branch com trabalho |
 
-### 1.10 Métrica central: HUMAN_INTERVENTIONS_PER_OBJECTIVE
+### 1.10 Métricas: HUMAN_INTERVENTIONS_PER_OBJECTIVE (central), ITERATIONS_PER_OBJECTIVE e FAILED_ITERATIONS_PER_OBJECTIVE
 
 **Definição.** Quantidade de vezes que um objetivo previamente aprovado precisa interromper sua execução para obter decisão humana antes de DONE ou BLOCKED. Conta cada entrada em WAITING_HUMAN entre a aprovação do OBJECTIVE e o fechamento do loop. **Não conta** a aprovação inicial nem o merge após CI_VERIFIED (são os dois pontos fixos de §1.1).
 
-- Registro: a bridge incrementa `HUMAN_INTERVENTIONS` na seção `Current Loop` do STATE; ao fechar, o valor vai para o RESULT final e para o corpo do PR.
-- Baseline: medida do processo manual atual — número de prompts humanos entre o enunciado do objetivo e o PR aberto, contados em objetivos reais (histórico de sessões ou os próximos objetivos executados manualmente). **Nenhum valor é assumido**; só medido.
-- Critério de ganho: a bridge só demonstra ganho operacional se a métrica cair em relação ao baseline, com a mesma taxa de PRs aceitos. Métricas secundárias: iterações por loop, arquivos lidos por loop, tempo até CI_VERIFIED.
+- Métricas complementares: **ITERATIONS_PER_OBJECTIVE** = iterações (HANDOFF n) até DONE ou BLOCKED — no processo manual, rodadas prompt → resultado; **FAILED_ITERATIONS_PER_OBJECTIVE** = iterações encerradas com `FAILED`.
+- Registro: a bridge incrementa `HUMAN_INTERVENTIONS`, `ITERATION` e `FAILED_ITERATIONS` na seção `Current Loop` do STATE; ao fechar, os valores vão para o RESULT final e para o corpo do PR.
+- A medição começa **agora**, em todo objetivo, manual ou com envelope: prompts humanos entre o enunciado do objetivo e o PR verificado, rodadas e rodadas falhas. **Nenhum valor é assumido**; só medido. O baseline manual **não bloqueia** a vertical slice.
+- Critério de ganho: a bridge só demonstra ganho operacional se HUMAN_INTERVENTIONS_PER_OBJECTIVE cair em relação ao baseline disponível, com a mesma taxa de PRs aceitos. Secundárias: arquivos lidos por loop, tempo até CI_VERIFIED.
 
 ## 2. Sequência de um loop completo
 
@@ -168,10 +169,10 @@ Os caminhos, comandos e classes dos gates vivem em **um único arquivo versionad
 1. **OBJECTIVE** — o humano aprova OBJECTIVE + envelope (intervenção fixa nº 1). O GPT escreve `HANDOFF L-0007.1`. A bridge valida e marca `Current Loop: L-0007.1`.
 2. **CONTEXT** — o executor faz READ STATE → VERIFY GIT → cria a branch → lê só o CONTEXT (+ um nível de imports).
 3. **EXECUTE** — implementa dentro do SCOPE. Ao reconhecer condição de §1.6.3: para antes de editar e vai ao passo 5 com `STATUS: HUMAN_GATE` ou `BLOCKED`.
-4. **VERIFY** — roda VERIFY, lint/typecheck do pacote. Falhou? **Diagnostica e corrige dentro do envelope, na mesma iteração**, e roda de novo. Só devolve `FAILED` se a correção exigir sair do envelope ou se a mesma falha persistir após a correção.
+4. **VERIFY** — roda VERIFY, lint/typecheck do pacote. Falhou? **Diagnostica e corrige dentro do envelope, na mesma iteração**, e roda de novo. Devolve `FAILED` se a correção exigir sair do envelope ou na **segunda ocorrência da mesma assinatura de falha** dentro da iteração — isso encerra a iteração, não o objetivo.
 5. **EVIDENCE** — escreve `RESULT L-0007.1` (§3.2) com saídas reais, `DONE_LEVEL`, `DIFF_SUMMARY` e `BUDGET_USED`; atualiza o STATE; commita com trailer. Guardas mecânicas: diff ⊆ SCOPE, `change_budget`, EVIDENCE ≠ ∅, sem segredo.
 6. **DECIDE** — o GPT lê STATE + RESULT (pede `CONTEXT_REQUEST` se precisar do diff) e escreve `DECISION L-0007.1`:
-   - `RETRY` → `HANDOFF L-0007.2` (diferente; envelope igual ou menor); guardas anti-loop; volta ao passo 2 na mesma branch. **Sem humano.**
+   - `RETRY` → `HANDOFF L-0007.2` (diferente; envelope igual ou menor; após `FAILED` por falha repetida, abordagem materialmente diferente); guardas anti-loop; volta ao passo 2 na mesma branch. **Sem humano.** Se a nova abordagem exigir ampliar o envelope: `HUMAN_GATE`.
    - `DONE` → só com `DONE_LEVEL: CI_VERIFIED`. Se o RESULT está em IMPLEMENTATION_DONE, a decisão correta é `RETRY` com HANDOFF "pipeline completo + PR + CI" (ainda o mesmo objetivo; conta como iteração).
    - `BLOCKED` / `HUMAN_GATE` → pergunta objetiva ao humano; loop pausado; `HUMAN_INTERVENTIONS += 1`.
 7. **PR e CI** (dentro do envelope) — pipeline completo, PR com `Loop-Id`, espera pelos dois jobs. CI vermelho com causa dentro do SCOPE → RESULT `FAILED` → RETRY. Causa fora (infra, flakiness conhecida do runner) → `BLOCKED`.
@@ -179,13 +180,13 @@ Os caminhos, comandos e classes dos gates vivem em **um único arquivo versionad
 
 ### 2.3 Critérios de saída — escada de DONE
 
-| Nível                   | Significado                                                                                                       | Quem                | Encerra o loop de engenharia?                                                                                                                                                    |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **IMPLEMENTATION_DONE** | DONE_WHEN satisfeito localmente; VERIFY verde; diff ⊆ SCOPE; `change_budget` respeitado; STATE atualizado; commit | executor            | não                                                                                                                                                                              |
-| **PR_READY**            | pipeline completo verde local; PR aberto com `Loop-Id`                                                            | executor            | não                                                                                                                                                                              |
-| **CI_VERIFIED**         | `verify` + `architecture` verdes no head do PR                                                                    | CI (bridge observa) | **sim — estado terminal do loop.** A partir daqui só resta decisão humana                                                                                                        |
-| **MERGED**              | squash na `main`                                                                                                  | humano (GATE 6)     | fora do loop                                                                                                                                                                     |
-| **DEPLOYED**            | produção                                                                                                          | humano (GATE 7)     | fora do loop. Hoje o `carcass-cost` publica automaticamente no merge (git integration da Vercel): **MERGED implica DEPLOYED nesse app; a decisão de merge é também a de deploy** |
+| Nível                   | Significado                                                                                                       | Quem                                               | Encerra o loop de engenharia?                                                                                                                                                                                                    |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **IMPLEMENTATION_DONE** | DONE_WHEN satisfeito localmente; VERIFY verde; diff ⊆ SCOPE; `change_budget` respeitado; STATE atualizado; commit | executor                                           | não                                                                                                                                                                                                                              |
+| **PR_READY**            | pipeline completo verde local; PR aberto com `Loop-Id`                                                            | executor                                           | não                                                                                                                                                                                                                              |
+| **CI_VERIFIED**         | `verify` + `architecture` verdes no head do PR                                                                    | CI (bridge observa)                                | **sim — estado terminal do loop.** A partir daqui só resta decisão humana                                                                                                                                                        |
+| **MERGED**              | squash na `main`                                                                                                  | humano (GATE 6)                                    | fora do loop                                                                                                                                                                                                                     |
+| **DEPLOYED**            | produção                                                                                                          | humano (GATE 7 quando há ação explícita de deploy) | fora do loop, atrás do GATE 7 quando houver ação explícita de deploy. Hoje o `carcass-cost` publica automaticamente no merge (git integration da Vercel), sem ação explícita: **quem faz o merge (GATE 6) sabe que ele publica** |
 
 Por que CI_VERIFIED e não PR_READY: só o CI completa a evidência; esperar o CI é ação sem humano; CI vermelho no SCOPE vira RETRY em vez de novo objetivo. Por que não MERGED: merge é a categoria 2 por definição e o ponto único que torna segura a autonomia dentro do envelope — nada chega à `main` sem revisão humana.
 
@@ -218,7 +219,7 @@ AUTONOMY:
   retry_scope: same-objective, same-branch, scope-equal-or-narrower, handoff-must-differ
   max_iterations: 3
   context_budget: 8
-  change_budget: files=10, net_lines=300, dependencies=0
+  change_budget: files=10, net_lines=300, dependencies=0   # default; o HANDOFF aprovado pode definir outro
 GATES_EXPECTED: NONE | <gate n: arquivo>     # só gates classe B; exige HUMAN_APPROVAL
 HUMAN_APPROVAL: NONE | <ref: mensagem/PR/data>
 ```
@@ -253,10 +254,10 @@ DECISION: DONE | RETRY | BLOCKED | HUMAN_GATE
 RATIONALE: <1-3 linhas, citando EVIDENCE>
 NEXT_HANDOFF: L-0007.2 | none
 HUMAN_QUESTION: <pergunta objetiva> | none
-NEXT_OBJECTIVE_PROPOSAL: <uma frase> | none     # só informativo; nunca despachado sem humano
+NEXT_OBJECTIVE_PROPOSAL: <uma frase> | none     # informacional, não executável; nunca inicia outro loop
 ```
 
-Regras: `DONE` só com `STATUS: DONE` e `DONE_LEVEL: CI_VERIFIED`; `RETRY` só com NEXT_HANDOFF diferente do anterior e envelope igual ou menor; `BLOCKED`/`HUMAN_GATE` exigem HUMAN_QUESTION; NEXT_OBJECTIVE_PROPOSAL nunca gera HANDOFF por si.
+Regras: `DONE` só com `STATUS: DONE` e `DONE_LEVEL: CI_VERIFIED`; `RETRY` só com NEXT_HANDOFF diferente do anterior e envelope igual ou menor; `BLOCKED`/`HUMAN_GATE` exigem HUMAN_QUESTION; NEXT_OBJECTIVE_PROPOSAL é informacional e não executável: nunca inicia outro loop; novo objetivo exige novo HANDOFF com aprovação humana.
 
 ### 3.4 CONTEXT_REQUEST (GPT → bridge, mecânico)
 
@@ -271,38 +272,38 @@ A bridge responde com `context-reply` contendo exatamente o pedido. Não consome
 
 ### 3.5 STATE (checkpoint): o que a bridge acrescenta
 
-`docs/agent-development-state.md` mantém todas as seções atuais, escritas pelo executor conforme o protocolo. Acréscimo (adotado): seção própria `## Current Loop` com `LOOP_ID | none`, `ITERATION`, `HANDOFF_REF`, `STARTED`, `HUMAN_INTERVENTIONS` e `LOOPS_THIS_SESSION`. É a única parte do STATE que a bridge escreve.
+`docs/agent-development-state.md` mantém todas as seções atuais, escritas pelo executor conforme o protocolo. Acréscimo (adotado): seção própria `## Current Loop` com `LOOP_ID | none`, `ITERATION`, `HANDOFF_REF`, `STARTED`, `HUMAN_INTERVENTIONS`, `FAILED_ITERATIONS` e `LOOPS_THIS_SESSION`. É a única parte do STATE que a bridge escreve.
 
 ## 4. State machine mínima
 
 Estados de um loop: `IDLE → DISPATCHED → EXECUTING → RESULTED → DECIDED → {VERIFYING_CI | WAITING_HUMAN | CLOSED}`.
 
-| De                               | Evento                     | Para                                | Guarda (bridge)                                                                                 |
-| -------------------------------- | -------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------- |
-| IDLE                             | HANDOFF válido             | DISPATCHED                          | sem loop ativo; sessão < MAX_LOOPS; SCOPE ∩ gates A = ∅; SCOPE ∩ gates B só com HUMAN_APPROVAL  |
-| DISPATCHED                       | executor inicia            | EXECUTING                           | —                                                                                               |
-| EXECUTING                        | RESULT escrito             | RESULTED                            | EVIDENCE ≠ ∅; diff ⊆ SCOPE; `change_budget`; sem segredo; LOOP_ID confere                       |
-| EXECUTING                        | sem RESULT / worktree suja | RESULTED (`FAILED`)                 | humano marca; nunca há limpeza automática (GATE 5)                                              |
-| RESULTED                         | CONTEXT_REQUEST            | RESULTED                            | ≤ 2 por iteração; resposta mecânica                                                             |
-| RESULTED                         | DECISION                   | DECIDED                             | `DONE` exige `DONE_LEVEL: CI_VERIFIED`                                                          |
-| DECIDED (`RETRY`)                | HANDOFF n+1                | DISPATCHED                          | n+1 ≤ `max_iterations`; HANDOFF ≠ anterior; envelope ⊆ anterior; assinatura de falha ≠ anterior |
-| DECIDED (`RETRY` p/ PR)          | executor abre PR           | VERIFYING_CI                        | pipeline completo verde; PR com `Loop-Id`                                                       |
-| VERIFYING_CI                     | jobs concluem              | RESULTED                            | RESULT com `CI: <run id>`; verde ⇒ `DONE_LEVEL: CI_VERIFIED`; vermelho ⇒ `FAILED`               |
-| DECIDED (`DONE`)                 | —                          | CLOSED                              | STATE `Current Loop: none`; HUMAN_INTERVENTIONS gravado                                         |
-| DECIDED (`BLOCKED`/`HUMAN_GATE`) | —                          | WAITING_HUMAN                       | HUMAN_QUESTION presente; `HUMAN_INTERVENTIONS += 1`                                             |
-| WAITING_HUMAN                    | resposta humana            | DISPATCHED (novo HANDOFF) ou CLOSED | humano; alargar envelope = novo HUMAN_APPROVAL no HANDOFF                                       |
+| De                               | Evento                     | Para                                | Guarda (bridge)                                                                                                                       |
+| -------------------------------- | -------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| IDLE                             | HANDOFF válido             | DISPATCHED                          | sem loop ativo; sessão < MAX_LOOPS; SCOPE ∩ gates A = ∅; SCOPE ∩ gates B só com HUMAN_APPROVAL                                        |
+| DISPATCHED                       | executor inicia            | EXECUTING                           | —                                                                                                                                     |
+| EXECUTING                        | RESULT escrito             | RESULTED                            | EVIDENCE ≠ ∅; diff ⊆ SCOPE; `change_budget`; sem segredo; LOOP_ID confere                                                             |
+| EXECUTING                        | sem RESULT / worktree suja | RESULTED (`FAILED`)                 | humano marca; nunca há limpeza automática (GATE 5)                                                                                    |
+| RESULTED                         | CONTEXT_REQUEST            | RESULTED                            | ≤ 2 por iteração; resposta mecânica                                                                                                   |
+| RESULTED                         | DECISION                   | DECIDED                             | `DONE` exige `DONE_LEVEL: CI_VERIFIED`                                                                                                |
+| DECIDED (`RETRY`)                | HANDOFF n+1                | DISPATCHED                          | n+1 ≤ `max_iterations`; HANDOFF ≠ anterior (após `FAILED` por falha repetida: abordagem materialmente diferente); envelope ⊆ anterior |
+| DECIDED (`RETRY` p/ PR)          | executor abre PR           | VERIFYING_CI                        | pipeline completo verde; PR com `Loop-Id`                                                                                             |
+| VERIFYING_CI                     | jobs concluem              | RESULTED                            | RESULT com `CI: <run id>`; verde ⇒ `DONE_LEVEL: CI_VERIFIED`; vermelho ⇒ `FAILED`                                                     |
+| DECIDED (`DONE`)                 | —                          | CLOSED                              | STATE `Current Loop: none`; HUMAN_INTERVENTIONS gravado                                                                               |
+| DECIDED (`BLOCKED`/`HUMAN_GATE`) | —                          | WAITING_HUMAN                       | HUMAN_QUESTION presente; `HUMAN_INTERVENTIONS += 1`                                                                                   |
+| WAITING_HUMAN                    | resposta humana            | DISPATCHED (novo HANDOFF) ou CLOSED | humano; alargar envelope = novo HUMAN_APPROVAL no HANDOFF                                                                             |
 
 Comportamento:
 
 - **Sucesso**: EXECUTING (com correções internas) → RESULTED → RETRY para PR → VERIFYING_CI → DONE → CLOSED, **sem WAITING_HUMAN**. Merge é ação humana fora da máquina.
-- **Falha**: `FAILED` → o GPT decide `RETRY` (HANDOFF corrigido) ou `BLOCKED`; nunca `DONE`.
+- **Falha**: `FAILED` → o GPT decide `RETRY` (HANDOFF com abordagem materialmente diferente, dentro do envelope), `BLOCKED`, ou `HUMAN_GATE` se a nova abordagem exigir ampliar o envelope; nunca `DONE`.
 - **Bloqueio**: condição de §1.6.3 → WAITING_HUMAN. Sem timeout automático, sem RETRY automático a partir daí.
 
 Prevenção de loop infinito (mecânica, na bridge):
 
 1. `max_iterations` por loop (3): excedido = BLOCKED → WAITING_HUMAN.
 2. HANDOFF n+1 idêntico ao n = rejeitado.
-3. Mesma assinatura de falha (mesmos testes falhando / mesmo erro) em duas iterações = BLOCKED.
+3. Segunda ocorrência da mesma assinatura de falha (mesmos testes falhando / mesmo erro) encerra a **iteração** como `FAILED`; não converte o objetivo em HUMAN_GATE. O GPT pode emitir RETRY com abordagem materialmente diferente dentro do envelope; se exigir expansão, HUMAN_GATE. `max_iterations` continua valendo.
 4. MAX_LOOPS_PER_SESSION (5) = checkpoint humano obrigatório.
 5. RESULT sem EVIDENCE = rejeitado (não vira DECISION).
 6. `change_budget` estourado = HUMAN_GATE 8, não "mais uma iteração".
@@ -318,22 +319,22 @@ Prevenção de loop infinito (mecânica, na bridge):
 
 ### 5.2 Classificação
 
-| Gate                    | Classe                                  | Pré-autorizável no HANDOFF quando…                                                                                                          | Núcleo que interrompe sempre (justificativa)                                                                                                                                                                              | Detecção                                                                                                                                                        |
-| ----------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1 Domain Rules          | **B**                                   | o OBJECTIVE nomeia a regra/fórmula alterada e o arquivo de domínio está no SCOPE (ex.: "trocar o default de 11,55 para X")                  | qualquer regra **não nomeada** no OBJECTIVE, inclusive "correção" de fórmula ou arredondamento descoberta durante o loop — é decisão de produto                                                                           | conteúdo (executor) + caminho `**/src/domain/**` fora do SCOPE (C)                                                                                              |
-| 2 Database Schema       | **B**                                   | migration **aditiva** nomeada no OBJECTIVE, arquivo em SCOPE, HUMAN_APPROVAL                                                                | mudança estrutural não prevista; qualquer migration destrutiva (cai no GATE 5); editar migration já aplicada (forward-only)                                                                                               | caminho `prisma/**`, `supabase/migrations/**` (C)                                                                                                               |
-| 3 Security              | **A (núcleo) + B (implementação)**      | implementação de trabalho de auth **já aprovado como objetivo** (ex.: FASE 1, quando aprovada), com cada arquivo sensível listado no SCOPE  | secrets, credenciais, `.env*`, rotação (F-01); semântica do modelo de autorização (ADR-018/RBAC); política de RLS não especificada no OBJECTIVE. Justificativa: irreversível ou expõe dados; ADR-018 é artefato congelado | caminho `.env*`, `supabase/**` (policies), arquivos de auth/permissões (C) + conteúdo (executor)                                                                |
-| 4 Architecture          | **A (núcleo) + B (contratos nomeados)** | mudança de contrato público **nomeada** no OBJECTIVE (campo/tipo em `packages/contracts`) com HUMAN_APPROVAL                                | ADR novo ou alterado; boundaries (`.dependency-cruiser.cjs`); Configuration Engine; arquitetura offline; Design System congelado. Justificativa: um ADR **é** a decisão humana; não existe "pré-autorizar um ADR"         | caminho `docs/adr/**`, `.dependency-cruiser.cjs`, `packages/config-engine/**`, `packages/infrastructure/src/offline/**`, `packages/contracts/**` (C) + conteúdo |
-| 5 Destructive Operation | **A**                                   | nunca. Remover **arquivo** dentro do SCOPE como parte do OBJECTIVE não é este gate: é trabalho normal, coberto pela guarda diff ⊆ SCOPE (C) | `git reset --hard`, `--force`, `git branch -D` com trabalho, `rm -rf` fora de artefatos de build, deleção/migração destrutiva de dados. Justificativa: irreversível                                                       | comando em VERIFY/instruções e durante EXECUTE (C)                                                                                                              |
-| 6 Merge                 | **A**                                   | nunca                                                                                                                                       | sempre. Justificativa: é o único ponto que torna segura a autonomia interna; branch protection exige revisão                                                                                                              | fora do loop                                                                                                                                                    |
-| 7 Deploy                | **A**                                   | nunca; comando de deploy no HANDOFF = HANDOFF rejeitado                                                                                     | sempre. Nota: no `carcass-cost` o merge já implica deploy (git integration); a decisão humana de merge carrega o deploy                                                                                                   | comando (C); fora do loop                                                                                                                                       |
-| 8 Scope Expansion       | **B** com detecção **C**                | —: o envelope **é** a pré-autorização; dentro dele não há gate                                                                              | diff fora do SCOPE, `change_budget` estourado, necessidade percebida além do OBJECTIVE. Justificativa: expansão silenciosa é exatamente o que o envelope proíbe                                                           | diff ⊆ SCOPE e orçamentos (C) + conteúdo (executor)                                                                                                             |
+| Gate                    | Classe                                                | Pré-autorizável no HANDOFF quando…                                                                                                                                                                                                                 | Núcleo que interrompe sempre (justificativa)                                                                                                                                                                                                                                                   | Detecção                                                                                                                                                        |
+| ----------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 Domain Rules          | **B**                                                 | o OBJECTIVE nomeia a regra/fórmula alterada e o arquivo de domínio está no SCOPE (ex.: "trocar o default de 11,55 para X")                                                                                                                         | qualquer regra **não nomeada** no OBJECTIVE, inclusive "correção" de fórmula ou arredondamento descoberta durante o loop — é decisão de produto                                                                                                                                                | conteúdo (executor) + caminho `**/src/domain/**` fora do SCOPE (C)                                                                                              |
+| 2 Database Schema       | **B**                                                 | migration **aditiva** nomeada no OBJECTIVE, arquivo em SCOPE, HUMAN_APPROVAL                                                                                                                                                                       | mudança estrutural não prevista; qualquer migration destrutiva (cai no GATE 5); editar migration já aplicada (forward-only)                                                                                                                                                                    | caminho `prisma/**`, `supabase/migrations/**` (C)                                                                                                               |
+| 3 Security              | **A (núcleo) + B (implementação)**                    | implementação de trabalho de auth **já aprovado como objetivo** (ex.: FASE 1, quando aprovada), com cada arquivo sensível listado no SCOPE; uma política RLS só quando a **política exata** já está explicitamente aprovada no OBJECTIVE/DONE_WHEN | secrets, credenciais, `.env*`, rotação (F-01); semântica do modelo de autorização (ADR-018/RBAC); **qualquer** mudança de política RLS cuja política exata não esteja explicitamente aprovada no OBJECTIVE/DONE_WHEN. Justificativa: irreversível ou expõe dados; ADR-018 é artefato congelado | caminho `.env*`, `supabase/**` (policies), arquivos de auth/permissões (C) + conteúdo (executor)                                                                |
+| 4 Architecture          | **A (núcleo) + B (contrato explicitamente aprovado)** | implementação de mudança de contrato público **explicitamente aprovada** no OBJECTIVE (campo/tipo em `packages/contracts`) com HUMAN_APPROVAL                                                                                                      | ADR novo ou alterado; boundaries estruturais (`.dependency-cruiser.cjs`); Configuration Engine; arquitetura offline; Design System congelado; qualquer outra decisão estrutural. Justificativa: um ADR **é** a decisão humana; não existe "pré-autorizar um ADR"                               | caminho `docs/adr/**`, `.dependency-cruiser.cjs`, `packages/config-engine/**`, `packages/infrastructure/src/offline/**`, `packages/contracts/**` (C) + conteúdo |
+| 5 Destructive Operation | **A**                                                 | nunca. Remover **arquivo** dentro do SCOPE como parte do OBJECTIVE não é este gate: é trabalho normal, coberto pela guarda diff ⊆ SCOPE (C)                                                                                                        | `git reset --hard`, `--force`, `git branch -D` com trabalho, `rm -rf` fora de artefatos de build, deleção/migração destrutiva de dados. Justificativa: irreversível                                                                                                                            | comando em VERIFY/instruções e durante EXECUTE (C)                                                                                                              |
+| 6 Merge                 | **A**                                                 | nunca                                                                                                                                                                                                                                              | sempre. Justificativa: é o único ponto que torna segura a autonomia interna; branch protection exige revisão                                                                                                                                                                                   | fora do loop                                                                                                                                                    |
+| 7 Deploy                | **A**                                                 | nunca; comando de deploy no HANDOFF = HANDOFF rejeitado                                                                                                                                                                                            | sempre que houver ação explícita de deploy. Nota: no `carcass-cost` a git integration publica no merge, sem ação explícita — a decisão humana de merge (GATE 6) carrega esse efeito                                                                                                            | comando (C); fora do loop                                                                                                                                       |
+| 8 Scope Expansion       | **B** com detecção **C**                              | —: o envelope **é** a pré-autorização; dentro dele não há gate                                                                                                                                                                                     | diff fora do SCOPE, `change_budget` estourado, necessidade percebida além do OBJECTIVE. Justificativa: expansão silenciosa é exatamente o que o envelope proíbe                                                                                                                                | diff ⊆ SCOPE e orçamentos (C) + conteúdo (executor)                                                                                                             |
 
 Nenhuma proteção estrutural foi enfraquecida: o que mudou é que a **iteração** deixa de ser motivo de interrupção; o que era decisão humana continua humano.
 
 ### 5.3 Guardas mecânicas (classe C) que sustentam o envelope
 
-Validação de forma e LOOP_ID; caminhos de gate (fonte única, §1.8); allowlist de comandos em VERIFY; diff ⊆ SCOPE; `change_budget`; `context_budget`; EVIDENCE não vazio; regex de segredos do `pre-commit`; `max_iterations`; HANDOFF repetido; assinatura de falha repetida; MAX_LOOPS_PER_SESSION; um loop ativo. Todas aplicadas sem humano; uma violação produz a saída definida (rejeição, `FAILED`, `BLOCKED` ou `HUMAN_GATE`), nunca uma "decisão".
+Validação de forma e LOOP_ID; caminhos de gate (fonte única, §1.8); allowlist de comandos em VERIFY; diff ⊆ SCOPE; `change_budget`; `context_budget`; EVIDENCE não vazio; regex de segredos do `pre-commit`; `max_iterations`; HANDOFF repetido; assinatura de falha repetida (encerra a iteração como `FAILED`); MAX_LOOPS_PER_SESSION; um loop ativo. Todas aplicadas sem humano; uma violação produz a saída definida (rejeição, `FAILED`, `BLOCKED` ou `HUMAN_GATE`), nunca uma "decisão".
 
 ## 6. Exemplo concreto e modelo de intervenção humana
 
@@ -358,7 +359,7 @@ Intervenções humanas entre o objetivo e o PR verificado: **3** (passos 2, 3 e 
 6. GPT: `DECISION: DONE`, `NEXT_OBJECTIVE_PROPOSAL: none`.
 7. **Humano recebe** "PR #n pronto, HUMAN_INTERVENTIONS = 0" e faz o merge. ← intervenção fixa nº 2.
 
-Intervenções humanas entre o objetivo e o PR verificado: **0**. Se o VERIFY tivesse falhado de novo após a correção (mesma assinatura), a iteração 2 seria RETRY com diagnóstico do GPT; na terceira falha igual, BLOCKED.
+Intervenções humanas entre o objetivo e o PR verificado: **0**. Se o VERIFY tivesse falhado de novo após a correção (mesma assinatura), a iteração 1 encerraria como `FAILED`; o GPT emitiria RETRY com abordagem materialmente diferente, ainda no envelope; esgotadas as 3 iterações, BLOCKED.
 
 ### 6.3 Onde o humano reaparece obrigatoriamente (no mesmo exemplo)
 
@@ -378,26 +379,26 @@ Intervenções humanas entre o objetivo e o PR verificado: **0**. Se o VERIFY ti
 
 ## 7. Failure modes
 
-| Falha                                                                     | Detecção                                    | Resposta                                                                                                                           |
-| ------------------------------------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Executor interrompido no meio (worktree suja, sem RESULT)                 | RESULT ausente ao fim da sessão             | `FAILED`; próxima iteração começa por VERIFY GIT e relata o diff pendente; humano decide. Nunca `reset --hard` automático (GATE 5) |
-| RESULT sem evidência ou com "testes passaram" sem saída                   | validação de forma                          | rejeitado; RETRY exige comando + saída real                                                                                        |
-| Diff fora do SCOPE ou `change_budget` estourado                           | guarda C pós-execução                       | HUMAN_GATE 8 forçado, mesmo se a mudança parecer inofensiva                                                                        |
-| Envelope mal definido (SCOPE vago, DONE_WHEN não verificável)             | guarda de entrada                           | HANDOFF rejeitado antes de despachar; volta ao GPT/humano                                                                          |
-| GPT alarga o envelope num RETRY                                           | guarda `envelope ⊆ anterior`                | HANDOFF rejeitado; alargar exige HUMAN_APPROVAL                                                                                    |
-| GPT tenta despachar NEXT OBJECTIVE                                        | LOOP_ID novo sem aprovação humana           | rejeitado; fica como proposta                                                                                                      |
-| Executor corrige "além" do erro revelado (drift)                          | diff ⊆ SCOPE + REVIEW DIFF + DIFF_SUMMARY   | GATE 8                                                                                                                             |
-| HANDOFF cita caminho inexistente / contexto alucinado                     | executor                                    | `BLOCKED` com a lista do que não existe; nunca adivinha                                                                            |
-| STATE divergente do git (baseline velho, loop fantasma)                   | executor, passo READ STATE                  | corrige o STATE antes de editar e registra no RESULT                                                                               |
-| Dois loops simultâneos / duas sessões                                     | invariante "um loop ativo"                  | segundo HANDOFF rejeitado; humano resolve                                                                                          |
-| CI vermelho depois do PR aberto                                           | run id no RESULT                            | `FAILED`; RETRY se a causa está no SCOPE, senão `BLOCKED` (ex.: timeout de jornada no runner)                                      |
-| Segredo em RESULT/HANDOFF (saída de comando com `.env`)                   | regex do `pre-commit` aplicada aos arquivos | rejeitado; EVIDENCE nunca cola conteúdo de `.env`; se vazar, rotação (risco F-01)                                                  |
-| Explosão de contexto                                                      | executor                                    | `BLOCKED: contexto insuficiente/excessivo` em vez de varrer; GPT enxuga o HANDOFF                                                  |
-| GPT decide DONE sem CI_VERIFIED, ou RETRY idêntico                        | guardas de §4                               | DECISION rejeitada; volta ao GPT                                                                                                   |
-| Mesma falha em iterações consecutivas (teste flaky ou diagnóstico errado) | assinatura de falha                         | `BLOCKED`; o humano decide se é flakiness (fora do SCOPE) ou diagnóstico                                                           |
-| Erro humano de cópia na fase manual (arquivo do loop errado)              | LOOP_ID divergente                          | rejeitado                                                                                                                          |
-| Divergência entre documentos descoberta durante o loop                    | executor                                    | `BLOCKED` com a divergência apresentada; nunca decidir em silêncio                                                                 |
-| Loop abandonado com branch órfã                                           | STATE                                       | registra `abandoned`; apagar branch com trabalho é ação humana (GATE 5)                                                            |
+| Falha                                                                    | Detecção                                    | Resposta                                                                                                                                                                    |
+| ------------------------------------------------------------------------ | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Executor interrompido no meio (worktree suja, sem RESULT)                | RESULT ausente ao fim da sessão             | `FAILED`; próxima iteração começa por VERIFY GIT e relata o diff pendente; humano decide. Nunca `reset --hard` automático (GATE 5)                                          |
+| RESULT sem evidência ou com "testes passaram" sem saída                  | validação de forma                          | rejeitado; RETRY exige comando + saída real                                                                                                                                 |
+| Diff fora do SCOPE ou `change_budget` estourado                          | guarda C pós-execução                       | HUMAN_GATE 8 forçado, mesmo se a mudança parecer inofensiva                                                                                                                 |
+| Envelope mal definido (SCOPE vago, DONE_WHEN não verificável)            | guarda de entrada                           | HANDOFF rejeitado antes de despachar; volta ao GPT/humano                                                                                                                   |
+| GPT alarga o envelope num RETRY                                          | guarda `envelope ⊆ anterior`                | HANDOFF rejeitado; alargar exige HUMAN_APPROVAL                                                                                                                             |
+| GPT tenta despachar NEXT OBJECTIVE                                       | LOOP_ID novo sem aprovação humana           | rejeitado; fica como proposta                                                                                                                                               |
+| Executor corrige "além" do erro revelado (drift)                         | diff ⊆ SCOPE + REVIEW DIFF + DIFF_SUMMARY   | GATE 8                                                                                                                                                                      |
+| HANDOFF cita caminho inexistente / contexto alucinado                    | executor                                    | `BLOCKED` com a lista do que não existe; nunca adivinha                                                                                                                     |
+| STATE divergente do git (baseline velho, loop fantasma)                  | executor, passo READ STATE                  | corrige o STATE antes de editar e registra no RESULT                                                                                                                        |
+| Dois loops simultâneos / duas sessões                                    | invariante "um loop ativo"                  | segundo HANDOFF rejeitado; humano resolve                                                                                                                                   |
+| CI vermelho depois do PR aberto                                          | run id no RESULT                            | `FAILED`; RETRY se a causa está no SCOPE, senão `BLOCKED` (ex.: timeout de jornada no runner)                                                                               |
+| Segredo em RESULT/HANDOFF (saída de comando com `.env`)                  | regex do `pre-commit` aplicada aos arquivos | rejeitado; EVIDENCE nunca cola conteúdo de `.env`; se vazar, rotação (risco F-01)                                                                                           |
+| Explosão de contexto                                                     | executor                                    | `BLOCKED: contexto insuficiente/excessivo` em vez de varrer; GPT enxuga o HANDOFF                                                                                           |
+| GPT decide DONE sem CI_VERIFIED, ou RETRY idêntico                       | guardas de §4                               | DECISION rejeitada; volta ao GPT                                                                                                                                            |
+| Mesma assinatura de falha duas vezes (teste flaky ou diagnóstico errado) | assinatura de falha                         | iteração encerra como `FAILED`; o GPT emite RETRY com abordagem materialmente diferente, ou `BLOCKED` se suspeitar flakiness fora do SCOPE; ampliar o envelope = HUMAN_GATE |
+| Erro humano de cópia na fase manual (arquivo do loop errado)             | LOOP_ID divergente                          | rejeitado                                                                                                                                                                   |
+| Divergência entre documentos descoberta durante o loop                   | executor                                    | `BLOCKED` com a divergência apresentada; nunca decidir em silêncio                                                                                                          |
+| Loop abandonado com branch órfã                                          | STATE                                       | registra `abandoned`; apagar branch com trabalho é ação humana (GATE 5)                                                                                                     |
 
 ## 8. Decisões
 
@@ -406,30 +407,32 @@ Intervenções humanas entre o objetivo e o PR verificado: **0**. Se o VERIFY ti
 1. **Artefatos efêmeros**: `.agent-loop/` ignorado pelo git.
 2. **Canal do GPT**: abstrato no contrato; chat manual na validação inicial; API só em etapa posterior, com gate próprio.
 3. **Current Loop**: seção própria no STATE, com `HUMAN_INTERVENTIONS` e `LOOPS_THIS_SESSION`.
-4. **Limites iniciais**: 3 iterações/loop, 5 loops/sessão, 8 arquivos/contexto — parâmetros de segurança, não constantes.
-5. **DONE técnico**: não exige merge; escada IMPLEMENTATION_DONE → PR_READY → **CI_VERIFIED (encerra o loop)** → MERGED → DEPLOYED.
+4. **Limites iniciais**: 3 iterações/loop, 5 loops/sessão, 8 arquivos/contexto — parâmetros de segurança, não constantes. `change_budget` **default** = 10 arquivos / 300 linhas líquidas / 0 dependências: não é limite universal; o HANDOFF aprovado pelo humano pode definir outro; durante o loop o GPT só mantém ou estreita o envelope.
+5. **DONE técnico**: CI_VERIFIED encerra o engineering loop (IMPLEMENTATION_DONE → PR_READY → **CI_VERIFIED**); MERGED permanece atrás do GATE 6; DEPLOYED fica fora do loop, atrás do GATE 7 quando houver ação explícita de deploy.
 6. **Gate paths**: configuração declarativa única e auditável (`docs/agent-gate-paths.md`, §1.8), sem duplicação entre GPT, bridge e Claude.
 7. **Executor**: implementação concreta (sessão interativa vs headless, permissões) **não decidida** nesta versão.
 8. **Loop stamp**: `Loop-Id` no trailer do commit **e** no corpo do PR.
 9. **Batch/work queue**: adiado; NEXT OBJECTIVE só por aprovação humana.
 10. **Diff para o GPT**: mínimo necessário — `CHANGED` + `EVIDENCE` + `DIFF_SUMMARY`; diff completo só via `CONTEXT_REQUEST`.
+11. **GATE 3**: A no núcleo (secrets, credenciais, modelo de autorização/RBAC), B na implementação de auth já aprovada como objetivo; qualquer mudança de política RLS sai do envelope, exceto quando a política exata já está explicitamente aprovada no OBJECTIVE/DONE_WHEN.
+12. **GATE 4**: A no núcleo (ADR, boundaries estruturais, Configuration Engine, arquitetura offline, decisões estruturais), B somente para implementação de contrato público explicitamente aprovado.
+13. **Falha repetida**: a segunda ocorrência da mesma assinatura de falha encerra a **iteração** como `FAILED`; não converte o objetivo em HUMAN_GATE; o GPT pode emitir RETRY com abordagem materialmente diferente dentro do envelope; se exigir expansão, HUMAN_GATE.
+14. **`NEXT_OBJECTIVE_PROPOSAL`**: mantido, explicitamente informacional e não executável; nunca inicia outro loop; novo objetivo exige novo HANDOFF e aprovação.
+15. **Métricas**: HUMAN_INTERVENTIONS_PER_OBJECTIVE, ITERATIONS_PER_OBJECTIVE e FAILED_ITERATIONS_PER_OBJECTIVE, medidas a partir de agora; o baseline manual não bloqueia a vertical slice.
 
 ### 8.2 Ainda abertas
 
-1. **`change_budget`**: 10 arquivos / 300 linhas líquidas são chute inicial; calibrar com os primeiros loops reais (objetivos de UI do `carcass-cost` tiveram diffs desse porte, mas não foi medido).
+1. **Calibração do `change_budget` default**: 10/300/0 é o default aprovado; ajustar o default com os primeiros loops reais (objetivos de UI do `carcass-cost` tiveram diffs desse porte, mas não foi medido).
 2. **Lista de arquivos do GATE 3** (auth/permissões/RLS) para a fonte única de §1.8: precisa ser enumerada quando a FASE 1 for desenhada; até lá, `supabase/**` e `.env*` bastam.
-3. **Baseline da métrica**: contar em sessões passadas (log) ou nos próximos N objetivos manuais antes do dry run — recomendação: os próximos 3 objetivos manuais, para ter medida contemporânea.
-4. **Espera pelo CI na fase manual**: quem observa (humano recarrega / Claude monitora) e se a espera conta no tempo do loop.
-5. **`NEXT_OBJECTIVE_PROPOSAL`**: manter como campo informativo ou retirar para evitar qualquer sugestão de fila.
-6. **Correção dentro da iteração × RETRY**: o executor corrige o erro revelado na mesma iteração (adotado); definir se a segunda correção do mesmo sintoma dentro de uma iteração deve encerrar a iteração como `FAILED` (proposta: sim, para preservar a guarda de assinatura de falha).
+3. **Espera pelo CI na fase manual**: quem observa (humano recarrega / Claude monitora) e se a espera conta no tempo do loop.
 
 ## 9. Menor vertical slice para validar o conceito (não implementar agora)
 
 **Dry run manual de um loop com envelope**, sem nenhum código:
 
 - **Pré-requisitos no repositório** (um PR documental, se aprovado): linha `.agent-loop/` no `.gitignore`; seção `Current Loop` no STATE; arquivo `docs/agent-gate-paths.md` com a tabela de §5.2 como conteúdo inicial.
-- **Antes do dry run**: medir o baseline de HUMAN_INTERVENTIONS_PER_OBJECTIVE nos próximos objetivos manuais (§8.2, item 3).
+- **Medição**: as três métricas de §1.10 passam a ser registradas desde já em todo objetivo, manual ou com envelope; o baseline manual não bloqueia o dry run.
 - **Passos**: humano aprova um objetivo trivial e seguro (o de §6 ou algo só de documentação/testes) com envelope padrão; GPT escreve `HANDOFF L-0001.1` na pasta; Claude Code executa pelo protocolo, corrige dentro do envelope, escreve o RESULT; humano leva RESULT ao GPT; GPT decide; humano copia a DECISION; repete até CI_VERIFIED; humano faz merge.
-- **Validação** (o que a slice prova): artefatos com o mesmo LOOP_ID; executor não leu nada fora do CONTEXT (+1 nível); diff ⊆ SCOPE e dentro do `change_budget`; STATE atualizado no PR do loop; loop fechou em CI_VERIFIED em ≤ 3 iterações; **HUMAN_INTERVENTIONS medido e comparado ao baseline**; nenhuma decisão de categoria 2 tomada sem humano; tempo humano de cópia medido.
-- **Critério para decidir implementar a bridge assistida**: dry run repetido 2–3 vezes sem precisar ajustar formato ou envelope; métrica abaixo do baseline; custo de cópia manual como gargalo dominante.
+- **Validação** (o que a slice prova): artefatos com o mesmo LOOP_ID; executor não leu nada fora do CONTEXT (+1 nível); diff ⊆ SCOPE e dentro do `change_budget`; STATE atualizado no PR do loop; loop fechou em CI_VERIFIED em ≤ 3 iterações; **as três métricas registradas e HUMAN_INTERVENTIONS comparado ao baseline disponível**; nenhuma decisão de categoria 2 tomada sem humano; tempo humano de cópia medido.
+- **Critério para decidir implementar a bridge assistida**: dry run repetido 2–3 vezes sem precisar ajustar formato ou envelope; HUMAN_INTERVENTIONS_PER_OBJECTIVE abaixo do baseline disponível; custo de cópia manual como gargalo dominante.
 - **O que a slice não valida**: chamadas de API, execução headless, guardas automáticas de caminho. Cada um fica para depois, com gate humano próprio.
