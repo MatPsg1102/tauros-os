@@ -9,17 +9,29 @@ import { AppShell, Container, Page } from '@tauros/ui-primitives';
 import { cssVar } from '@tauros/tokens';
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 
+import type { CloudApi } from './state/cloud.js';
 import { useCalculator } from './state/use-calculator.js';
+import { useCloudSession } from './state/use-session.js';
+import { AccountScreen } from './ui/account-screen.js';
 import { CalculatorScreen } from './ui/calculator-screen.js';
 import { DeboningScreen } from './ui/deboning-screen.js';
 import { HistoryScreen } from './ui/history-screen.js';
 import { SettingsScreen } from './ui/settings-screen.js';
 import { TransformationScreen } from './ui/transformation-screen.js';
 
-type View = 'calculator' | 'settings' | 'history' | 'transformation' | 'deboning';
+type View = 'calculator' | 'settings' | 'history' | 'transformation' | 'deboning' | 'account';
 
-export function App(): ReactElement {
-  const calc = useCalculator();
+export interface AppProps {
+  /** Nuvem opcional (P-0001); null/ausente = app só local, como sempre. */
+  readonly cloud?: CloudApi | null;
+}
+
+export function App({ cloud = null }: AppProps = {}): ReactElement {
+  const session = useCloudSession(cloud?.auth ?? null);
+  // Com sessão ativa os lotes vêm da nuvem; em qualquer outro estado, do aparelho.
+  const calc = useCalculator(
+    cloud !== null && session.status === 'signed-in' ? cloud.history : null,
+  );
   const [view, setView] = useState<View>('calculator');
   const screenRef = useRef<HTMLDivElement | null>(null);
   const firstRender = useRef(true);
@@ -58,6 +70,23 @@ export function App(): ReactElement {
                 }}
                 onOpenDeboning={() => {
                   setView('deboning');
+                }}
+                account={
+                  cloud === null
+                    ? null
+                    : {
+                        label: session.status === 'signed-in' ? 'Conta (conectado)' : 'Conta',
+                        onOpen: () => {
+                          setView('account');
+                        },
+                      }
+                }
+              />
+            ) : view === 'account' ? (
+              <AccountScreen
+                session={session}
+                onBack={() => {
+                  setView('calculator');
                 }}
               />
             ) : view === 'settings' ? (

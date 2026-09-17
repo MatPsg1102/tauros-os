@@ -25,7 +25,7 @@ import {
   Surface,
   Text,
 } from '@tauros/ui-primitives';
-import { useState, type CSSProperties, type ReactElement } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactElement } from 'react';
 
 import {
   CENAR_TAX_PER_KG,
@@ -56,6 +56,8 @@ export interface CalculatorScreenProps {
   readonly onOpenHistory: () => void;
   readonly onOpenTransformation: () => void;
   readonly onOpenDeboning: () => void;
+  /** Entrada da tela Conta; null quando o app não tem nuvem configurada. */
+  readonly account: { readonly label: string; readonly onOpen: () => void } | null;
 }
 
 /** Números compartilhados do resultado dominante nos dois modos. */
@@ -92,6 +94,7 @@ export function CalculatorScreen({
   onOpenHistory,
   onOpenTransformation,
   onOpenDeboning,
+  account,
 }: CalculatorScreenProps): ReactElement {
   const {
     state,
@@ -101,12 +104,17 @@ export function CalculatorScreen({
     realResult,
     commercialAdjustmentPct,
     actions,
+    cloudError,
   } = calc;
   // Feedback do salvar: o mesmo snapshot não é salvo duas vezes por engano —
   // o botão confirma visivelmente e só reabilita quando algo muda no lote.
   const [savedKey, setSavedKey] = useState<string | null>(null);
   const lotKey = JSON.stringify([state.mode, state.quick, state.real, state.costs]);
   const alreadySaved = savedKey === lotKey;
+  // Falha ao salvar na nuvem reabilita o botão para tentar de novo.
+  useEffect(() => {
+    if (cloudError !== null) setSavedKey(null);
+  }, [cloudError]);
   const isReal = state.mode === 'real';
   const issues = isReal ? realIssues : quickIssues;
   const headline: HeadlineView | null = isReal ? realResult : quickResult;
@@ -217,6 +225,11 @@ export function CalculatorScreen({
           Configurações
         </Button>
       </Grid>
+      {account !== null && (
+        <Button variant="secondary" size="sm" fullWidth onClick={account.onOpen}>
+          {account.label}
+        </Button>
+      )}
 
       {/* position:relative ancora os radios visually-hidden (absolutos) do
           SegmentedControl — sem âncora eles esticam o html e criam scroll
@@ -580,6 +593,7 @@ export function CalculatorScreen({
           {alreadySaved ? 'Lote salvo no histórico' : 'Salvar lote no histórico'}
         </Button>
         <div aria-live="polite">
+          {cloudError !== null && <Text role="caption">{cloudError}</Text>}
           {alreadySaved && (
             <Text role="caption" tone="secondary">
               Lote salvo. Altere algum valor para salvar de novo.

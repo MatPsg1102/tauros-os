@@ -28,11 +28,9 @@ operacionalmente só após o merge dessa correção (ainda não iniciado).
 
 ## Current Phase
 
-**Etapa 1 do Loop Engineering — correção do GATE 1 na fonte declarativa de gate paths** em PR
-documental: `packages/domain/**` passa a ser superfície do GATE 1. Pré-requisitos da slice mergeados
-(PR #60). **HANDOFF de L-0001 aprovado** com dois orçamentos independentes; **L-0001 não iniciado**,
-liberado operacionalmente só após o merge desta correção. Produto: V3.4.1 entregue (PR #55).
-**FASE 1 (Auth Supabase) NÃO iniciada.**
+**FASE 1 do Carcass Cost — P-0001 (Auth Supabase e-mail/senha + histórico de lotes na nuvem) em PR**,
+fluxo semi-automático. Agent Bridge encerrada após L-0007 (stop-loss) e mantida na `main` como
+infraestrutura experimental, congelada. Produto anterior: V3.4.1 (PR #55).
 
 ## Last Approved Baseline
 
@@ -80,22 +78,22 @@ Somente o necessário para continuar (fontes: `apps/carcass-cost/README.md`, tra
 - **Fórmulas só em `src/domain`** (TypeScript puro, sem React); UI apenas apresenta; nada arredonda internamente (2 casas só em `ui/format.ts`).
 - **Desossa é indicador comercial independente**: nada da Desossa alimenta Transformação nem Estimativa (6,92/kg e 1,63% intactos são invariantes cobertas por teste).
 - **Persistência atual = `localStorage`** com envelope versionado (`STORAGE_VERSION` 4); mudanças de estado são aditivas com saneamento defensivo; nunca apagar estado do operador.
-- **README do app declara fora de escopo: login, backend, sincronização.** Essa declaração só é revisada quando a FASE 1 for aprovada (GATE 4 + GATE 8).
-- **ADR-021** define a identidade operacional do Tauros OS (Employee + PIN; Supabase Auth explicitamente adiado). A FASE 1 do carcass-cost **não reutiliza nem contradiz** essa decisão sem deliberação explícita.
+- **P-0001 (decisões humanas de 2026-09-15/17, GATES 2, 3, 4 e 8 aprovados)**: Supabase Auth e-mail/senha **exclusivamente no Carcass Cost** para usuários piloto criados administrativamente (sem signup, convite, reset, MFA; signup público desligado no projeto); identidade de produto **separada** do Employee + PIN (ADR-021 intocado; sem membership/store/RBAC/claims); uma migration SQL aditiva `supabase/migrations/20260915200000_create_carcass_cost_calculations.sql` aplicada isoladamente com `prisma db execute` (RLS owner-only por `auth.uid()`, sem UPDATE), sem modelo Prisma; fronteira mínima `CloudApi.auth` + `CloudApi.history` (sem repository genérico, service, React Query, router, Edge Function, sync ou fila); sem sessão o histórico continua no `localStorage`; desossa permanece local. README do app revisado (GATE 4 + GATE 8).
+- **Migrations pendentes do Tauros OS** (4 Prisma de 2026-08 e `pin_credentials_rls`) permanecem **intocadas** no projeto restaurado; aplicá-las é decisão separada.
 - **Processo do repositório permanece**: branch `<tipo>/<escopo>`, Conventional Commits, PR, CI verde nos dois jobs, squash, aprovação humana entre etapas; tag e deploy só com autorização.
 
 ## Forbidden Changes
 
-No escopo atual (correção do GATE 1 em PR; até nova aprovação registrada aqui):
+No escopo atual (P-0001 em PR; até nova aprovação registrada aqui):
 
 - Merge de qualquer PR sem GATE 6.
 - Executar L-0001 enquanto o PR de correção do GATE 1 estiver aberto; fabricar a DECISION do GPT; versionar a pasta `.agent-loop/` ou seu conteúdo; criar templates além dos formatos já definidos no design.
 - Alterar `packages/domain/**`: a inclusão no GATE 1 não autoriza nenhuma mudança lá.
 - Gravar no `CLAUDE.md` contagem absoluta de testes ou outra informação de estado perecível.
 - Qualquer automação executável do fluxo: daemon, watcher, chamadas à OpenAI/Anthropic, scripts que enviem prompts, loops, bots/webhooks do GitHub, MCP novo, automação de VS Code — inclusive "protótipos".
-- Qualquer alteração em aplicações, produto, domínio, banco (`prisma/`, `supabase/`), CI (`.github/`), hooks ou dependências (`package.json`, `pnpm-lock.yaml`).
+- Fora de `apps/carcass-cost/**` e da migration de P-0001: qualquer alteração em aplicações, `packages/**`, `prisma/`, CI (`.github/`), hooks ou dependências.
 - Fórmulas e regras de negócio do carcass-cost (GATE 1), inclusive "correções" de arredondamento.
-- Início da FASE 1 (auth Supabase), schema, migration ou RLS: exige gate humano (GATE 2, GATE 3, GATE 4, GATE 8).
+- Schema, migration, policy ou Auth além do literal aprovado em P-0001; `db:deploy`, `db:apply-sql`, `db push`, `migrate diff` contra o projeto restaurado.
 - Artefatos congelados (SAS, ADR-018/019/020, Configuration Baseline v1.0, Design System), tags, commit/push direto na `main`, deploy.
 - Versionar `.agents/`, `.claude/`, `skills-lock.json` ou qualquer valor do `.env`.
 
@@ -118,21 +116,22 @@ Coletado em 2026-09-15T13:14Z:
 
 Nenhum bloqueio real. Decisões abertas do design, não bloqueantes: (1) calibração do default de
 `change_budget` com loops reais; (2) lista de caminhos do GATE 3 quando a FASE 1 Auth for desenhada;
-(3) observação do CI — coberta provisoriamente pela decisão operacional acima. A divergência do
-GATE 1 (`packages/domain/**`) foi decidida e corrigida nesta iteração.
+(3) observação do CI — coberta provisoriamente pela decisão operacional acima; (4) **divergência
+documental sobre DDL**: `CLAUDE.md` diz que `supabase/migrations` é a fonte de DDL, `prisma/README.md`
+diz que a migration Prisma `init` contém o schema — registrada, não resolvida, sem trabalho agora.
 
 ## Next Action
 
-Aguardar o GATE 6 do PR #65 (L-0004). Depois, com HANDOFF aprovado, L-0006 = prova final end-to-end
-do Agent Bridge com um único comando humano (Claude headless real → RESULT PR_READY criado pelo
-Claude → bridge observa CI → GPT real → DECISION → GATE 6), meta HUMAN_INTERVENTIONS 0. **Não iniciar.**
+P-0001 em PR: CI verde → teste humano com PILOT_A/PILOT_B (login, salvar, outro navegador, isolamento)
+→ GATE 6. Depois: deploy do Carcass Cost com as `VITE_*` (GATE 7) e definição do próximo objetivo de
+produto. Agent Bridge não é retomada.
 
 ## Human Gate
 
-**HUMAN_APPROVAL_REQUIRED** — (a) GATE 6 do PR #65 (L-0004); (b) HANDOFF de L-0006 e a correção do
-código de saída do CLI (anomalia libuv); (c) qualquer outra alteração da bridge; (d) FASE 1 (Auth
-Supabase) só começa com aprovação explícita (GATE 3 / GATE 4 / GATE 8).
+**HUMAN_APPROVAL_REQUIRED** — (a) GATE 6 do PR de P-0001 após CI verde e teste humano A/B; (b) GATE 7
+(deploy com `VITE_*`); (c) qualquer schema, policy ou Auth além de P-0001; (d) migrations pendentes do
+Tauros OS; (e) qualquer alteração na Agent Bridge congelada.
 
 ## Last Updated
 
-2026-09-15T17:08Z — Claude Code (fechamento de L-0004 após retomada validada; bookkeeping de L-0005).
+2026-09-17T14:00Z — Claude Code (P-0001: decisões da FASE 1 registradas; migration aplicada; PR aberto).
