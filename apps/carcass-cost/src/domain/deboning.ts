@@ -128,6 +128,94 @@ export interface DeboningForm {
   readonly carcassWeightKg: number | null;
   readonly carcassCostPerKg: number | null;
   readonly products: readonly DeboningProductForm[];
+  /** Estatística de pesos usada como referência desta análise (null = pesos manuais). */
+  readonly statistic: DeboningStatisticRef | null;
+}
+
+// --- Estatística de pesos: pesos-padrão reutilizáveis, identificados por
+// fornecedor e tipo/origem. Só pesos (e o peso da carcaça); preço é sempre
+// informado pelo operador na análise. Nenhuma fórmula muda.
+
+export type DeboningStatisticKind = 'porco-mineiro' | 'carcaca';
+
+export const DEBONING_STATISTIC_KINDS: readonly DeboningStatisticKind[] = [
+  'porco-mineiro',
+  'carcaca',
+];
+
+export const DEBONING_STATISTIC_KIND_LABELS: Readonly<Record<DeboningStatisticKind, string>> = {
+  'porco-mineiro': 'Porco Mineiro',
+  carcaca: 'Carcaça',
+};
+
+export interface DeboningStatisticProduct {
+  readonly id: string;
+  readonly name: string;
+  readonly weightKg: number | null;
+}
+
+export interface DeboningStatistic {
+  readonly id: string;
+  readonly supplier: string;
+  readonly kind: DeboningStatisticKind;
+  readonly carcassWeightKg: number | null;
+  readonly products: readonly DeboningStatisticProduct[];
+}
+
+/** Identificação da estatística guardada com a análise (sobrevive à remoção da estatística). */
+export interface DeboningStatisticRef {
+  readonly id: string;
+  readonly supplier: string;
+  readonly kind: DeboningStatisticKind;
+}
+
+export function deboningStatisticLabel(ref: DeboningStatisticRef): string {
+  return `${ref.supplier} · ${DEBONING_STATISTIC_KIND_LABELS[ref.kind]}`;
+}
+
+export function deboningStatisticRef(statistic: DeboningStatistic): DeboningStatisticRef {
+  return { id: statistic.id, supplier: statistic.supplier, kind: statistic.kind };
+}
+
+/** Estatística a partir dos pesos atuais da análise (preços ficam de fora). */
+export function statisticFromForm(
+  form: DeboningForm,
+  meta: { readonly id: string; readonly supplier: string; readonly kind: DeboningStatisticKind },
+): DeboningStatistic {
+  return {
+    ...meta,
+    carcassWeightKg: form.carcassWeightKg,
+    products: form.products.map((product) => ({
+      id: product.id,
+      name: product.name,
+      weightKg: product.weightKg,
+    })),
+  };
+}
+
+/**
+ * Aplica a estatística à análise: a lista de produtos e os pesos passam a ser
+ * os dela (referência da análise); preços já informados para o mesmo produto
+ * (id) são preservados, produto novo começa sem preço; produto fora da
+ * estatística sai da lista. Peso da carcaça vem da estatística quando ela o
+ * tem; custo do kg nunca muda. Pesos continuam editáveis depois.
+ */
+export function applyDeboningStatistic(
+  form: DeboningForm,
+  statistic: DeboningStatistic,
+): DeboningForm {
+  const priceById = new Map(form.products.map((product) => [product.id, product.pricePerKg]));
+  return {
+    carcassWeightKg: statistic.carcassWeightKg ?? form.carcassWeightKg,
+    carcassCostPerKg: form.carcassCostPerKg,
+    products: statistic.products.map((product) => ({
+      id: product.id,
+      name: product.name,
+      weightKg: product.weightKg,
+      pricePerKg: priceById.get(product.id) ?? null,
+    })),
+    statistic: deboningStatisticRef(statistic),
+  };
 }
 
 /** Campo de um produto na lista de problemas: `product:<id>:weightKg`. */

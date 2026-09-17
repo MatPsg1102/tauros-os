@@ -116,6 +116,7 @@ describe('loadState / saveState', () => {
             ),
           { id: 'novo', name: 'Filezinho', weightKg: null, pricePerKg: 20 },
         ],
+        statistic: null,
       },
     };
     saveState(edited);
@@ -228,6 +229,7 @@ describe('loadDeboningHistory / saveDeboningHistory', () => {
   const entry = (id: string) => ({
     id,
     savedAt: '2026-09-14T12:00:00.000Z',
+    name: '',
     deboning: DEFAULT_DEBONING,
     summary: {
       carcassWeightKg: 1128.1,

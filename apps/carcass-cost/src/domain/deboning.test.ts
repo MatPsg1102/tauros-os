@@ -223,6 +223,7 @@ describe('11. valores inválidos — não inventar resultado', () => {
     carcassWeightKg: 1128.1,
     carcassCostPerKg: 11.55,
     products: DEFAULT_DEBONING_PRODUCTS,
+    statistic: null,
   };
 
   it('carcaça sem peso/custo ou com peso 0 ⇒ problema no campo e entrada nula', () => {

@@ -3,7 +3,14 @@
 // escrita protegidas por try/catch (localStorage pode estar indisponível).
 // Todo valor lido é saneado campo a campo: storage corrompido nunca derruba o app.
 
-import type { DeboningForm, DeboningProductForm } from '../domain/deboning.js';
+import {
+  DEBONING_STATISTIC_KINDS,
+  type DeboningForm,
+  type DeboningProductForm,
+  type DeboningStatistic,
+  type DeboningStatisticKind,
+  type DeboningStatisticRef,
+} from '../domain/deboning.js';
 import { SUBPRODUCT_KEYS, type SubproductKey } from '../domain/transformation.js';
 import type { CostsForm, QuickForm, RealForm } from '../domain/validation.js';
 import {
@@ -20,6 +27,7 @@ import {
 export const STATE_STORAGE_KEY = 'tauros.carcass-cost.state.v1';
 export const HISTORY_STORAGE_KEY = 'tauros.carcass-cost.history.v1';
 export const DEBONING_HISTORY_STORAGE_KEY = 'tauros.carcass-cost.deboning-history.v1';
+export const DEBONING_STATISTICS_STORAGE_KEY = 'tauros.carcass-cost.deboning-statistics.v1';
 export const HISTORY_LIMIT = 50;
 // v4: aba Transformação (subprodutos + preço da carcaça de exportação) e o
 // ajuste comercial deixou de ser campo (vem do indicador). Envelope anterior
@@ -103,6 +111,17 @@ function sanitizeDeboningProducts(value: unknown): readonly DeboningProductForm[
   return products;
 }
 
+// Referência da estatística: ausente/inválida → null (pesos manuais). Registros
+// gravados antes da estatística continuam abrindo sem nenhuma migração.
+function sanitizeStatisticRef(value: unknown): DeboningStatisticRef | null {
+  if (!isRecord(value)) return null;
+  const { id, supplier, kind } = value;
+  if (typeof id !== 'string' || id.length === 0) return null;
+  if (typeof supplier !== 'string' || supplier.length === 0) return null;
+  if (!(DEBONING_STATISTIC_KINDS as readonly unknown[]).includes(kind)) return null;
+  return { id, supplier, kind: kind as DeboningStatisticKind };
+}
+
 // Lista de produtos: ausente → padrão da estatística; presente (mesmo vazia,
 // após o operador remover tudo) → respeitada. Nunca ressuscita produto removido.
 // A chave antiga `carcassValueBRL` (valor digitado, #54) é simplesmente
@@ -115,6 +134,7 @@ function sanitizeDeboning(value: unknown, fallback: DeboningForm): DeboningForm 
     products: Array.isArray(raw['products'])
       ? sanitizeDeboningProducts(raw['products'])
       : fallback.products,
+    statistic: sanitizeStatisticRef(raw['statistic']),
   };
 }
 
@@ -245,10 +265,12 @@ function sanitizeDeboningHistoryEntry(value: unknown): DeboningHistoryEntry | nu
   return {
     id,
     savedAt,
+    name: typeof value['name'] === 'string' ? value['name'] : '',
     deboning: {
       carcassWeightKg: numberOrNull(deboning['carcassWeightKg'], null),
       carcassCostPerKg: numberOrNull(deboning['carcassCostPerKg'], null),
       products,
+      statistic: sanitizeStatisticRef(deboning['statistic']),
     },
     summary: {
       carcassWeightKg: numberOrNull(summary['carcassWeightKg'], null),
@@ -272,4 +294,32 @@ export function loadDeboningHistory(): readonly DeboningHistoryEntry[] {
 
 export function saveDeboningHistory(entries: readonly DeboningHistoryEntry[]): void {
   writeEnvelope(DEBONING_HISTORY_STORAGE_KEY, entries.slice(0, HISTORY_LIMIT));
+}
+
+// Estatísticas de pesos (fornecedor + tipo + pesos por produto): lista local,
+// mesmo envelope; entrada inválida é descartada, nunca derruba a lista.
+function sanitizeStatistic(value: unknown): DeboningStatistic | null {
+  const ref = sanitizeStatisticRef(value);
+  if (ref === null || !isRecord(value)) return null;
+  return {
+    ...ref,
+    carcassWeightKg: numberOrNull(value['carcassWeightKg'], null),
+    products: sanitizeDeboningProducts(value['products']).map((product) => ({
+      id: product.id,
+      name: product.name,
+      weightKg: product.weightKg,
+    })),
+  };
+}
+
+export function loadDeboningStatistics(): readonly DeboningStatistic[] {
+  const data = readEnvelope(DEBONING_STATISTICS_STORAGE_KEY);
+  if (!Array.isArray(data)) return [];
+  return data
+    .map(sanitizeStatistic)
+    .filter((statistic): statistic is DeboningStatistic => statistic !== null);
+}
+
+export function saveDeboningStatistics(statistics: readonly DeboningStatistic[]): void {
+  writeEnvelope(DEBONING_STATISTICS_STORAGE_KEY, statistics);
 }

@@ -98,7 +98,11 @@ Regra crítica: **nada da Desossa alimenta a Transformação nem a Estimativa**
 (o ajuste comercial continua vindo só do indicador de transformação; o
 custo equivalente da carcaça não muda). Campo vazio de produto conta como 0;
 valor negativo ou carcaça sem peso ⇒ nenhum resultado (sem valor inventado).
-Análises podem ser salvas no Histórico (lista "Desossas", chave própria).
+Análises podem ser salvas no Histórico (lista "Desossas", chave própria) com **nome**
+e **data** (automática). **Estatística de pesos** (`Fornecedor · Porco Mineiro | Carcaça`,
+chave `tauros.carcass-cost.deboning-statistics.v1`): pesos-padrão reutilizáveis que preenchem
+o peso de cada produto — o operador informa principalmente o preço; pesos continuam
+editáveis. Análises antigas (sem nome/estatística) continuam abrindo.
 
 ## Vetores de teste canônicos
 

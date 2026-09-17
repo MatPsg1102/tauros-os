@@ -16,9 +16,17 @@ import {
 import { cssVar } from '@tauros/tokens';
 import { useState, type CSSProperties, type ReactElement } from 'react';
 
+import { deboningStatisticLabel } from '../domain/deboning.js';
 import type { DeboningHistoryEntry, HistoryEntry } from '../state/model.js';
 import type { CalculatorController } from '../state/use-calculator.js';
-import { formatBRL, formatDateTime, formatKg, formatPct, formatPerKg } from './format.js';
+import {
+  formatBRL,
+  formatDate,
+  formatDateTime,
+  formatKg,
+  formatPct,
+  formatPerKg,
+} from './format.js';
 import { ScreenHeader } from './screen-header.js';
 
 export interface HistoryScreenProps {
@@ -149,9 +157,24 @@ export function HistoryScreen({
               >
                 <Stack gap={50}>
                   <Flex justify="between" align="center" gap={100}>
-                    <Text role="label">{formatDateTime(entry.savedAt)}</Text>
+                    <Text role="label">
+                      {entry.name.trim().length > 0
+                        ? entry.name
+                        : `Desossa de ${formatDateTime(entry.savedAt)}`}
+                    </Text>
                     <Badge status="success">DESOSSA</Badge>
                   </Flex>
+                  {/* Data (sem hora) e, quando houver, a estatística de pesos usada. */}
+                  <Text role="caption" tone="secondary">
+                    {[
+                      formatDate(entry.savedAt),
+                      entry.deboning.statistic === null
+                        ? null
+                        : deboningStatisticLabel(entry.deboning.statistic),
+                    ]
+                      .filter((part) => part !== null)
+                      .join(' · ')}
+                  </Text>
                   <Text role="data" style={HEADLINE}>
                     {entry.summary.marginPct === null
                       ? '—'
