@@ -54,7 +54,8 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe('Desossa — estatística de pesos', () => {
+// Jornadas longas (formulários, diálogo, reload): no CI o runner é ~3× mais lento que local.
+describe('Desossa — estatística de pesos', { timeout: 30_000 }, () => {
   it('salvar pesos atuais como estatística e selecioná-la preenche os pesos; peso e preço continuam editáveis', async () => {
     const user = userEvent.setup();
     renderApp();

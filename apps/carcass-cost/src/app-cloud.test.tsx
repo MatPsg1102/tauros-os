@@ -119,7 +119,8 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe('Conta e histórico na nuvem', () => {
+// Jornadas longas (vários logins e telas): no CI o runner é ~3× mais lento que local.
+describe('Conta e histórico na nuvem', { timeout: 30_000 }, () => {
   it('sem nuvem configurada não há botão Conta e o histórico é deste aparelho', async () => {
     const user = userEvent.setup();
     renderApp(null);
