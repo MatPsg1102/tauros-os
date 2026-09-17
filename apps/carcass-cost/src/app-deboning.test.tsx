@@ -66,7 +66,8 @@ describe('Desossa — estatística de pesos', { timeout: 30_000 }, () => {
     expect(selectedStatisticText()).toBe('Frigorífico X · Porco Mineiro');
     expect(screen.getByText(/Pesos de Frigorífico X · Porco Mineiro/)).toBeDefined();
 
-    // Peso alterado à mão, depois a estatística volta a preencher.
+    // Peso alterado à mão, depois a estatística volta a preencher (totais nos detalhes).
+    await user.click(product('Pernil').getByRole('button', { name: 'Detalhes de Pernil' }));
     const weight = product('Pernil').getByLabelText('Peso');
     await user.clear(weight);
     await user.type(weight, '100');
@@ -118,7 +119,9 @@ describe('Desossa — estatística de pesos', { timeout: 30_000 }, () => {
     await chooseStatistic(user, 'Pesos manuais');
     await chooseStatistic(user, 'Frigorífico X · Carcaça');
     expect(screen.getAllByText('22,58%').length).toBeGreaterThanOrEqual(2);
+    await user.click(screen.getByRole('button', { name: 'Ver detalhes' }));
     expect(screen.getByText(plain('R$ 3.800,00 ÷ R$ 16.829,56'))).toBeDefined();
+    await user.click(product('Pernil').getByRole('button', { name: 'Detalhes de Pernil' }));
     expect(product('Pernil').getByText('26,23%')).toBeDefined();
   });
 

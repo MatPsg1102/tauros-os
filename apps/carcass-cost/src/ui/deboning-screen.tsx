@@ -1,14 +1,11 @@
 // Tela Desossa — INDICADOR COMERCIAL DA DESOSSA, independente da
-// Transformação (nada daqui alimenta a Estimativa). Resultado no topo (mesma
-// regra das outras telas): margem comercial em destaque com a divisão que a
-// gera, a formação do valor (carcaça → + acréscimo → valor comercial) e os
-// pesos. Depois a carcaça (peso e custo do kg; valor inicial derivado, só
-// leitura) e os produtos.
-//
-// Fluxo operacional: a ESTATÍSTICA DE PESOS (fornecedor · tipo) fornece os
-// pesos; o operador principalmente informa/ajusta o PREÇO. Por isso cada
-// produto ocupa UMA linha: nome (com total e percentual como legenda), peso
-// compacto e secundário (continua visível e editável) e preço em destaque.
+// Transformação (nada daqui alimenta a Estimativa). Ferramenta de ENTRADA e
+// leitura rápida, não um relatório aberto: durante o preenchimento a
+// hierarquia é Produto → Preço; o peso é referência secundária (vem da
+// estatística de pesos e continua editável); a MARGEM é a leitura principal.
+// Tudo o mais (memória de cálculo, formação do valor, pesos e rendimento,
+// total e percentual de cada produto) fica disponível sob demanda:
+// "Ver detalhes" no resultado e o botão de detalhes de cada produto.
 // "Editar" mostra o nome editável e "Remover" por linha; "Adicionar produto"
 // acrescenta uma linha em branco. Salvar abre um diálogo com nome da análise e
 // data automática. Barra fixa com a margem. A tela só apresenta: todo número
@@ -23,6 +20,7 @@ import {
   Field,
   Flex,
   Grid,
+  IconButton,
   Input,
   Label,
   NumberInput,
@@ -71,7 +69,7 @@ export interface DeboningScreenProps {
 const HELP_MARGIN =
   'Valor inicial = peso da carcaça × custo do kg. Valor comercial = soma de peso × R$/kg dos produtos. Acréscimo = valor comercial − valor inicial. Margem = acréscimo ÷ valor comercial. Análise independente da Transformação: não altera a Estimativa.';
 const HELP_PRODUCTS =
-  'A estatística de pesos preenche o peso de cada produto (fornecedor e tipo); você informa o preço de venda. Peso continua editável. Campo vazio conta como zero. “Editar” permite renomear e remover produtos.';
+  'A estatística de pesos preenche o peso de cada produto (fornecedor e tipo); você informa o preço de venda. Peso continua editável. Campo vazio conta como zero. O botão de detalhes mostra peso, participação, preço e total do produto. “Editar” permite renomear e remover produtos.';
 
 const CAPTION: CSSProperties = { fontSize: cssVar('emphasis-level4-size') };
 const HEADLINE: CSSProperties = {
@@ -82,17 +80,28 @@ const STICKY_VALUE: CSSProperties = {
   fontSize: cssVar('emphasis-level3-size'),
   fontWeight: cssVar('emphasis-level3-weight'),
 };
-// Uma linha por produto: nome flexível, peso estreito (secundário) e preço
-// mais largo (principal). Em 390 px sobra ~120 px para o nome, que quebra em
-// duas linhas dentro da altura do campo quando preciso.
-const ROW_COLUMNS = 'minmax(0, 1fr) 6.5rem 8.25rem';
+const GLYPH: CSSProperties = {
+  fontSize: cssVar('emphasis-level5-size'),
+  fontWeight: cssVar('type-role-label-weight'),
+};
+// Peso como referência secundária (estatística selecionada): texto menor e
+// em tom secundário dentro do campo — continua visível e editável.
+const WEIGHT_SECONDARY: CSSProperties = {
+  fontSize: cssVar('emphasis-level4-size'),
+  color: cssVar('color-text-secondary'),
+};
+// Uma linha por produto: nome flexível, peso estreito, preço em destaque e o
+// botão de detalhes. Com estatística selecionada o peso encolhe mais ainda.
+const ROW_COLUMNS_MANUAL = 'minmax(0, 1fr) 6.25rem 8rem auto';
+const ROW_COLUMNS_STATISTIC = 'minmax(0, 1fr) 5rem 8rem auto';
 const ROW: CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: ROW_COLUMNS,
   columnGap: cssVar('space-gap-50'),
   alignItems: 'center',
   paddingBlock: cssVar('space-inset-xs'),
 };
+
+type WeightEmphasis = 'primary' | 'secondary';
 
 function issueMessage(issues: readonly ValidationIssue[], field: string): string | null {
   const issue = issues.find((candidate) => candidate.field === field);
@@ -106,6 +115,7 @@ interface ProductRowProps {
   readonly value: DeboningProductValue | undefined;
   readonly issues: readonly ValidationIssue[];
   readonly editing: boolean;
+  readonly weightEmphasis: WeightEmphasis;
   readonly onPatch: (patch: DeboningProductPatch) => void;
   readonly onRemove: () => void;
 }
@@ -116,16 +126,21 @@ function ProductRow({
   value,
   issues,
   editing,
+  weightEmphasis,
   onPatch,
   onRemove,
 }: ProductRowProps): ReactElement {
   const baseId = useId();
   const weightId = `${baseId}-weight`;
   const priceId = `${baseId}-price`;
+  const detailsId = `${baseId}-details`;
+  const [showDetails, setShowDetails] = useState(false);
   const displayName = form.name.trim().length > 0 ? form.name : `Produto ${index + 1}`;
   const totalText = value === undefined ? '—' : formatBRL(value.totalBRL);
   const shareText =
-    value === undefined || value.sharePct === null ? null : formatPct(value.sharePct / 100);
+    value === undefined || value.sharePct === null ? '—' : formatPct(value.sharePct / 100);
+  const weightText = form.weightKg === null ? '—' : formatKg(form.weightKg);
+  const priceText = form.pricePerKg === null ? '—' : formatPerKg(form.pricePerKg);
   const weightError = issueMessage(issues, deboningProductField(form.id, 'weightKg'));
   const priceError = issueMessage(issues, deboningProductField(form.id, 'pricePerKg'));
   const errorText = weightError ?? priceError;
@@ -195,35 +210,24 @@ function ProductRow({
               {errorText}
             </Text>
           )}
-          <LedgerRow
-            label="Total"
-            value={totalText}
-            {...(shareText === null ? {} : { detail: shareText })}
-          />
+          <LedgerRow label="Total" value={totalText} detail={shareText} />
         </Stack>
       </Surface>
     );
   }
 
   return (
-    <div role="group" aria-label={displayName}>
-      <div style={ROW}>
-        <div style={{ minWidth: 0 }}>
-          <Text as="p" role="label">
-            {displayName}
-          </Text>
-          {/* Total e percentual em nós separados (leitura e testes exatos). */}
-          <Flex align="baseline" gap={50} wrap>
-            <Text role="caption" tone="tertiary" style={CAPTION}>
-              {totalText}
-            </Text>
-            {shareText !== null && (
-              <Text role="caption" tone="tertiary" style={CAPTION}>
-                {shareText}
-              </Text>
-            )}
-          </Flex>
-        </div>
+    <div role="group" aria-label={displayName} data-weight-emphasis={weightEmphasis}>
+      <div
+        style={{
+          ...ROW,
+          gridTemplateColumns:
+            weightEmphasis === 'secondary' ? ROW_COLUMNS_STATISTIC : ROW_COLUMNS_MANUAL,
+        }}
+      >
+        <Text as="p" role="label" style={{ minWidth: 0 }}>
+          {displayName}
+        </Text>
         <NumberInput
           id={weightId}
           aria-label="Peso"
@@ -231,6 +235,7 @@ function ProductRow({
           endAdornment="kg"
           invalid={weightError !== null}
           value={form.weightKg}
+          {...(weightEmphasis === 'secondary' ? { style: WEIGHT_SECONDARY } : {})}
           onValueChange={(change) => {
             onPatch({ weightKg: change.value });
           }}
@@ -245,7 +250,36 @@ function ProductRow({
             onPatch({ pricePerKg: fromMinorUnits(change.valueInMinorUnits) });
           }}
         />
+        <IconButton
+          variant="ghost"
+          aria-label={`Detalhes de ${displayName}`}
+          aria-expanded={showDetails}
+          {...(showDetails ? { 'aria-controls': detailsId } : {})}
+          onClick={() => {
+            setShowDetails((current) => !current);
+          }}
+        >
+          <span aria-hidden="true" style={GLYPH}>
+            i
+          </span>
+        </IconButton>
       </div>
+      {showDetails && (
+        <div
+          id={detailsId}
+          style={{
+            paddingBlock: cssVar('space-inset-xs'),
+            paddingInlineStart: cssVar('space-inset-sm'),
+          }}
+        >
+          <Stack gap={50}>
+            <LedgerRow label="Peso" value={weightText} />
+            <LedgerRow label="Participação no peso" value={shareText} note="Peso ÷ carcaça" />
+            <LedgerRow label="Preço" value={priceText} />
+            <LedgerRow label="Total" value={totalText} />
+          </Stack>
+        </div>
+      )}
       {errorText !== null && (
         <Text as="p" role="caption" tone="secondary" style={CAPTION}>
           {errorText}
@@ -257,6 +291,8 @@ function ProductRow({
 }
 
 interface StatisticDraft {
+  /** null = nova estatística; id = edição de fornecedor/tipo (pesos intactos). */
+  readonly id: string | null;
   readonly supplier: string;
   readonly kind: DeboningStatisticKind;
 }
@@ -276,7 +312,9 @@ export function DeboningScreen({ calc, onBack }: DeboningScreenProps): ReactElem
   } = calc;
   const form = calc.state.deboning;
   const help = useHelp();
+  const summaryDetailsId = useId();
   const [editing, setEditing] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
   const [statisticDraft, setStatisticDraft] = useState<StatisticDraft | null>(null);
   const [saveDraft, setSaveDraft] = useState<SaveDraft | null>(null);
   // Feedback do salvar (mesmo padrão da calculadora): o mesmo snapshot não é
@@ -293,10 +331,14 @@ export function DeboningScreen({ calc, onBack }: DeboningScreenProps): ReactElem
       ? '—'
       : formatPct(result.weightYieldPct / 100);
   const selectedLabel = form.statistic === null ? null : deboningStatisticLabel(form.statistic);
+  const selectedStatistic =
+    form.statistic === null
+      ? undefined
+      : statistics.find((candidate) => candidate.id === form.statistic?.id);
   // A referência pode apontar para uma estatística que já não existe na lista
   // (análise antiga reaberta): o seletor ainda mostra o rótulo guardado.
-  const selectedMissing =
-    form.statistic !== null && !statistics.some((candidate) => candidate.id === form.statistic?.id);
+  const selectedMissing = form.statistic !== null && selectedStatistic === undefined;
+  const weightEmphasis: WeightEmphasis = form.statistic === null ? 'primary' : 'secondary';
   const defaultAnalysisName = (at: string): string =>
     selectedLabel === null ? `Desossa ${formatDate(at)}` : selectedLabel;
 
@@ -329,6 +371,7 @@ export function DeboningScreen({ calc, onBack }: DeboningScreenProps): ReactElem
     <Stack gap={200}>
       <ScreenHeader title="Desossa" onBack={onBack} />
 
+      {/* Resultado: só a margem em destaque; composição e pesos sob demanda. */}
       <Surface
         as="section"
         aria-label="Resultado comercial"
@@ -352,19 +395,48 @@ export function DeboningScreen({ calc, onBack }: DeboningScreenProps): ReactElem
               <Text as="p" role="data" style={HEADLINE}>
                 {marginText}
               </Text>
-              <Text role="caption" tone="tertiary">
-                {result.marginPct === null
-                  ? 'Sem valor comercial: informe peso e preço dos produtos.'
-                  : `${formatBRL(result.commercialGainBRL)} ÷ ${formatBRL(result.commercialValueBRL)}`}
-              </Text>
-              <Divider />
-              <CostFormation label="Formação do valor comercial" steps={formationSteps} />
-              <Divider />
-              <Stack gap={50} role="group" aria-label="Pesos da desossa">
-                <LedgerRow label="Peso da carcaça" value={formatKg(result.carcassWeightKg)} />
-                <LedgerRow label="Peso dos produtos" value={formatKg(result.productsWeightKg)} />
-                <LedgerRow label="Rendimento de peso" value={yieldText} note="Produtos ÷ carcaça" />
-              </Stack>
+              {result.marginPct === null && (
+                <Text role="caption" tone="tertiary">
+                  Sem valor comercial: informe peso e preço dos produtos.
+                </Text>
+              )}
+              <div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-expanded={showSummary}
+                  {...(showSummary ? { 'aria-controls': summaryDetailsId } : {})}
+                  onClick={() => {
+                    setShowSummary((current) => !current);
+                  }}
+                >
+                  {showSummary ? 'Ocultar detalhes' : 'Ver detalhes'}
+                </Button>
+              </div>
+              {showSummary && (
+                <Stack gap={100} id={summaryDetailsId}>
+                  {result.marginPct !== null && (
+                    <Text role="caption" tone="tertiary">
+                      {`${formatBRL(result.commercialGainBRL)} ÷ ${formatBRL(result.commercialValueBRL)}`}
+                    </Text>
+                  )}
+                  <Divider />
+                  <CostFormation label="Formação do valor comercial" steps={formationSteps} />
+                  <Divider />
+                  <Stack gap={50} role="group" aria-label="Pesos da desossa">
+                    <LedgerRow label="Peso da carcaça" value={formatKg(result.carcassWeightKg)} />
+                    <LedgerRow
+                      label="Peso dos produtos"
+                      value={formatKg(result.productsWeightKg)}
+                    />
+                    <LedgerRow
+                      label="Rendimento de peso"
+                      value={yieldText}
+                      note="Produtos ÷ carcaça"
+                    />
+                  </Stack>
+                </Stack>
+              )}
             </>
           )}
         </Stack>
@@ -460,25 +532,54 @@ export function DeboningScreen({ calc, onBack }: DeboningScreenProps): ReactElem
               </Select>
             </Field>
             {statisticDraft === null ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setStatisticDraft({ supplier: '', kind: 'porco-mineiro' });
-                }}
-              >
-                Salvar pesos atuais como estatística
-              </Button>
+              <Flex gap={100} wrap>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setStatisticDraft({ id: null, supplier: '', kind: 'porco-mineiro' });
+                  }}
+                >
+                  Salvar pesos atuais como estatística
+                </Button>
+                {selectedStatistic !== undefined && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setStatisticDraft({
+                        id: selectedStatistic.id,
+                        supplier: selectedStatistic.supplier,
+                        kind: selectedStatistic.kind,
+                      });
+                    }}
+                  >
+                    Editar estatística
+                  </Button>
+                )}
+              </Flex>
             ) : (
               <Surface
                 as="form"
-                aria-label="Nova estatística de pesos"
+                aria-label={
+                  statisticDraft.id === null
+                    ? 'Nova estatística de pesos'
+                    : 'Editar estatística de pesos'
+                }
                 elevation="flat"
                 style={{ padding: cssVar('space-inset-sm') }}
                 onSubmit={(event) => {
                   event.preventDefault();
                   if (statisticDraft.supplier.trim() === '') return;
-                  actions.saveDeboningStatistic(statisticDraft.supplier, statisticDraft.kind);
+                  if (statisticDraft.id === null) {
+                    actions.saveDeboningStatistic(statisticDraft.supplier, statisticDraft.kind);
+                  } else {
+                    actions.updateDeboningStatistic(
+                      statisticDraft.id,
+                      statisticDraft.supplier,
+                      statisticDraft.kind,
+                    );
+                  }
                   setStatisticDraft(null);
                 }}
               >
@@ -527,7 +628,7 @@ export function DeboningScreen({ calc, onBack }: DeboningScreenProps): ReactElem
                       size="sm"
                       disabled={statisticDraft.supplier.trim() === ''}
                     >
-                      Salvar estatística
+                      {statisticDraft.id === null ? 'Salvar estatística' : 'Salvar alterações'}
                     </Button>
                   </Flex>
                 </Stack>
@@ -541,7 +642,15 @@ export function DeboningScreen({ calc, onBack }: DeboningScreenProps): ReactElem
             </Text>
           )}
           {!editing && form.products.length > 0 && (
-            <div style={{ ...ROW, paddingBlock: 0 }} aria-hidden="true">
+            <div
+              style={{
+                ...ROW,
+                paddingBlock: 0,
+                gridTemplateColumns:
+                  weightEmphasis === 'secondary' ? ROW_COLUMNS_STATISTIC : ROW_COLUMNS_MANUAL,
+              }}
+              aria-hidden="true"
+            >
               <Text role="caption" tone="tertiary" style={CAPTION}>
                 Produto
               </Text>
@@ -551,6 +660,7 @@ export function DeboningScreen({ calc, onBack }: DeboningScreenProps): ReactElem
               <Text role="caption" tone="tertiary" style={CAPTION}>
                 Preço (R$/kg)
               </Text>
+              <span />
             </div>
           )}
           <Stack gap={editing ? 100 : 0}>
@@ -562,6 +672,7 @@ export function DeboningScreen({ calc, onBack }: DeboningScreenProps): ReactElem
                 value={valueById.get(product.id)}
                 issues={issues}
                 editing={editing}
+                weightEmphasis={weightEmphasis}
                 onPatch={(patch) => {
                   actions.patchDeboningProduct(product.id, patch);
                 }}
