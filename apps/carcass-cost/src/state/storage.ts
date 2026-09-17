@@ -196,7 +196,7 @@ export function saveState(state: CalculatorState): void {
   writeEnvelope(STATE_STORAGE_KEY, state);
 }
 
-function sanitizeHistoryEntry(value: unknown): HistoryEntry | null {
+export function sanitizeHistoryEntry(value: unknown): HistoryEntry | null {
   if (!isRecord(value)) return null;
   const { id, savedAt } = value;
   if (typeof id !== 'string' || typeof savedAt !== 'string') return null;

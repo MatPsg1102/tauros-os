@@ -12,6 +12,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.47.10",
     "@tauros/theme": "workspace:*",
     "@tauros/tokens": "workspace:*",
     "@tauros/ui-primitives": "workspace:*",

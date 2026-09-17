@@ -8,6 +8,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from './app.js';
+import { createCloudApi } from './state/cloud.js';
 
 injectUiStyles(document);
 
@@ -19,7 +20,7 @@ if (container === null) {
 createRoot(container).render(
   <StrictMode>
     <ThemeProvider>
-      <App />
+      <App cloud={createCloudApi()} />
     </ThemeProvider>
   </StrictMode>,
 );

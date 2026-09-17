@@ -45,7 +45,7 @@ export function HistoryScreen({
   onOpenEntry,
   onOpenDeboningEntry,
 }: HistoryScreenProps): ReactElement {
-  const { history, deboningHistory } = calc;
+  const { history, deboningHistory, historySource, cloudError } = calc;
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
 
   return (
@@ -54,6 +54,14 @@ export function HistoryScreen({
 
       <Section title="Lotes">
         <Stack gap={100}>
+          <Flex justify="between" align="center" gap={100}>
+            {historySource === 'cloud' ? (
+              <Badge status="info">NA NUVEM</Badge>
+            ) : (
+              <Badge status="neutral">NESTE APARELHO</Badge>
+            )}
+          </Flex>
+          <div role="alert">{cloudError !== null && <Text role="caption">{cloudError}</Text>}</div>
           {history.length === 0 ? (
             <Surface elevation="card" style={{ padding: cssVar('space-inset-md') }}>
               <Stack gap={50}>

@@ -59,6 +59,7 @@ import {
   saveHistory,
   saveState,
 } from './storage.js';
+import { CLOUD_UNAVAILABLE_MESSAGE, type CloudHistory } from './cloud.js';
 
 export type DeboningCarcassPatch = Partial<
   Pick<DeboningForm, 'carcassWeightKg' | 'carcassCostPerKg'>
@@ -100,6 +101,10 @@ export interface CalculatorController {
    * comercial; null quando a Transformação é inválida (Estimativa fica pendente). */
   readonly commercialAdjustmentPct: number | null;
   readonly history: readonly HistoryEntry[];
+  /** Origem da lista de lotes: localStorage ou nuvem (sessão ativa). */
+  readonly historySource: 'local' | 'cloud';
+  /** Última falha da nuvem (listar, salvar, excluir); null quando tudo certo. */
+  readonly cloudError: string | null;
   /** Desossa (indicador comercial): null enquanto houver problema de validação. */
   readonly deboning: DeboningResult | null;
   readonly deboningIssues: readonly ValidationIssue[];
@@ -131,9 +136,17 @@ function buildTransformationInput(
   };
 }
 
-export function useCalculator(): CalculatorController {
+// `cloudHistory` presente = sessão ativa: os lotes vêm da nuvem e vão para ela.
+export function useCalculator(cloudHistory: CloudHistory | null = null): CalculatorController {
   const [state, setState] = useState<CalculatorState>(loadState);
-  const [history, setHistory] = useState<readonly HistoryEntry[]>(loadHistory);
+  // A origem acompanha a lista: o efeito de persistência nunca grava a lista
+  // da nuvem no localStorage durante a troca de origem.
+  const [lots, setLots] = useState<{
+    readonly source: 'local' | 'cloud';
+    readonly entries: readonly HistoryEntry[];
+  }>(() => ({ source: 'local', entries: loadHistory() }));
+  const [cloudError, setCloudError] = useState<string | null>(null);
+  const history = lots.entries;
   const [deboningHistory, setDeboningHistory] =
     useState<readonly DeboningHistoryEntry[]>(loadDeboningHistory);
 
@@ -142,8 +155,32 @@ export function useCalculator(): CalculatorController {
   }, [state]);
 
   useEffect(() => {
-    saveHistory(history);
-  }, [history]);
+    if (lots.source === 'local') saveHistory(lots.entries);
+  }, [lots]);
+
+  useEffect(() => {
+    if (cloudHistory === null) {
+      setLots({ source: 'local', entries: loadHistory() });
+      setCloudError(null);
+      return undefined;
+    }
+    let active = true;
+    setCloudError(null);
+    void cloudHistory.list().then(
+      (entries) => {
+        if (active) setLots({ source: 'cloud', entries });
+      },
+      () => {
+        if (active) {
+          setLots({ source: 'cloud', entries: [] });
+          setCloudError(CLOUD_UNAVAILABLE_MESSAGE);
+        }
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [cloudHistory]);
 
   useEffect(() => {
     saveDeboningHistory(deboningHistory);
@@ -216,7 +253,20 @@ export function useCalculator(): CalculatorController {
       costs: state.costs,
       summary,
     };
-    setHistory((entries) => [entry, ...entries].slice(0, HISTORY_LIMIT));
+    const prepend = (): void => {
+      setLots((current) => ({
+        source: current.source,
+        entries: [entry, ...current.entries].slice(0, HISTORY_LIMIT),
+      }));
+    };
+    if (cloudHistory === null) {
+      prepend();
+      return;
+    }
+    setCloudError(null);
+    void cloudHistory.save(entry).then(prepend, () => {
+      setCloudError(CLOUD_UNAVAILABLE_MESSAGE);
+    });
   };
 
   const saveDeboningToHistory = (): void => {
@@ -295,7 +345,20 @@ export function useCalculator(): CalculatorController {
       }));
     },
     removeHistoryEntry: (id) => {
-      setHistory((entries) => entries.filter((entry) => entry.id !== id));
+      const drop = (): void => {
+        setLots((current) => ({
+          source: current.source,
+          entries: current.entries.filter((entry) => entry.id !== id),
+        }));
+      };
+      if (cloudHistory === null) {
+        drop();
+        return;
+      }
+      setCloudError(null);
+      void cloudHistory.remove(id).then(drop, () => {
+        setCloudError(CLOUD_UNAVAILABLE_MESSAGE);
+      });
     },
     patchDeboning: (patch) => {
       patchDeboningForm((current) => ({ ...current, ...patch }));
@@ -343,6 +406,8 @@ export function useCalculator(): CalculatorController {
     transformation,
     commercialAdjustmentPct,
     history,
+    historySource: lots.source,
+    cloudError,
     deboning,
     deboningIssues,
     deboningHistory,

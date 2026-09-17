@@ -13,6 +13,11 @@ pnpm --filter @tauros/carcass-cost test     # fórmulas, validação, jornada, a
 pnpm --filter @tauros/carcass-cost build    # SPA estática em dist/ (PWA)
 ```
 
+Conta e nuvem (opcional, P-0001): copie `.env.example` para `.env` neste diretório
+(ignorado pelo Git) e preencha `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` com o
+projeto Supabase compartilhado do Tauros OS. Sem essas variáveis o app roda como
+sempre, só com o histórico local. Nunca commite valores reais.
+
 ## Arquitetura
 
 - **`src/domain/`** — fonte de verdade matemática, TypeScript puro sem React.
@@ -26,6 +31,13 @@ pnpm --filter @tauros/carcass-cost build    # SPA estática em dist/ (PWA)
   padrão dos controllers do apps/web) e `storage.ts` (localStorage com envelope
   versionado e saneamento defensivo; chaves `tauros.carcass-cost.state.v1`,
   `tauros.carcass-cost.history.v1` e `tauros.carcass-cost.deboning-history.v1`).
+  `cloud.ts` + `use-session.ts`: nuvem opcional — Supabase Auth por e-mail/senha
+  (usuários piloto criados administrativamente; sem cadastro, recuperação de senha
+  ou MFA) e a tabela `public.carcass_cost_calculations` (RLS: cada usuário só vê,
+  grava e exclui as próprias linhas). Com sessão ativa o histórico de **lotes** vem
+  da nuvem e vai para ela; sem sessão continua no aparelho. Nada é sincronizado ou
+  migrado entre os dois; a desossa permanece local. Identidade separada do
+  Employee + PIN do Tauros OS (ADR-021).
 - **`src/ui/`** — telas compostas exclusivamente com `@tauros/ui-primitives`
   (barrel público) + tokens via `cssVar`. Sem stylesheet paralelo.
   Composições locais reutilizadas pelas telas: `help.tsx` ("?" com nota
@@ -110,6 +122,8 @@ Análises podem ser salvas no Histórico (lista "Desossas", chave própria).
 
 ## Fora de escopo (deliberado)
 
-Login, backend, sincronização, gráficos, integração com ERP/fiscal. O app é
-isolado: consome apenas `@tauros/tokens`, `@tauros/theme` e
-`@tauros/ui-primitives`, e nada no monorepo depende dele.
+Cadastro/recuperação de senha, sincronização local ↔ nuvem, modo offline da nuvem,
+gráficos, integração com ERP/fiscal. O app continua uma vertical isolada: consome
+apenas `@tauros/tokens`, `@tauros/theme`, `@tauros/ui-primitives` e o supabase-js;
+não importa `packages/contracts` nem `packages/infrastructure`, e nada no monorepo
+depende dele.

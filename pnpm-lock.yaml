@@ -58,6 +58,9 @@ importers:
 
   apps/carcass-cost:
     dependencies:
+      '@supabase/supabase-js':
+        specifier: ^2.47.10
+        version: 2.110.7
       '@tauros/theme':
         specifier: workspace:*
         version: link:../../packages/theme
