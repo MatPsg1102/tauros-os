@@ -98,6 +98,12 @@ export interface CalculatorActions {
   readonly applyDeboningStatistic: (id: string | null) => void;
   /** Guarda os pesos atuais como estatística reutilizável e a seleciona. */
   readonly saveDeboningStatistic: (supplier: string, kind: DeboningStatisticKind) => void;
+  /** Renomeia fornecedor/tipo de uma estatística; os pesos dela não mudam. */
+  readonly updateDeboningStatistic: (
+    id: string,
+    supplier: string,
+    kind: DeboningStatisticKind,
+  ) => void;
   readonly loadDeboningEntry: (id: string) => void;
   readonly removeDeboningEntry: (id: string) => void;
 }
@@ -424,6 +430,19 @@ export function useCalculator(cloudHistory: CloudHistory | null = null): Calcula
       });
       setDeboningStatistics((list) => [statistic, ...list]);
       patchDeboningForm((current) => ({ ...current, statistic: deboningStatisticRef(statistic) }));
+    },
+    updateDeboningStatistic: (id, supplier, kind) => {
+      const name = supplier.trim();
+      setDeboningStatistics((list) =>
+        list.map((candidate) =>
+          candidate.id === id ? { ...candidate, supplier: name, kind } : candidate,
+        ),
+      );
+      patchDeboningForm((current) =>
+        current.statistic?.id === id
+          ? { ...current, statistic: { id, supplier: name, kind } }
+          : current,
+      );
     },
     loadDeboningEntry: (id) => {
       const entry = deboningHistory.find((candidate) => candidate.id === id);

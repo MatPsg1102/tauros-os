@@ -564,8 +564,11 @@ describe('Desossa (indicador comercial da desossa) — cenário da planilha', ()
     renderApp();
     await openDeboning(user);
 
-    // Margem em destaque (card) e na barra fixa; divisão que a gera.
+    // Margem em destaque (card) e na barra fixa; a divisão que a gera e a
+    // composição só aparecem em "Ver detalhes" (resumo fechado por padrão).
     expect(screen.getAllByText('22,58%').length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText(plain('R$ 3.800,00 ÷ R$ 16.829,56'))).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Ver detalhes' }));
     expect(screen.getByText(plain('R$ 3.800,00 ÷ R$ 16.829,56'))).toBeDefined();
     // Formação do valor: carcaça → + acréscimo → valor comercial.
     const f = formation();
@@ -590,10 +593,16 @@ describe('Desossa (indicador comercial da desossa) — cenário da planilha', ()
     expect(inicial.getByText('Valor inicial')).toBeDefined();
     expect(inicial.getByText(plain('R$ 13.029,56'))).toBeDefined();
     expect(inicial.getByText(plain('1.128,10 kg × R$ 11,55/kg'))).toBeDefined();
-    // 12 produtos, cada um com total e percentual; nada da Transformação aqui.
+    // 12 produtos; total e percentual ficam sob o botão de detalhes de cada um.
+    expect(product('Pernil').queryByText(plain('R$ 4.437,90'))).toBeNull();
+    await user.click(product('Pernil').getByRole('button', { name: 'Detalhes de Pernil' }));
     expect(product('Pernil').getByText(plain('R$ 4.437,90'))).toBeDefined();
     expect(product('Pernil').getByText('26,23%')).toBeDefined();
+    await user.click(product('Osso').getByRole('button', { name: 'Detalhes de Osso' }));
     expect(product('Osso').getByText(plain('R$ 50,40'))).toBeDefined();
+    await user.click(
+      product('Toucinho torresmo').getByRole('button', { name: 'Detalhes de Toucinho torresmo' }),
+    );
     expect(product('Toucinho torresmo').getByText(plain('R$ 1.434,57'))).toBeDefined();
     expect(screen.queryByRole('group', { name: 'Papada' })).toBeNull();
     expect(screen.queryByRole('group', { name: 'Cabeça' })).toBeNull();
@@ -603,6 +612,7 @@ describe('Desossa (indicador comercial da desossa) — cenário da planilha', ()
     const user = userEvent.setup();
     renderApp();
     await openDeboning(user);
+    await user.click(product('Pernil').getByRole('button', { name: 'Detalhes de Pernil' }));
     const price = product('Pernil').getByLabelText('R$/Kg');
     await user.clear(price);
     await user.type(price, '16,00');
@@ -616,6 +626,8 @@ describe('Desossa (indicador comercial da desossa) — cenário da planilha', ()
     const user = userEvent.setup();
     renderApp();
     await openDeboning(user);
+    await user.click(screen.getByRole('button', { name: 'Ver detalhes' }));
+    await user.click(product('Pernil').getByRole('button', { name: 'Detalhes de Pernil' }));
     const weight = product('Pernil').getByLabelText('Peso');
     await user.clear(weight);
     await user.type(weight, '300');
@@ -629,6 +641,7 @@ describe('Desossa (indicador comercial da desossa) — cenário da planilha', ()
     const user = userEvent.setup();
     renderApp();
     await openDeboning(user);
+    await user.click(screen.getByRole('button', { name: 'Ver detalhes' }));
     await user.click(screen.getByRole('button', { name: 'Adicionar produto' }));
     expect(screen.getByRole('button', { name: 'Concluir' }).getAttribute('aria-pressed')).toBe(
       'true',
@@ -641,6 +654,7 @@ describe('Desossa (indicador comercial da desossa) — cenário da planilha', ()
     expect(screen.getAllByText('23,49%').length).toBeGreaterThanOrEqual(2);
     expect(formation().getByText('13 produtos')).toBeDefined();
     await user.click(screen.getByRole('button', { name: 'Concluir' }));
+    await user.click(product('Filezinho').getByRole('button', { name: 'Detalhes de Filezinho' }));
     expect(product('Filezinho').getByText(plain('R$ 200,00'))).toBeDefined();
   });
 
@@ -648,6 +662,7 @@ describe('Desossa (indicador comercial da desossa) — cenário da planilha', ()
     const user = userEvent.setup();
     renderApp();
     await openDeboning(user);
+    await user.click(screen.getByRole('button', { name: 'Ver detalhes' }));
     await user.click(screen.getByRole('button', { name: 'Editar' }));
     await user.click(product('Osso').getByRole('button', { name: 'Remover' }));
     expect(screen.queryByRole('group', { name: 'Osso' })).toBeNull();
@@ -661,6 +676,7 @@ describe('Desossa (indicador comercial da desossa) — cenário da planilha', ()
     const user = userEvent.setup();
     renderApp();
     await openDeboning(user);
+    await user.click(screen.getByRole('button', { name: 'Ver detalhes' }));
     const cost = screen.getByLabelText('Custo do kg');
     await user.clear(cost);
     await user.type(cost, '12,00');
