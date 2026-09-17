@@ -3,25 +3,31 @@
 // regra das outras telas): margem comercial em destaque com a divisão que a
 // gera, a formação do valor (carcaça → + acréscimo → valor comercial) e os
 // pesos. Depois a carcaça (peso e custo do kg; valor inicial derivado, só
-// leitura) e os produtos em linhas
-// compactas — nome + total na mesma linha, peso e R$/kg lado a lado,
-// percentual derivado como informação secundária. A lista muda sem tela
-// nova: "Editar" mostra o nome editável e "Remover" por linha;
-// "Adicionar produto" acrescenta uma linha em branco. Barra fixa com a
-// margem para acompanhar enquanto se edita as últimas linhas. A tela só
-// apresenta: todo número vem do domínio via controller.
+// leitura) e os produtos.
+//
+// Fluxo operacional: a ESTATÍSTICA DE PESOS (fornecedor · tipo) fornece os
+// pesos; o operador principalmente informa/ajusta o PREÇO. Por isso cada
+// produto ocupa UMA linha: nome (com total e percentual como legenda), peso
+// compacto e secundário (continua visível e editável) e preço em destaque.
+// "Editar" mostra o nome editável e "Remover" por linha; "Adicionar produto"
+// acrescenta uma linha em branco. Salvar abre um diálogo com nome da análise e
+// data automática. Barra fixa com a margem. A tela só apresenta: todo número
+// vem do domínio via controller.
 
 import { cssVar } from '@tauros/tokens';
 import {
   Button,
+  ConfirmDialog,
   CurrencyInput,
   Divider,
+  Field,
   Flex,
   Grid,
   Input,
   Label,
   NumberInput,
   Section,
+  Select,
   Stack,
   StickyRegion,
   Surface,
@@ -30,9 +36,13 @@ import {
 import { useId, useState, type CSSProperties, type ReactElement } from 'react';
 
 import {
+  DEBONING_STATISTIC_KINDS,
+  DEBONING_STATISTIC_KIND_LABELS,
   deboningProductField,
+  deboningStatisticLabel,
   type DeboningProductForm,
   type DeboningProductValue,
+  type DeboningStatisticKind,
 } from '../domain/deboning.js';
 import type { ValidationIssue } from '../domain/validation.js';
 import type { CalculatorController, DeboningProductPatch } from '../state/use-calculator.js';
@@ -40,6 +50,7 @@ import { CostFormation, type FormationStep } from './cost-formation.js';
 import { ISSUE_MESSAGES, errorProp } from './field-messages.js';
 import {
   formatBRL,
+  formatDate,
   formatKg,
   formatPct,
   formatPerKg,
@@ -60,7 +71,7 @@ export interface DeboningScreenProps {
 const HELP_MARGIN =
   'Valor inicial = peso da carcaça × custo do kg. Valor comercial = soma de peso × R$/kg dos produtos. Acréscimo = valor comercial − valor inicial. Margem = acréscimo ÷ valor comercial. Análise independente da Transformação: não altera a Estimativa.';
 const HELP_PRODUCTS =
-  'Informe o peso e o preço de venda de cada produto; o total e o percentual do peso da carcaça são calculados. Campo vazio conta como zero. “Editar” permite renomear e remover produtos.';
+  'A estatística de pesos preenche o peso de cada produto (fornecedor e tipo); você informa o preço de venda. Peso continua editável. Campo vazio conta como zero. “Editar” permite renomear e remover produtos.';
 
 const CAPTION: CSSProperties = { fontSize: cssVar('emphasis-level4-size') };
 const HEADLINE: CSSProperties = {
@@ -70,6 +81,17 @@ const HEADLINE: CSSProperties = {
 const STICKY_VALUE: CSSProperties = {
   fontSize: cssVar('emphasis-level3-size'),
   fontWeight: cssVar('emphasis-level3-weight'),
+};
+// Uma linha por produto: nome flexível, peso estreito (secundário) e preço
+// mais largo (principal). Em 390 px sobra ~120 px para o nome, que quebra em
+// duas linhas dentro da altura do campo quando preciso.
+const ROW_COLUMNS = 'minmax(0, 1fr) 6.5rem 8.25rem';
+const ROW: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: ROW_COLUMNS,
+  columnGap: cssVar('space-gap-50'),
+  alignItems: 'center',
+  paddingBlock: cssVar('space-inset-xs'),
 };
 
 function issueMessage(issues: readonly ValidationIssue[], field: string): string | null {
@@ -88,10 +110,6 @@ interface ProductRowProps {
   readonly onRemove: () => void;
 }
 
-// Linha compacta: nome (+ percentual) e total em cima; "Peso [ ] R$/Kg [ ]"
-// embaixo, rótulos ao lado dos campos (Label + id explícito, sem Field —
-// mesma composição da Transformação). Em edição de lista o nome vira campo
-// e a linha ganha "Remover"; o total desce para uma linha própria.
 function ProductRow({
   index,
   form,
@@ -110,16 +128,18 @@ function ProductRow({
     value === undefined || value.sharePct === null ? null : formatPct(value.sharePct / 100);
   const weightError = issueMessage(issues, deboningProductField(form.id, 'weightKg'));
   const priceError = issueMessage(issues, deboningProductField(form.id, 'pricePerKg'));
+  const errorText = weightError ?? priceError;
 
-  return (
-    <Surface
-      role="group"
-      aria-label={displayName}
-      elevation="flat"
-      style={{ padding: cssVar('space-inset-sm') }}
-    >
-      <Stack gap={50}>
-        {editing ? (
+  if (editing) {
+    // Modo de lista (raro): nome editável + Remover, campos com rótulo visível.
+    return (
+      <Surface
+        role="group"
+        aria-label={displayName}
+        elevation="flat"
+        style={{ padding: cssVar('space-inset-sm') }}
+      >
+        <Stack gap={50}>
           <Flex align="center" gap={100}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <Input
@@ -136,80 +156,129 @@ function ProductRow({
               Remover
             </Button>
           </Flex>
-        ) : (
-          <Flex justify="between" align="baseline" gap={100}>
-            <Flex align="baseline" gap={50} style={{ minWidth: 0 }}>
-              <Text role="label">{displayName}</Text>
-              {shareText !== null && (
-                <Text role="caption" tone="tertiary" style={CAPTION}>
-                  {shareText}
-                </Text>
-              )}
-            </Flex>
-            <Text role="data" style={{ flexShrink: 0 }}>
-              {totalText}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'auto minmax(0, 1fr) auto minmax(0, 1fr)',
+              alignItems: 'center',
+              gap: cssVar('space-gap-100'),
+            }}
+          >
+            <Label htmlFor={weightId} tone="secondary">
+              Peso
+            </Label>
+            <NumberInput
+              id={weightId}
+              size="sm"
+              endAdornment="kg"
+              invalid={weightError !== null}
+              value={form.weightKg}
+              onValueChange={(change) => {
+                onPatch({ weightKg: change.value });
+              }}
+            />
+            <Label htmlFor={priceId} tone="secondary">
+              R$/Kg
+            </Label>
+            <CurrencyInput
+              id={priceId}
+              size="sm"
+              invalid={priceError !== null}
+              valueInMinorUnits={toMinorUnits(form.pricePerKg)}
+              onValueChange={(change) => {
+                onPatch({ pricePerKg: fromMinorUnits(change.valueInMinorUnits) });
+              }}
+            />
+          </div>
+          {errorText !== null && (
+            <Text role="caption" tone="secondary" style={CAPTION}>
+              {errorText}
             </Text>
-          </Flex>
-        )}
-        {/* Colunas iguais (1fr/1fr), não 2fr/3fr como na Transformação: aqui
-            os pesos têm até 6 caracteres ("295,86") e o campo precisa da
-            mesma largura do preço para não cortar o valor em 390 px. */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'auto minmax(0, 1fr) auto minmax(0, 1fr)',
-            alignItems: 'center',
-            gap: cssVar('space-gap-100'),
-          }}
-        >
-          <Label htmlFor={weightId} tone="secondary">
-            Peso
-          </Label>
-          <NumberInput
-            id={weightId}
-            size="sm"
-            endAdornment="kg"
-            invalid={weightError !== null}
-            value={form.weightKg}
-            onValueChange={(change) => {
-              onPatch({ weightKg: change.value });
-            }}
-          />
-          <Label htmlFor={priceId} tone="secondary">
-            R$/Kg
-          </Label>
-          <CurrencyInput
-            id={priceId}
-            size="sm"
-            invalid={priceError !== null}
-            valueInMinorUnits={toMinorUnits(form.pricePerKg)}
-            onValueChange={(change) => {
-              onPatch({ pricePerKg: fromMinorUnits(change.valueInMinorUnits) });
-            }}
-          />
-        </div>
-        {(weightError !== null || priceError !== null) && (
-          <Text role="caption" tone="secondary" style={CAPTION}>
-            {weightError ?? priceError}
-          </Text>
-        )}
-        {editing && (
+          )}
           <LedgerRow
             label="Total"
             value={totalText}
             {...(shareText === null ? {} : { detail: shareText })}
           />
-        )}
-      </Stack>
-    </Surface>
+        </Stack>
+      </Surface>
+    );
+  }
+
+  return (
+    <div role="group" aria-label={displayName}>
+      <div style={ROW}>
+        <div style={{ minWidth: 0 }}>
+          <Text as="p" role="label">
+            {displayName}
+          </Text>
+          {/* Total e percentual em nós separados (leitura e testes exatos). */}
+          <Flex align="baseline" gap={50} wrap>
+            <Text role="caption" tone="tertiary" style={CAPTION}>
+              {totalText}
+            </Text>
+            {shareText !== null && (
+              <Text role="caption" tone="tertiary" style={CAPTION}>
+                {shareText}
+              </Text>
+            )}
+          </Flex>
+        </div>
+        <NumberInput
+          id={weightId}
+          aria-label="Peso"
+          size="sm"
+          endAdornment="kg"
+          invalid={weightError !== null}
+          value={form.weightKg}
+          onValueChange={(change) => {
+            onPatch({ weightKg: change.value });
+          }}
+        />
+        <CurrencyInput
+          id={priceId}
+          aria-label="R$/Kg"
+          size="md"
+          invalid={priceError !== null}
+          valueInMinorUnits={toMinorUnits(form.pricePerKg)}
+          onValueChange={(change) => {
+            onPatch({ pricePerKg: fromMinorUnits(change.valueInMinorUnits) });
+          }}
+        />
+      </div>
+      {errorText !== null && (
+        <Text as="p" role="caption" tone="secondary" style={CAPTION}>
+          {errorText}
+        </Text>
+      )}
+      <Divider />
+    </div>
   );
 }
 
+interface StatisticDraft {
+  readonly supplier: string;
+  readonly kind: DeboningStatisticKind;
+}
+
+interface SaveDraft {
+  readonly name: string;
+  /** Instante em que o diálogo abriu; a data exibida vem daqui. */
+  readonly at: string;
+}
+
 export function DeboningScreen({ calc, onBack }: DeboningScreenProps): ReactElement {
-  const { deboning: result, deboningIssues: issues, actions } = calc;
+  const {
+    deboning: result,
+    deboningIssues: issues,
+    deboningStatistics: statistics,
+    actions,
+  } = calc;
   const form = calc.state.deboning;
   const help = useHelp();
   const [editing, setEditing] = useState(false);
+  const [statisticDraft, setStatisticDraft] = useState<StatisticDraft | null>(null);
+  const [saveDraft, setSaveDraft] = useState<SaveDraft | null>(null);
   // Feedback do salvar (mesmo padrão da calculadora): o mesmo snapshot não é
   // salvo duas vezes por engano; reabilita quando algo muda na análise.
   const [savedKey, setSavedKey] = useState<string | null>(null);
@@ -223,6 +292,13 @@ export function DeboningScreen({ calc, onBack }: DeboningScreenProps): ReactElem
     result === null || result.weightYieldPct === null
       ? '—'
       : formatPct(result.weightYieldPct / 100);
+  const selectedLabel = form.statistic === null ? null : deboningStatisticLabel(form.statistic);
+  // A referência pode apontar para uma estatística que já não existe na lista
+  // (análise antiga reaberta): o seletor ainda mostra o rótulo guardado.
+  const selectedMissing =
+    form.statistic !== null && !statistics.some((candidate) => candidate.id === form.statistic?.id);
+  const defaultAnalysisName = (at: string): string =>
+    selectedLabel === null ? `Desossa ${formatDate(at)}` : selectedLabel;
 
   // Formação do valor comercial — só valores já calculados pelo domínio.
   const formationSteps: readonly FormationStep[] =
@@ -352,27 +428,149 @@ export function DeboningScreen({ calc, onBack }: DeboningScreenProps): ReactElem
         }
       >
         <Stack gap={100}>
+          {/* Estatística de pesos: seleciona pesos-padrão (fornecedor · tipo)
+              para esta análise; "Pesos manuais" mantém os pesos como estão. */}
+          <Stack gap={50} role="group" aria-label="Estatística de pesos">
+            <Field
+              label="Selecionar estatística"
+              description={
+                selectedLabel === null
+                  ? 'Pesos manuais. Escolha uma estatística para preencher os pesos.'
+                  : `Pesos de ${selectedLabel}. Ajuste o preço de cada produto.`
+              }
+            >
+              <Select
+                frameSize="sm"
+                value={form.statistic?.id ?? ''}
+                onChange={(event) => {
+                  actions.applyDeboningStatistic(
+                    event.target.value === '' ? null : event.target.value,
+                  );
+                }}
+              >
+                <option value="">Pesos manuais</option>
+                {selectedMissing && form.statistic !== null && (
+                  <option value={form.statistic.id}>{selectedLabel} (não disponível)</option>
+                )}
+                {statistics.map((statistic) => (
+                  <option key={statistic.id} value={statistic.id}>
+                    {deboningStatisticLabel(statistic)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            {statisticDraft === null ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setStatisticDraft({ supplier: '', kind: 'porco-mineiro' });
+                }}
+              >
+                Salvar pesos atuais como estatística
+              </Button>
+            ) : (
+              <Surface
+                as="form"
+                aria-label="Nova estatística de pesos"
+                elevation="flat"
+                style={{ padding: cssVar('space-inset-sm') }}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (statisticDraft.supplier.trim() === '') return;
+                  actions.saveDeboningStatistic(statisticDraft.supplier, statisticDraft.kind);
+                  setStatisticDraft(null);
+                }}
+              >
+                <Stack gap={100}>
+                  <Field label="Fornecedor" required>
+                    <Input
+                      size="sm"
+                      value={statisticDraft.supplier}
+                      onChange={(event) => {
+                        setStatisticDraft({ ...statisticDraft, supplier: event.target.value });
+                      }}
+                    />
+                  </Field>
+                  <Field label="Tipo/origem">
+                    <Select
+                      frameSize="sm"
+                      value={statisticDraft.kind}
+                      onChange={(event) => {
+                        const kind = event.target.value;
+                        if (kind === 'porco-mineiro' || kind === 'carcaca') {
+                          setStatisticDraft({ ...statisticDraft, kind });
+                        }
+                      }}
+                    >
+                      {DEBONING_STATISTIC_KINDS.map((kind) => (
+                        <option key={kind} value={kind}>
+                          {DEBONING_STATISTIC_KIND_LABELS[kind]}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Flex justify="end" gap={100} wrap>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setStatisticDraft(null);
+                      }}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      size="sm"
+                      disabled={statisticDraft.supplier.trim() === ''}
+                    >
+                      Salvar estatística
+                    </Button>
+                  </Flex>
+                </Stack>
+              </Surface>
+            )}
+          </Stack>
+
           {form.products.length === 0 && (
             <Text as="p" tone="secondary">
               Nenhum produto na lista. Toque em “Adicionar produto”.
             </Text>
           )}
-          {form.products.map((product, index) => (
-            <ProductRow
-              key={product.id}
-              index={index}
-              form={product}
-              value={valueById.get(product.id)}
-              issues={issues}
-              editing={editing}
-              onPatch={(patch) => {
-                actions.patchDeboningProduct(product.id, patch);
-              }}
-              onRemove={() => {
-                actions.removeDeboningProduct(product.id);
-              }}
-            />
-          ))}
+          {!editing && form.products.length > 0 && (
+            <div style={{ ...ROW, paddingBlock: 0 }} aria-hidden="true">
+              <Text role="caption" tone="tertiary" style={CAPTION}>
+                Produto
+              </Text>
+              <Text role="caption" tone="tertiary" style={CAPTION}>
+                Peso
+              </Text>
+              <Text role="caption" tone="tertiary" style={CAPTION}>
+                Preço (R$/kg)
+              </Text>
+            </div>
+          )}
+          <Stack gap={editing ? 100 : 0}>
+            {form.products.map((product, index) => (
+              <ProductRow
+                key={product.id}
+                index={index}
+                form={product}
+                value={valueById.get(product.id)}
+                issues={issues}
+                editing={editing}
+                onPatch={(patch) => {
+                  actions.patchDeboningProduct(product.id, patch);
+                }}
+                onRemove={() => {
+                  actions.removeDeboningProduct(product.id);
+                }}
+              />
+            ))}
+          </Stack>
           <Button
             variant="secondary"
             fullWidth
@@ -393,8 +591,8 @@ export function DeboningScreen({ calc, onBack }: DeboningScreenProps): ReactElem
           fullWidth
           disabled={result === null || alreadySaved}
           onClick={() => {
-            actions.saveDeboningToHistory();
-            setSavedKey(analysisKey);
+            const at = new Date().toISOString();
+            setSaveDraft({ name: defaultAnalysisName(at), at });
           }}
         >
           {alreadySaved ? 'Análise salva no histórico' : 'Salvar análise no histórico'}
@@ -407,6 +605,38 @@ export function DeboningScreen({ calc, onBack }: DeboningScreenProps): ReactElem
           )}
         </div>
       </Stack>
+
+      {/* Identificação antes de persistir: nome livre e data de hoje (automática). */}
+      <ConfirmDialog
+        open={saveDraft !== null}
+        onOpenChange={(open) => {
+          if (!open) setSaveDraft(null);
+        }}
+        title="Salvar análise"
+        description="Dê um nome para encontrar esta análise no histórico."
+        confirmLabel="Salvar análise"
+        cancelLabel="Cancelar"
+        onConfirm={() => {
+          if (saveDraft === null) return;
+          const name = saveDraft.name.trim();
+          actions.saveDeboningToHistory(name === '' ? defaultAnalysisName(saveDraft.at) : name);
+          setSavedKey(analysisKey);
+        }}
+      >
+        {saveDraft !== null && (
+          <Stack gap={100}>
+            <Field label="Nome da análise">
+              <Input
+                value={saveDraft.name}
+                onChange={(event) => {
+                  setSaveDraft({ ...saveDraft, name: event.target.value });
+                }}
+              />
+            </Field>
+            <LedgerRow label="Data" value={formatDate(saveDraft.at)} />
+          </Stack>
+        )}
+      </ConfirmDialog>
 
       <StickyRegion position="bottom">
         <Flex

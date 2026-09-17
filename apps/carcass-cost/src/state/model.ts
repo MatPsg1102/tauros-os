@@ -68,6 +68,7 @@ export const DEFAULT_DEBONING: DeboningForm = {
   carcassWeightKg: DEFAULT_DEBONING_CARCASS.weightKg,
   carcassCostPerKg: DEFAULT_DEBONING_CARCASS.costPerKg,
   products: DEFAULT_DEBONING_PRODUCTS.map((product) => ({ ...product })),
+  statistic: null,
 };
 
 export interface CalculatorState {
@@ -103,6 +104,8 @@ export interface HistoryEntry {
 export interface DeboningHistoryEntry {
   readonly id: string;
   readonly savedAt: string;
+  /** Nome dado pelo operador ao salvar; vazio em análises antigas (a UI mostra a data). */
+  readonly name: string;
   readonly deboning: DeboningForm;
   readonly summary: {
     readonly carcassWeightKg: number | null;

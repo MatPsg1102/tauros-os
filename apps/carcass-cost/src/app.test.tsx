@@ -705,6 +705,9 @@ describe('Desossa (indicador comercial da desossa) — cenário da planilha', ()
     const save = screen.getByRole('button', { name: 'Salvar análise no histórico' });
     expect(save.getAttribute('data-variant')).toBe('primary');
     await user.click(save);
+    // Identificação antes de persistir (nome + data automática); confirma com o padrão.
+    const saveDialog = await screen.findByRole('dialog', { name: 'Salvar análise' });
+    await user.click(within(saveDialog).getByRole('button', { name: 'Salvar análise' }));
     expect(
       (screen.getByRole('button', { name: 'Análise salva no histórico' }) as HTMLButtonElement)
         .disabled,

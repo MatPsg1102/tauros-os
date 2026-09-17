@@ -8,6 +8,7 @@ const DECIMAL = new Intl.NumberFormat('pt-BR', {
   maximumFractionDigits: 2,
 });
 const DATE_TIME = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+const DATE = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short' });
 
 export function formatBRL(value: number): string {
   return CURRENCY.format(value);
@@ -34,6 +35,12 @@ export function formatPct(fractionValue: number): string {
 export function formatDateTime(iso: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? '—' : DATE_TIME.format(date);
+}
+
+/** Só a data (dd/mm/aaaa), no fuso local. */
+export function formatDate(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? '—' : DATE.format(date);
 }
 
 /** Adaptadores da UI para o CurrencyInput (contrato em centavos inteiros). */

@@ -13,12 +13,17 @@ import {
   type RealLotResult,
 } from '../domain/carcass-cost.js';
 import {
+  applyDeboningStatistic,
   buildDeboningInput,
   calculateDeboning,
+  deboningStatisticRef,
+  statisticFromForm,
   validateDeboning,
   type DeboningForm,
   type DeboningProductForm,
   type DeboningResult,
+  type DeboningStatistic,
+  type DeboningStatisticKind,
 } from '../domain/deboning.js';
 import {
   REFERENCE_COOLING_LOSS_PCT,
@@ -53,9 +58,11 @@ import {
 import {
   HISTORY_LIMIT,
   loadDeboningHistory,
+  loadDeboningStatistics,
   loadHistory,
   loadState,
   saveDeboningHistory,
+  saveDeboningStatistics,
   saveHistory,
   saveState,
 } from './storage.js';
@@ -85,7 +92,12 @@ export interface CalculatorActions {
   /** Acrescenta uma linha vazia ao fim da lista (nome, peso e preço em branco). */
   readonly addDeboningProduct: () => void;
   readonly removeDeboningProduct: (id: string) => void;
-  readonly saveDeboningToHistory: () => void;
+  /** Salva a análise atual no histórico com o nome dado pelo operador (data = agora). */
+  readonly saveDeboningToHistory: (name: string) => void;
+  /** Preenche a análise com os pesos da estatística (null = volta a pesos manuais). */
+  readonly applyDeboningStatistic: (id: string | null) => void;
+  /** Guarda os pesos atuais como estatística reutilizável e a seleciona. */
+  readonly saveDeboningStatistic: (supplier: string, kind: DeboningStatisticKind) => void;
   readonly loadDeboningEntry: (id: string) => void;
   readonly removeDeboningEntry: (id: string) => void;
 }
@@ -109,6 +121,7 @@ export interface CalculatorController {
   readonly deboning: DeboningResult | null;
   readonly deboningIssues: readonly ValidationIssue[];
   readonly deboningHistory: readonly DeboningHistoryEntry[];
+  readonly deboningStatistics: readonly DeboningStatistic[];
   readonly actions: CalculatorActions;
 }
 
@@ -149,6 +162,8 @@ export function useCalculator(cloudHistory: CloudHistory | null = null): Calcula
   const history = lots.entries;
   const [deboningHistory, setDeboningHistory] =
     useState<readonly DeboningHistoryEntry[]>(loadDeboningHistory);
+  const [deboningStatistics, setDeboningStatistics] =
+    useState<readonly DeboningStatistic[]>(loadDeboningStatistics);
 
   useEffect(() => {
     saveState(state);
@@ -185,6 +200,10 @@ export function useCalculator(cloudHistory: CloudHistory | null = null): Calcula
   useEffect(() => {
     saveDeboningHistory(deboningHistory);
   }, [deboningHistory]);
+
+  useEffect(() => {
+    saveDeboningStatistics(deboningStatistics);
+  }, [deboningStatistics]);
 
   const transformation = useMemo(
     () =>
@@ -269,10 +288,11 @@ export function useCalculator(cloudHistory: CloudHistory | null = null): Calcula
     });
   };
 
-  const saveDeboningToHistory = (): void => {
+  const saveDeboningToHistory = (name: string): void => {
     const entry: DeboningHistoryEntry = {
       id: crypto.randomUUID(),
       savedAt: new Date().toISOString(),
+      name: name.trim(),
       deboning: state.deboning,
       summary: {
         carcassWeightKg: state.deboning.carcassWeightKg,
@@ -387,6 +407,24 @@ export function useCalculator(cloudHistory: CloudHistory | null = null): Calcula
       }));
     },
     saveDeboningToHistory,
+    applyDeboningStatistic: (id) => {
+      if (id === null) {
+        patchDeboningForm((current) => ({ ...current, statistic: null }));
+        return;
+      }
+      const statistic = deboningStatistics.find((candidate) => candidate.id === id);
+      if (statistic === undefined) return;
+      patchDeboningForm((current) => applyDeboningStatistic(current, statistic));
+    },
+    saveDeboningStatistic: (supplier, kind) => {
+      const statistic = statisticFromForm(state.deboning, {
+        id: crypto.randomUUID(),
+        supplier: supplier.trim(),
+        kind,
+      });
+      setDeboningStatistics((list) => [statistic, ...list]);
+      patchDeboningForm((current) => ({ ...current, statistic: deboningStatisticRef(statistic) }));
+    },
     loadDeboningEntry: (id) => {
       const entry = deboningHistory.find((candidate) => candidate.id === id);
       if (entry === undefined) return;
@@ -411,6 +449,7 @@ export function useCalculator(cloudHistory: CloudHistory | null = null): Calcula
     deboning,
     deboningIssues,
     deboningHistory,
+    deboningStatistics,
     actions,
   };
 }
