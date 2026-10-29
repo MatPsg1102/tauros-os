@@ -14,3 +14,6 @@ playwright-report/
 .vercel/
 *.tsbuildinfo
 .agent-loop/
+
+# B-roll gerado no Higgsfield (binarios fora do Git)
+docs/marketing/vsl/clips/

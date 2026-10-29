@@ -1,0 +1,823 @@
+<title>VSL Tauros OS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="claude:viewport-fit-sides" content="cover" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link
+  rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Space+Grotesk:wght@300;600&display=swap"
+/>
+<style>
+  /* Storyboard da VSL: linha do tempo proporcional no topo, uma faixa por cena abaixo (narração à esquerda, imagem e prompt à direita). Mesmos tokens da landing. */
+  :root {
+    --canvas: #070707;
+    --plate: #0d0e12;
+    --obsidian: #141418;
+    --iron: #2e3038;
+    --steel: #22222a;
+    --white: #ffffff;
+    --fog: #d9dae5;
+    --ash: #c8cad0;
+    --graphite: #aeaeb7;
+    --slate: #a2a4a9;
+    --cinder: #60606c;
+    --mint: #70dcd3;
+    --iris: #929dbd;
+    --verdant: #75ae4c;
+    --deep: #0677d4;
+    --warn: #e0a85a;
+    --font-ui: 'Geist', Inter, ui-sans-serif, system-ui, sans-serif;
+    --font-display: 'Space Grotesk', 'Geist', ui-sans-serif, system-ui, sans-serif;
+    --gl: max(16px, env(safe-area-inset-left, 0px));
+    --gr: max(16px, env(safe-area-inset-right, 0px));
+    color-scheme: dark;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+    background: var(--canvas);
+    color: var(--white);
+    font-family: var(--font-ui);
+    font-size: 15px;
+    line-height: 1.5;
+    letter-spacing: 0.016em;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0 0 auto;
+    height: env(safe-area-inset-top, 0px);
+    z-index: 10;
+    background: var(--canvas);
+  }
+  .wrap {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding-left: var(--gl);
+    padding-right: var(--gr);
+    padding-block: 40px 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+  }
+  h1,
+  h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 300;
+    letter-spacing: 0.056em;
+    text-transform: uppercase;
+    text-wrap: balance;
+  }
+  h1 {
+    font-size: clamp(28px, 4vw, 48px);
+    line-height: 1.05;
+  }
+  h2 {
+    font-size: clamp(22px, 2.6vw, 32px);
+    line-height: 1.1;
+  }
+  p {
+    margin: 0;
+  }
+  .eyebrow {
+    font-size: 12px;
+    letter-spacing: 0.094em;
+    text-transform: uppercase;
+    color: var(--iris);
+    font-weight: 500;
+  }
+  .lede {
+    color: var(--ash);
+    max-width: 60ch;
+    font-size: 16px;
+  }
+  .head {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .pill {
+    border: 1px solid var(--iron);
+    border-radius: 800px;
+    padding: 4px 12px;
+    font-size: 12px;
+    color: var(--ash);
+    letter-spacing: 0.04em;
+  }
+  .pill.mint {
+    border-color: var(--mint);
+    color: var(--mint);
+  }
+
+  /* Linha do tempo */
+  .timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .bar {
+    display: flex;
+    width: 100%;
+    height: 44px;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--fog);
+    background: var(--plate);
+  }
+  .bar a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--canvas);
+    text-decoration: none;
+    border-right: 1px solid var(--canvas);
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    padding: 0 4px;
+  }
+  .bar a:last-child {
+    border-right: 0;
+  }
+  .b-gancho {
+    background: var(--mint);
+  }
+  .b-problema {
+    background: var(--warn);
+  }
+  .b-historia {
+    background: var(--iris);
+  }
+  .b-mecanismo {
+    background: var(--fog);
+  }
+  .b-demo {
+    background: var(--verdant);
+  }
+  .b-prova {
+    background: var(--iris);
+  }
+  .b-oferta {
+    background: var(--fog);
+  }
+  .b-chamada {
+    background: var(--mint);
+  }
+  .b-fim {
+    background: var(--cinder);
+  }
+  .ticks {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--cinder);
+    font-variant-numeric: tabular-nums;
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    font-size: 12px;
+    color: var(--graphite);
+  }
+  .legend span::before {
+    content: '';
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    margin-right: 6px;
+    vertical-align: -1px;
+    background: var(--c);
+  }
+
+  /* Cenas */
+  .scenes {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .scene {
+    background: var(--plate);
+    border: 1px solid var(--fog);
+    border-radius: 20px;
+    padding: 24px;
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1.1fr) minmax(0, 0.9fr);
+    gap: 24px;
+    scroll-margin-top: 16px;
+  }
+  @media (max-width: 900px) {
+    .scene {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 16px;
+    }
+  }
+  .scene-id {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .scene-id b {
+    font-family: var(--font-display);
+    font-weight: 300;
+    font-size: 32px;
+    letter-spacing: 0.056em;
+    line-height: 1;
+  }
+  .scene-id small {
+    font-size: 12px;
+    color: var(--graphite);
+    font-variant-numeric: tabular-nums;
+  }
+  .tag {
+    display: inline-flex;
+    align-self: flex-start;
+    border: 1px solid currentColor;
+    border-radius: 800px;
+    padding: 2px 8px;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+  .t-gancho,
+  .t-chamada {
+    color: var(--mint);
+  }
+  .t-problema {
+    color: var(--warn);
+  }
+  .t-historia,
+  .t-prova {
+    color: var(--iris);
+  }
+  .t-mecanismo,
+  .t-oferta {
+    color: var(--fog);
+  }
+  .t-demo {
+    color: var(--verdant);
+  }
+  .t-fim {
+    color: var(--cinder);
+  }
+  .vo {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+  .vo .eyebrow {
+    color: var(--cinder);
+  }
+  .vo q {
+    quotes: '“' '”';
+    font-size: 17px;
+    line-height: 1.45;
+    color: var(--white);
+  }
+  .overlay {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: 0.056em;
+    text-transform: uppercase;
+    font-size: 13px;
+    color: var(--mint);
+  }
+  .visual {
+    background: var(--obsidian);
+    border-radius: 16px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+    font-size: 14px;
+    color: var(--ash);
+  }
+  .visual .src {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .src-cam {
+    color: var(--white);
+    border-color: var(--white);
+  }
+  .src-tela {
+    color: var(--verdant);
+  }
+  .src-ai {
+    color: var(--mint);
+  }
+  .prompt {
+    font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--graphite);
+    background: var(--canvas);
+    border-radius: 10px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .prompt b {
+    color: var(--white);
+    font-weight: 500;
+  }
+
+  /* Blocos finais */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+  }
+  .card {
+    background: var(--plate);
+    border: 1px solid var(--fog);
+    border-radius: 20px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+  }
+  .card ul {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--ash);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 14px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  th,
+  td {
+    text-align: left;
+    padding: 8px 6px 8px 0;
+    border-top: 1px solid var(--iron);
+    vertical-align: top;
+  }
+  th {
+    border-top: 0;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--graphite);
+    font-weight: 500;
+  }
+  .tablewrap {
+    overflow-x: auto;
+  }
+  footer {
+    color: var(--cinder);
+    font-size: 13px;
+    border-top: 1px solid var(--steel);
+    padding-top: 24px;
+  }
+</style>
+
+<main class="wrap">
+  <header class="head">
+    <p class="eyebrow">Storyboard · Video Sales Letter</p>
+    <h1>VSL Tauros OS <span style="color: var(--mint)">· 3 min 10 s</span></h1>
+    <p class="lede">
+      Narrador: Matheus Passos, dono da casa de carnes Tauros. Telas reais do Tauros OS convertem; o
+      B-roll gerado no Higgsfield só mostra ambiente. Nenhum número de cliente, depoimento ou
+      resultado inventado.
+    </p>
+    <div class="facts">
+      <span class="pill mint">16:9 landing e YouTube</span>
+      <span class="pill">9:16 corte de 60 s</span>
+      <span class="pill">~430 palavras · 140 ppm</span>
+      <span class="pill">Legendas sempre ligadas</span>
+      <span class="pill">Sem Estoque · Financeiro · IA</span>
+    </div>
+  </header>
+
+  <section class="timeline" aria-label="Linha do tempo">
+    <div class="bar">
+      <a class="b-gancho" style="flex: 14" href="#c1">Gancho</a>
+      <a class="b-problema" style="flex: 34" href="#c3">Problema</a>
+      <a class="b-historia" style="flex: 17" href="#c5">História</a>
+      <a class="b-mecanismo" style="flex: 13" href="#c6">Mecanismo</a>
+      <a class="b-demo" style="flex: 68" href="#c7">Demonstração</a>
+      <a class="b-prova" style="flex: 14" href="#c14">Prova</a>
+      <a class="b-oferta" style="flex: 16" href="#c15">Oferta</a>
+      <a class="b-chamada" style="flex: 12" href="#c16">Chamada</a>
+      <a class="b-fim" style="flex: 6" href="#c17"></a>
+    </div>
+    <div class="ticks">
+      <span>0:00</span><span>0:48</span><span>1:18</span><span>2:26</span><span>3:14</span>
+    </div>
+    <div class="legend">
+      <span style="--c: var(--white)">Matheus em câmera</span>
+      <span style="--c: var(--verdant)">Tela real do Tauros OS</span>
+      <span style="--c: var(--mint)">B-roll Higgsfield</span>
+    </div>
+  </section>
+
+  <section class="scenes" aria-label="Cenas">
+    <article class="scene" id="c1">
+      <div class="scene-id">
+        <b>01</b><small>0:00 – 0:08</small><span class="tag t-gancho">Gancho</span>
+      </div>
+      <div class="vo">
+        <q>Se você sumir uma semana, o que acontece no seu açougue?</q
+        ><span class="overlay">Se você sumir uma semana…</span>
+      </div>
+      <div class="visual">
+        <div class="src"><span class="tag src-cam">Matheus em câmera</span></div>
+        Balcão da Tauros, 6h, luz fria. Celular na horizontal, corte seco no fim da frase.
+      </div>
+    </article>
+
+    <article class="scene" id="c2">
+      <div class="scene-id">
+        <b>02</b><small>0:08 – 0:14</small><span class="tag t-gancho">Gancho</span>
+      </div>
+      <div class="vo"><q>Se a resposta for “desanda”, esse vídeo é para você.</q></div>
+      <div class="visual">
+        <div class="src">
+          <span class="tag src-ai">Higgsfield H1</span><span class="pill">Slow dolly in</span>
+        </div>
+        <div class="prompt">
+          <b>Imagem:</b> Open walk-in cold room door in a butcher shop at dawn, cold vapor rolling
+          out across the tiled floor, hanging pork carcasses in the background, empty hallway,
+          single overhead light, nobody around + estilo global
+        </div>
+      </div>
+    </article>
+
+    <article class="scene" id="c3">
+      <div class="scene-id">
+        <b>03</b><small>0:14 – 0:40</small><span class="tag t-problema">Problema</span>
+      </div>
+      <div class="vo">
+        <q
+          >A câmara fria é conferida quando alguém lembra. O encarregado manda foto no grupo para
+          provar que limpou, e ninguém acha essa foto depois. Na troca de turno, a rotina some. A
+          linguiça da casa sai diferente a cada semana. Você compra o suíno e só descobre quanto
+          custou o kg no fim do mês. E o pedido online chega, e alguém digita etiqueta por
+          etiqueta.</q
+        ><span class="overlay">Câmara · Foto · Turno · Receita · Custo · Etiqueta</span>
+      </div>
+      <div class="visual">
+        <div class="src">
+          <span class="tag src-ai">Higgsfield H2 → H6</span
+          ><span class="pill">4 s cada, corte na frase</span>
+        </div>
+        <div class="prompt">
+          <b>H2</b> termômetro da câmara em close · <b>H3</b> celular no balcão com grupo cheio de
+          fotos (sem texto legível) · <b>H4</b> troca de turno de costas · <b>H5</b> linguiça sendo
+          amarrada · <b>H6</b> carcaça suína na balança da câmara. Prompts completos em
+          higgsfield-prompts.md.
+        </div>
+      </div>
+    </article>
+
+    <article class="scene" id="c4">
+      <div class="scene-id">
+        <b>04</b><small>0:40 – 0:48</small><span class="tag t-problema">Agitação</span>
+      </div>
+      <div class="vo">
+        <q>Não é falta de esforço. É que a loja inteira está guardada na sua cabeça.</q
+        ><span class="overlay">A loja está na sua cabeça.</span>
+      </div>
+      <div class="visual">
+        <div class="src"><span class="tag src-cam">Matheus em câmera</span></div>
+        Close, fundo da loja desfocado. Pausa de meio segundo antes de “na sua cabeça”.
+      </div>
+    </article>
+
+    <article class="scene" id="c5">
+      <div class="scene-id">
+        <b>05</b><small>0:48 – 1:05</small><span class="tag t-historia">História</span>
+      </div>
+      <div class="vo">
+        <q
+          >Eu sou Matheus Passos. Engenheiro de produção, sete anos no ramo da carne, dono da casa
+          de carnes Tauros. Eu vivi exatamente isso. E como também sou desenvolvedor, construí o
+          sistema dentro da minha própria loja.</q
+        ><span class="overlay">Matheus Passos · Casa de Carnes Tauros</span>
+      </div>
+      <div class="visual">
+        <div class="src">
+          <span class="tag src-cam">Matheus andando na Tauros</span
+          ><span class="tag src-ai">Higgsfield H8 (opcional)</span>
+        </div>
+        Plano aberto seguindo Matheus pelo balcão; corte para a fachada ou placa da Tauros. H8 (FPV
+        entrando na loja) só se não houver tomada real boa.
+      </div>
+    </article>
+
+    <article class="scene" id="c6">
+      <div class="scene-id">
+        <b>06</b><small>1:05 – 1:18</small><span class="tag t-mecanismo">Mecanismo</span>
+      </div>
+      <div class="vo">
+        <q
+          >O PDV vende. O Tauros OS faz a loja funcionar. Ele fica ao lado do sistema que você já
+          tem e cuida do que o PDV não cuida: a rotina, a equipe, a produção e a compra.</q
+        ><span class="overlay">O PDV vende. O Tauros OS faz a loja funcionar.</span>
+      </div>
+      <div class="visual">
+        <div class="src"><span class="tag src-tela">Tela T0 → T1</span></div>
+        Hero da landing com a frase; zoom suave; corte para o quadro do dia abrindo.
+      </div>
+    </article>
+
+    <article class="scene" id="c7">
+      <div class="scene-id">
+        <b>07</b><small>1:18 – 1:28</small><span class="tag t-demo">Demo 1</span>
+      </div>
+      <div class="vo">
+        <q>Cada rotina tem dono e hora. O que está atrasado aparece primeiro.</q
+        ><span class="overlay">Rotina com dono e hora</span>
+      </div>
+      <div class="visual">
+        <div class="src"><span class="tag src-tela">Tela T1 · /operacao</span></div>
+        Quadro do dia com a faixa de atrasadas; mouse passa por uma tarefa atrasada. Menu sem
+        Estoque e Financeiro.
+      </div>
+    </article>
+
+    <article class="scene" id="c8">
+      <div class="scene-id">
+        <b>08</b><small>1:28 – 1:38</small><span class="tag t-demo">Demo 2</span>
+      </div>
+      <div class="vo">
+        <q
+          >O colaborador faz e tira a foto. Quem fez não aprova: o encarregado confere, aprova ou
+          devolve com motivo.</q
+        ><span class="overlay">Quem fez não aprova</span>
+      </div>
+      <div class="visual">
+        <div class="src"><span class="tag src-tela">Tela T2 · detalhe da tarefa</span></div>
+        Tarefa com 2 fotos → Conferir → Devolver com motivo curto. Mostrar que o executor não
+        aparece como aprovador.
+      </div>
+    </article>
+
+    <article class="scene" id="c9">
+      <div class="scene-id">
+        <b>09</b><small>1:38 – 1:46</small><span class="tag t-demo">Demo 3</span>
+      </div>
+      <div class="vo">
+        <q>A escala é 12x36? Tanto faz. O padrão continua com quem estiver no turno.</q
+        ><span class="overlay">Escala 12x36</span>
+      </div>
+      <div class="visual">
+        <div class="src"><span class="tag src-tela">Tela T3 · /escala</span></div>
+        Semana montada; abrir o turno do dia.
+      </div>
+    </article>
+
+    <article class="scene" id="c10">
+      <div class="scene-id">
+        <b>10</b><small>1:46 – 1:56</small><span class="tag t-demo">Demo 4</span>
+      </div>
+      <div class="vo">
+        <q
+          >A linguiça, o tempero, o espeto: receita cadastrada com custo e foto. Cada produção fica
+          registrada.</q
+        ><span class="overlay">O produto da casa sai sempre igual</span>
+      </div>
+      <div class="visual">
+        <div class="src"><span class="tag src-tela">Tela T4 · /receitas → /producao</span></div>
+        Receita com foto e custo; registrar um lote. Não falar em estoque.
+      </div>
+    </article>
+
+    <article class="scene" id="c11">
+      <div class="scene-id">
+        <b>11</b><small>1:56 – 2:08</small><span class="tag t-demo">Demo 5</span>
+      </div>
+      <div class="vo">
+        <q
+          >Compra suíno? Antes de fechar, você já sabe quanto vai custar o kg na câmara. Depois da
+          desossa, a margem por corte mostra onde o lote ganhou ou perdeu.</q
+        ><span class="overlay">Custo da carcaça antes de comprar</span>
+      </div>
+      <div class="visual">
+        <div class="src"><span class="tag src-tela">Tela T5 · /custo-carcaca</span></div>
+        Estimativa com 100 suínos × 115 kg → custo final; mudar o preço do vivo; abrir a Desossa com
+        margem por corte.
+      </div>
+    </article>
+
+    <article class="scene" id="c12">
+      <div class="scene-id">
+        <b>12</b><small>2:08 – 2:16</small><span class="tag t-demo">Demo 6</span>
+      </div>
+      <div class="vo">
+        <q>Vende no Onbeef? O PDF do pedido vira etiqueta pronta para a impressora. Sem digitar.</q
+        ><span class="overlay">Pedido virou etiqueta</span>
+      </div>
+      <div class="visual">
+        <div class="src">
+          <span class="tag src-tela">Tela T6 · /etiquetas</span
+          ><span class="tag src-ai">Higgsfield H7</span>
+        </div>
+        Gerar e imprimir; corte para a impressora térmica cuspindo etiquetas (H7: crash zoom, ou
+        gravação real se houver).
+      </div>
+    </article>
+
+    <article class="scene" id="c13">
+      <div class="scene-id">
+        <b>13</b><small>2:16 – 2:26</small><span class="tag t-demo">Demo 7</span>
+      </div>
+      <div class="vo">
+        <q
+          >E no fim do dia, o relatório chega no seu WhatsApp. Você sabe da loja sem ligar para a
+          loja.</q
+        ><span class="overlay">O relatório do dia no seu WhatsApp</span>
+      </div>
+      <div class="visual">
+        <div class="src">
+          <span class="tag src-tela">Tela T7 · celular</span
+          ><span class="tag src-cam">Matheus com o celular</span>
+        </div>
+        Gravação de tela do grupo recebendo o relatório diário e uma foto; tomada externa do celular
+        na mão, no pátio.
+      </div>
+    </article>
+
+    <article class="scene" id="c14">
+      <div class="scene-id">
+        <b>14</b><small>2:26 – 2:40</small><span class="tag t-prova">Prova</span>
+      </div>
+      <div class="vo">
+        <q
+          >Isso não é demonstração de software. É o sistema que roda todo dia na Tauros: minha
+          câmara, minha equipe, minha desossa.</q
+        ><span class="overlay">Roda todo dia na Tauros</span>
+      </div>
+      <div class="visual">
+        <div class="src">
+          <span class="tag src-cam">Matheus na desossa</span
+          ><span class="tag src-ai">Higgsfield H9</span>
+        </div>
+        Matheus no pátio ou na desossa; H9 (mãos desossando, close) como cobertura; corte para o
+        quadro do dia com dados da Tauros, sem fornecedores. Quando houver pagantes autorizados, 2
+        depoimentos de 10 s entram aqui.
+      </div>
+    </article>
+
+    <article class="scene" id="c15">
+      <div class="scene-id">
+        <b>15</b><small>2:40 – 2:56</small><span class="tag t-oferta">Oferta</span>
+      </div>
+      <div class="vo">
+        <q
+          >O Tauros OS começa em R$ 199,90 por mês. Você testa 14 dias grátis, sem cartão, e eu
+          mesmo faço o onboarding de 30 minutos com o seu encarregado. Sem fidelidade. Ao lado do
+          seu PDV.</q
+        ><span class="overlay">14 dias grátis · sem cartão · sem fidelidade</span>
+      </div>
+      <div class="visual">
+        <div class="src"><span class="tag src-tela">Tela T8 · planos</span></div>
+        Rolagem até os três planos; destaque no Avançado (card menta) com “relatórios no WhatsApp”.
+      </div>
+    </article>
+
+    <article class="scene" id="c16">
+      <div class="scene-id">
+        <b>16</b><small>2:56 – 3:08</small><span class="tag t-chamada">Chamada</span>
+      </div>
+      <div class="vo">
+        <q
+          >Clica no botão, me chama no WhatsApp. Em uma semana a sua rotina está rodando sem você
+          precisar estar na loja para tudo.</q
+        ><span class="overlay">Começar teste grátis →</span>
+      </div>
+      <div class="visual">
+        <div class="src"><span class="tag src-cam">Matheus em câmera</span></div>
+        Sorri, aponta para baixo; botão da landing em destaque no canto.
+      </div>
+    </article>
+
+    <article class="scene" id="c17">
+      <div class="scene-id">
+        <b>17</b><small>3:08 – 3:14</small><span class="tag t-fim">Fechamento</span>
+      </div>
+      <div class="vo">
+        <span class="eyebrow">Sem fala</span><span class="overlay">tauros.io</span>
+      </div>
+      <div class="visual">
+        <div class="src"><span class="tag src-ai">Higgsfield H10</span></div>
+        <div class="prompt">
+          <b>Imagem:</b> Abstract near-black background with a single soft teal glow rising like a
+          monitor phosphor, fine grain, no objects, no text · <b>Câmera:</b> static, slow light
+          bloom. Logo e “Um software nascido de dentro de um açougue” entram na edição.
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="grid" aria-label="Corte de 60 segundos e regras">
+    <div class="card">
+      <p class="eyebrow">Corte de 60 s · Reels e anúncio</p>
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Tempo</th>
+              <th>Narração</th>
+              <th>Imagem</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>0:00</td>
+              <td>Se você sumir uma semana, o que acontece no seu açougue?</td>
+              <td>Matheus em câmera</td>
+            </tr>
+            <tr>
+              <td>0:06</td>
+              <td>
+                Câmara conferida quando alguém lembra. Foto no grupo que ninguém acha. Linguiça
+                diferente a cada semana.
+              </td>
+              <td>H1, H2, H5</td>
+            </tr>
+            <tr>
+              <td>0:16</td>
+              <td>
+                Sou Matheus, dono da Tauros, engenheiro de produção. Construí o Tauros OS dentro da
+                minha loja.
+              </td>
+              <td>Matheus na loja</td>
+            </tr>
+            <tr>
+              <td>0:24</td>
+              <td>O PDV vende. O Tauros OS faz a loja funcionar.</td>
+              <td>T0 → T1</td>
+            </tr>
+            <tr>
+              <td>0:30</td>
+              <td>
+                Rotina com dono e hora. Quem fez não aprova. Receita com custo e foto. E o relatório
+                do dia no seu WhatsApp.
+              </td>
+              <td>T1, T2, T4, T7</td>
+            </tr>
+            <tr>
+              <td>0:48</td>
+              <td>14 dias grátis, sem cartão, onboarding comigo. Clica e me chama no WhatsApp.</td>
+              <td>T8 → Matheus</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <p class="eyebrow">Regras que valem para todo corte</p>
+      <ul>
+        <li>Telas são gravação real do Tauros OS; o Higgsfield nunca gera interface.</li>
+        <li>Nada de Estoque, Financeiro ou IA, nem no menu lateral das gravações.</li>
+        <li>Carcaça é suína; WhatsApp só envia relatórios e fotos.</li>
+        <li>Nenhum número de cliente, depoimento ou “aumente X%”. A prova é a Tauros.</li>
+        <li>Uma mudança visual ou informação nova a cada 30–45 s.</li>
+        <li>Legendas em pt-BR sempre; frases-chave em caixa alta e menta.</li>
+        <li>Preços iguais aos do sistema: R$ 199,90 · R$ 499,90 · R$ 1.999,90.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <p class="eyebrow">Higgsfield · fluxo</p>
+      <ul>
+        <li>Gerar a imagem de cada cena primeiro (estilo global colado no fim do prompt).</li>
+        <li>Aprovar 1 imagem por cena, depois animar com o preset de câmera indicado, 5 s.</li>
+        <li>Fixar o seed do que aprovar; mudar uma variável por vez quando sair errado.</li>
+        <li>Regenerar H1, H2, H5 e H7 em 9:16 para o corte de 60 s.</li>
+        <li>Fotos reais da Tauros como referência deixam o B-roll com a cara da loja.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    Roteiro completo, prompts e lista de captura em docs/marketing/vsl/. Storyboard gerado em
+    2026-10-28; cenas 14 e 15 recebem depoimentos quando houver clientes pagantes autorizados.
+  </footer>
+</main>

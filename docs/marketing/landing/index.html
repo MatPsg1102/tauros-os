@@ -1,0 +1,1822 @@
+<title>Tauros OS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="claude:viewport-fit-sides" content="cover" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link
+  rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Space+Grotesk:wght@300;400;500;600&display=swap"
+/>
+<style>
+  /* Layout: canvas quase preto, faixas full-bleed, conteúdo centrado a 1200px; hero 50/50 com um painel do produto à direita. */
+  :root {
+    --canvas: #070707;
+    --plate: #0d0e12;
+    --obsidian: #141418;
+    --iron: #2e3038;
+    --steel: #22222a;
+    --white: #ffffff;
+    --mist: #f0f0f0;
+    --fog: #d9dae5;
+    --ash: #c8cad0;
+    --graphite: #aeaeb7;
+    --slate: #a2a4a9;
+    --cinder: #60606c;
+    --mint: #70dcd3;
+    --signal: #0092e4;
+    --ice: #a6e5f2;
+    --deep: #0677d4;
+    --verdant: #75ae4c;
+    --iris: #929dbd;
+    --warn: #e0a85a;
+    --font-ui:
+      'Geist', Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-display: 'Space Grotesk', 'Geist', ui-sans-serif, system-ui, sans-serif;
+    --track-display: 0.056em;
+    --r-card: 20px;
+    --r-nested: 16px;
+    --r-pill: 800px;
+    --r-input: 5px;
+    --gutter-l: max(16px, env(safe-area-inset-left, 0px));
+    --gutter-r: max(16px, env(safe-area-inset-right, 0px));
+    --max: 1200px;
+    color-scheme: dark;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+    background: var(--canvas);
+    color: var(--white);
+    font-family: var(--font-ui);
+    font-size: 16px;
+    line-height: 1.5;
+    letter-spacing: 0.017em;
+    font-feature-settings: 'liga' on;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0 0 auto;
+    height: env(safe-area-inset-top, 0px);
+    z-index: 10;
+    background: var(--canvas);
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+  img,
+  svg {
+    max-width: 100%;
+  }
+  .wrap {
+    max-width: var(--max);
+    margin: 0 auto;
+    padding-left: var(--gutter-l);
+    padding-right: var(--gutter-r);
+  }
+  section {
+    padding-block: 80px;
+  }
+  @media (max-width: 720px) {
+    section {
+      padding-block: 56px;
+    }
+  }
+  h1,
+  h2,
+  h3 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 300;
+    letter-spacing: var(--track-display);
+    text-wrap: balance;
+    text-transform: uppercase;
+  }
+  h1 {
+    font-size: clamp(30px, 4.6vw, 60px);
+    line-height: 1;
+  }
+  h2 {
+    font-size: clamp(32px, 4.4vw, 56px);
+    line-height: 1.1;
+  }
+  h3 {
+    font-size: clamp(22px, 2.4vw, 32px);
+    line-height: 1.1;
+  }
+  .h3-ground {
+    font-weight: 600;
+    font-size: 20px;
+    line-height: 1.2;
+    letter-spacing: var(--track-display);
+  }
+  p {
+    margin: 0;
+  }
+  .lede {
+    font-size: 18px;
+    line-height: 1.5;
+    color: var(--ash);
+    max-width: 36em;
+  }
+  .muted {
+    color: var(--graphite);
+  }
+  .eyebrow {
+    font-size: 12px;
+    line-height: 1.22;
+    letter-spacing: 0.094em;
+    text-transform: uppercase;
+    color: var(--iris);
+    font-weight: 500;
+  }
+  .mint {
+    color: var(--mint);
+  }
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .section-head {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 52rem;
+    margin-bottom: 40px;
+  }
+  .section-head.center {
+    align-items: center;
+    text-align: center;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* Botões */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 24px;
+    border-radius: var(--r-pill);
+    font-family: var(--font-ui);
+    font-size: 16px;
+    line-height: 1.2;
+    letter-spacing: 0.016em;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition:
+      transform 120ms ease,
+      background 120ms ease;
+    white-space: nowrap;
+  }
+  .btn:focus-visible {
+    outline: 2px solid var(--deep);
+    outline-offset: 3px;
+  }
+  .btn-primary {
+    background: var(--white);
+    color: var(--canvas);
+    font-weight: 500;
+    box-shadow:
+      rgba(0, 0, 0, 0.05) 2px 2px 0 0,
+      rgb(255, 255, 255) 0 -1px 0 0 inset,
+      rgb(255, 255, 255) 1px 0 0 0 inset,
+      rgb(255, 255, 255) -1px 0 0 0 inset,
+      rgb(255, 255, 255) 0 1px 0 0 inset;
+  }
+  .btn-primary:hover {
+    background: var(--mist);
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--white);
+    border-color: var(--white);
+    font-weight: 400;
+  }
+  .btn-ghost:hover {
+    background: var(--iron);
+  }
+  .btn-dark {
+    background: var(--canvas);
+    color: var(--white);
+    font-weight: 500;
+  }
+  .btn-dark:hover {
+    background: var(--obsidian);
+  }
+  .btn-sm {
+    padding: 8px 16px;
+    font-size: 14px;
+  }
+
+  /* Navegação */
+  .nav {
+    position: sticky;
+    top: env(safe-area-inset-top, 0px);
+    z-index: 9;
+    background: var(--canvas);
+    border-bottom: 1px solid var(--slate);
+  }
+  .nav .wrap {
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 18px;
+    letter-spacing: var(--track-display);
+    text-transform: uppercase;
+  }
+  .brand-mark {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    border: 1px solid var(--fog);
+    display: grid;
+    place-items: center;
+  }
+  .brand-mark span {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--mint);
+  }
+  .nav-links {
+    display: flex;
+    gap: 24px;
+    font-size: 14px;
+    color: var(--slate);
+  }
+  .nav-links a:hover {
+    color: var(--white);
+  }
+  .nav-cta {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  @media (max-width: 900px) {
+    .nav-links,
+    .nav-contact {
+      display: none;
+    }
+  }
+
+  /* Hero */
+  .hero {
+    padding-block: 72px 80px;
+    overflow-x: clip;
+  }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+    gap: 56px;
+    align-items: center;
+  }
+  @media (max-width: 960px) {
+    .hero-grid {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 40px;
+    }
+  }
+  .hero-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    min-width: 0;
+  }
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .hero-note {
+    font-size: 14px;
+    color: var(--graphite);
+  }
+  .hero-visual {
+    min-width: 0;
+    position: relative;
+  }
+  .hero-visual::before {
+    content: '';
+    position: absolute;
+    inset: -10% -10% -20% -10%;
+    background: radial-gradient(60% 50% at 70% 30%, rgba(112, 220, 211, 0.16), transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Cards */
+  .card {
+    background: var(--plate);
+    border: 1px solid var(--fog);
+    border-radius: var(--r-card);
+    padding: 24px;
+    position: relative;
+    z-index: 1;
+    min-width: 0;
+  }
+  .card-nested {
+    background: var(--obsidian);
+    border-radius: var(--r-nested);
+    padding: 16px;
+    min-width: 0;
+  }
+  .card-mint {
+    background: var(--mint);
+    color: var(--canvas);
+    border-color: var(--mint);
+  }
+  .card-mint .muted,
+  .card-mint .eyebrow {
+    color: #0d3b37;
+  }
+
+  /* Painel do produto (mock) */
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .panel-title {
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .panel-sub {
+    font-size: 12px;
+    color: var(--graphite);
+    letter-spacing: 0.042em;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-top: 1px solid var(--iron);
+    font-size: 14px;
+  }
+  .row:first-of-type {
+    border-top: 0;
+  }
+  .row .who {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--iron);
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--mist);
+    flex: none;
+  }
+  .row .what {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .row .what b {
+    font-weight: 500;
+    color: var(--white);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .row .what small {
+    font-size: 12px;
+    color: var(--graphite);
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .dot-ok {
+    background: var(--mint);
+  }
+  .dot-done {
+    background: var(--verdant);
+  }
+  .dot-late {
+    background: var(--warn);
+  }
+  .dot-off {
+    background: var(--cinder);
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: var(--r-pill);
+    border: 1px solid currentColor;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .badge-ok {
+    color: var(--verdant);
+  }
+  .badge-info {
+    color: var(--deep);
+  }
+  .badge-soon {
+    color: var(--iris);
+  }
+  .badge-warn {
+    color: var(--warn);
+  }
+  .badge-dark {
+    color: var(--canvas);
+  }
+
+  /* Grids */
+  .grid {
+    display: grid;
+    gap: 20px;
+  }
+  .grid-3 {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+  .grid-4 {
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  }
+  .grid-2 {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+
+  /* Dor */
+  .pain {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 56px;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .pain {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 32px;
+    }
+  }
+  .pain ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+  }
+  .pain li {
+    padding: 14px 0;
+    border-top: 1px solid var(--iron);
+    color: var(--ash);
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+  }
+  .pain li::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--warn);
+    flex: none;
+    transform: translateY(-2px);
+  }
+
+  /* Features */
+  .feature {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .feature .icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    border: 1px solid var(--iron);
+    display: grid;
+    place-items: center;
+    color: var(--mint);
+  }
+  .feature .icon svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .feature p {
+    color: var(--graphite);
+    font-size: 15px;
+  }
+  .feature .meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: auto;
+    padding-top: 8px;
+    border-top: 1px solid var(--iron);
+    font-size: 12px;
+    color: var(--cinder);
+    letter-spacing: 0.042em;
+  }
+
+  /* Telas */
+  .screens {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+  .screen-caption {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .screen-caption b {
+    font-weight: 500;
+  }
+  .screen-caption span {
+    font-size: 14px;
+    color: var(--graphite);
+  }
+  .photo {
+    aspect-ratio: 16 / 9;
+    max-width: 100%;
+    border-radius: 12px;
+    background:
+      linear-gradient(135deg, rgba(112, 220, 211, 0.12), transparent 60%),
+      repeating-linear-gradient(90deg, var(--obsidian) 0 14px, var(--iron) 14px 15px);
+    border: 1px solid var(--iron);
+    display: grid;
+    place-items: center;
+    color: var(--graphite);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  th,
+  td {
+    text-align: left;
+    padding: 8px 0;
+    border-top: 1px solid var(--iron);
+  }
+  th {
+    font-weight: 500;
+    color: var(--graphite);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-top: 0;
+  }
+  td.num,
+  th.num {
+    text-align: right;
+  }
+  .total td {
+    color: var(--mint);
+    font-weight: 500;
+  }
+  .chat {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .bubble {
+    background: var(--iron);
+    border-radius: 14px 14px 14px 4px;
+    padding: 10px 12px;
+    font-size: 13px;
+    color: var(--mist);
+    max-width: 92%;
+  }
+  .bubble small {
+    display: block;
+    color: var(--graphite);
+    font-size: 11px;
+    margin-top: 6px;
+  }
+  .bubble .line {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  /* Cases */
+  .case {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .case blockquote {
+    margin: 0;
+    color: var(--ash);
+    font-size: 15px;
+    border-left: 1px solid var(--iron);
+    padding-left: 14px;
+  }
+
+  /* Quem fez */
+  .founder {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 56px;
+    align-items: center;
+  }
+  @media (max-width: 900px) {
+    .founder {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 32px;
+    }
+  }
+  .portrait {
+    aspect-ratio: 4 / 5;
+    max-width: 100%;
+    border-radius: var(--r-card);
+    border: 1px solid var(--fog);
+    background:
+      radial-gradient(70% 60% at 50% 35%, rgba(112, 220, 211, 0.2), transparent 70%),
+      linear-gradient(180deg, #163052, var(--plate));
+    display: grid;
+    place-items: end start;
+    padding: 24px;
+  }
+  .portrait .eyebrow {
+    color: var(--ice);
+  }
+
+  /* Método */
+  .steps {
+    counter-reset: step;
+  }
+  .step {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .step::before {
+    counter-increment: step;
+    content: counter(step, decimal-leading-zero);
+    font-family: var(--font-display);
+    font-size: 32px;
+    font-weight: 300;
+    letter-spacing: var(--track-display);
+    color: var(--iris);
+    line-height: 1;
+  }
+  .step p {
+    color: var(--graphite);
+    font-size: 15px;
+  }
+
+  /* Planos */
+  .plan {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .plan-price {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-family: var(--font-display);
+    font-size: 40px;
+    font-weight: 300;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .plan-price small {
+    font-family: var(--font-ui);
+    font-size: 14px;
+    letter-spacing: 0.016em;
+    color: var(--graphite);
+  }
+  .card-mint .plan-price small {
+    color: #0d3b37;
+  }
+  .plan ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    font-size: 15px;
+  }
+  .plan li {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+  }
+  .plan li::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex: none;
+    transform: translateY(-1px);
+    opacity: 0.7;
+  }
+  .plan .fine {
+    font-size: 13px;
+    color: var(--cinder);
+    margin-top: auto;
+  }
+  .card-mint .fine {
+    color: #0d3b37;
+  }
+  .plan-note {
+    margin-top: 24px;
+    font-size: 14px;
+    color: var(--graphite);
+    text-align: center;
+  }
+
+  /* FAQ */
+  .faq {
+    display: flex;
+    flex-direction: column;
+    max-width: 52rem;
+    margin: 0 auto;
+    border-top: 1px solid var(--iron);
+  }
+  details {
+    border-bottom: 1px solid var(--iron);
+  }
+  summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 18px 0;
+    font-weight: 500;
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: center;
+  }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+  summary::after {
+    content: '+';
+    color: var(--graphite);
+    font-size: 20px;
+    line-height: 1;
+    flex: none;
+  }
+  details[open] summary::after {
+    content: '–';
+  }
+  details p {
+    padding: 0 0 18px;
+    color: var(--ash);
+    max-width: 44em;
+  }
+
+  /* Contato */
+  .contact {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 40px;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .contact {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  label {
+    font-size: 13px;
+    color: var(--ash);
+    letter-spacing: 0.016em;
+  }
+  input,
+  select,
+  textarea {
+    width: 100%;
+    background: var(--plate);
+    border: 1px solid var(--iron);
+    border-radius: var(--r-input);
+    padding: 12px;
+    color: var(--white);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    box-shadow: rgba(0, 0, 0, 0.05) 2px 2px 0 0;
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--cinder);
+  }
+  input:focus,
+  select:focus,
+  textarea:focus {
+    outline: none;
+    border-color: var(--deep);
+  }
+  textarea {
+    min-height: 96px;
+    resize: vertical;
+  }
+  .form-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px;
+  }
+  .form-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 6px;
+  }
+  .form-status {
+    font-size: 13px;
+    color: var(--graphite);
+    min-height: 1.2em;
+  }
+  .wa-number {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-variant-numeric: tabular-nums;
+  }
+  .copy {
+    background: transparent;
+    border: 1px solid var(--iron);
+    color: var(--ash);
+    border-radius: var(--r-pill);
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: var(--font-ui);
+  }
+
+  /* Footer */
+  footer {
+    border-top: 1px solid var(--steel);
+    padding-block: 48px 32px;
+  }
+  .foot-grid {
+    display: grid;
+    grid-template-columns: 1.4fr repeat(3, minmax(0, 1fr));
+    gap: 40px;
+  }
+  @media (max-width: 800px) {
+    .foot-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 32px;
+    }
+  }
+  .foot-col {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    font-size: 14px;
+    color: var(--graphite);
+  }
+  .foot-col b {
+    color: var(--white);
+    font-weight: 500;
+  }
+  .foot-bottom {
+    margin-top: 40px;
+    padding-top: 24px;
+    border-top: 1px solid var(--steel);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+    color: var(--cinder);
+  }
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      transition: none !important;
+    }
+  }
+</style>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#topo" aria-label="Tauros OS">
+      <span class="brand-mark"><span></span></span>
+      Tauros OS
+    </a>
+    <nav class="nav-links" aria-label="Seções">
+      <a href="#problema">O problema</a>
+      <a href="#solucao">A solução</a>
+      <a href="#telas">Como funciona</a>
+      <a href="#origem">Origem</a>
+      <a href="#planos">Planos</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="nav-contact muted" href="#contato" style="font-size: 14px">Contato</a>
+      <a class="btn btn-primary btn-sm" href="#planos">Começar teste grátis</a>
+    </div>
+  </div>
+</header>
+
+<main id="topo">
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <p class="eyebrow">Um software nascido de dentro de um açougue</p>
+        <h1>O PDV vende. <span class="mint">O Tauros OS faz a loja funcionar.</span></h1>
+        <p class="lede">
+          Seu açougue precisa de você para tudo funcionar? O Tauros OS dá dono e hora a cada rotina,
+          confere o trabalho com foto, padroniza a produção e manda o relatório do dia no seu
+          WhatsApp. Ao lado do PDV que você já tem.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#planos">Começar teste grátis</a>
+          <a class="btn btn-ghost" href="#contato">Agendar demonstração</a>
+        </div>
+        <p class="hero-note">14 dias grátis, sem cartão. Onboarding de 30 minutos incluído.</p>
+      </div>
+
+      <div class="hero-visual" aria-label="Quadro do dia do Tauros OS, representação ilustrativa">
+        <div class="card">
+          <div class="panel-head">
+            <div>
+              <div class="panel-title">Operação de hoje</div>
+              <div class="panel-sub">Loja Centro · turno da manhã · 14 tarefas</div>
+            </div>
+            <span class="badge badge-warn">2 atrasadas</span>
+          </div>
+          <div class="row">
+            <span class="dot dot-late" aria-hidden="true"></span>
+            <div class="what">
+              <b>Conferir temperatura da câmara fria</b
+              ><small>06:00 · Açougue · venceu há 40 min</small>
+            </div>
+            <span class="who" aria-hidden="true">EL</span>
+          </div>
+          <div class="row">
+            <span class="dot dot-late" aria-hidden="true"></span>
+            <div class="what">
+              <b>Limpeza pesada do túnel de congelados</b
+              ><small>07:00 · Limpeza · sem responsável</small>
+            </div>
+            <span class="who" aria-hidden="true">?</span>
+          </div>
+          <div class="row">
+            <span class="dot dot-ok" aria-hidden="true"></span>
+            <div class="what">
+              <b>Ilhas e geladeiras: reposição e preço</b
+              ><small>07:30 · Reposição · aguardando conferência · 2 fotos</small>
+            </div>
+            <span class="who" aria-hidden="true">JS</span>
+          </div>
+          <div class="row">
+            <span class="dot dot-done" aria-hidden="true"></span>
+            <div class="what">
+              <b>Produção: linguiça toscana, lote 42</b
+              ><small>08:00 · Produção · aprovada por Lúcia</small>
+            </div>
+            <span class="who" aria-hidden="true">MA</span>
+          </div>
+          <div class="row">
+            <span class="dot dot-off" aria-hidden="true"></span>
+            <div class="what">
+              <b>Etiquetas do pedido Onbeef #1187</b><small>09:00 · Balcão · 12 pacotes</small>
+            </div>
+            <span class="who" aria-hidden="true">RP</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="problema">
+    <div class="wrap pain">
+      <div class="stack">
+        <p class="eyebrow">O problema</p>
+        <h2>Você é dono do seu açougue ou refém dele?</h2>
+        <p class="lede">
+          Quando a rotina vive na memória do dono, a loja só funciona com o dono dentro dela. Toda
+          viagem vira risco, toda troca de turno vira recomeço, e o padrão do produto da casa
+          depende de quem está na produção naquele dia.
+        </p>
+      </div>
+      <ul aria-label="Sinais de que a operação depende do dono">
+        <li>A câmara fria é conferida "quando alguém lembra", sem registro de quem e quando.</li>
+        <li>
+          O encarregado prova que limpou mandando foto num grupo que ninguém consegue consultar
+          depois.
+        </li>
+        <li>
+          Na troca do turno a rotina some: o que foi feito de manhã não chega a quem entra à tarde.
+        </li>
+        <li>A linguiça, o tempero e o espeto saem diferentes a cada semana.</li>
+        <li>Você compra o suíno e só descobre quanto custou o kg da carcaça no fim do mês.</li>
+        <li>O pedido online chega e alguém digita etiqueta por etiqueta.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="solucao">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">A solução</p>
+        <h2>Conheça o Tauros OS. A inteligência operacional do seu açougue.</h2>
+        <p class="lede">
+          O PDV vende. O Tauros OS faz a loja funcionar. Chega de depender de anotações, mensagens
+          espalhadas e orientações verbais: seu negócio precisa de um padrão de funcionamento, e o
+          Tauros OS foi pensado para ajudar você a construí-lo.
+        </p>
+      </div>
+
+      <div class="grid grid-4">
+        <article class="card feature">
+          <span class="icon" aria-hidden="true"
+            ><svg viewBox="0 0 24 24">
+              <path d="M4 6h16M4 12h10M4 18h7" />
+              <circle cx="18" cy="16" r="3" /></svg
+          ></span>
+          <h3 class="h3-ground">Rotinas e tarefas</h3>
+          <p>
+            Tarefas recorrentes com horário, responsável e regra. Quadro do dia, Kanban, foto como
+            prova e alerta quando o prazo chega.
+          </p>
+          <div class="meta">
+            <span>Plano Básico</span><span class="badge badge-ok">Disponível</span>
+          </div>
+        </article>
+        <article class="card feature">
+          <span class="icon" aria-hidden="true"
+            ><svg viewBox="0 0 24 24">
+              <rect x="3" y="5" width="18" height="14" rx="2" />
+              <circle cx="12" cy="12" r="3.5" />
+              <path d="M7 5l1.5-2h7L17 5" /></svg
+          ></span>
+          <h3 class="h3-ground">Conferência com foto</h3>
+          <p>
+            Quem fez não aprova a própria tarefa. O encarregado confere, aprova ou devolve com
+            motivo. Mudanças sensíveis pedem senha do supervisor.
+          </p>
+          <div class="meta">
+            <span>Plano Básico</span><span class="badge badge-ok">Disponível</span>
+          </div>
+        </article>
+        <article class="card feature">
+          <span class="icon" aria-hidden="true"
+            ><svg viewBox="0 0 24 24">
+              <circle cx="9" cy="8" r="3" />
+              <circle cx="17" cy="9" r="2.5" />
+              <path d="M3 19c0-3 2.7-5 6-5s6 2 6 5M14 19c0-2.2 1.5-4 4-4s3 1.5 3 4" /></svg
+          ></span>
+          <h3 class="h3-ground">Equipe, turnos e escala</h3>
+          <p>
+            Colaboradores, posições, equipes e escalas como a 12x36. Abrir e fechar turno. O padrão
+            continua, não importa quem esteja trabalhando.
+          </p>
+          <div class="meta">
+            <span>Plano Básico</span><span class="badge badge-ok">Disponível</span>
+          </div>
+        </article>
+        <article class="card feature">
+          <span class="icon" aria-hidden="true"
+            ><svg viewBox="0 0 24 24"><path d="M5 4h14v4a7 7 0 0 1-14 0zM9 20h6M12 15v5" /></svg
+          ></span>
+          <h3 class="h3-ground">Receitas e produção</h3>
+          <p>
+            O produto da casa sai sempre igual: receita com ingredientes, custo, modo de preparo e
+            fotos. Cada produção fica registrada, com o que consumiu.
+          </p>
+          <div class="meta">
+            <span>Plano Básico</span><span class="badge badge-ok">Disponível</span>
+          </div>
+        </article>
+        <article class="card feature">
+          <span class="icon" aria-hidden="true"
+            ><svg viewBox="0 0 24 24"><path d="M4 18h16M6 18V9l6-4 6 4v9M10 18v-5h4v5" /></svg
+          ></span>
+          <h3 class="h3-ground">Custo da carcaça suína e desossa</h3>
+          <p>
+            Do suíno vivo ao kg na câmara, com quebras de abate e frio, abate, serviço e viagem.
+            Lote real pela balança e desossa com margem por corte.
+          </p>
+          <div class="meta">
+            <span>Plano Básico</span><span class="badge badge-ok">Disponível</span>
+          </div>
+        </article>
+        <article class="card feature">
+          <span class="icon" aria-hidden="true"
+            ><svg viewBox="0 0 24 24">
+              <rect x="4" y="4" width="16" height="16" rx="2" />
+              <path d="M8 9h8M8 13h5M8 17h3" /></svg
+          ></span>
+          <h3 class="h3-ground">Etiquetas do pedido Onbeef</h3>
+          <p>
+            O PDF do pedido vira etiquetas de 100×80 mm prontas para a impressora térmica, em
+            segundos, sem digitar. Kits e modelo por loja.
+          </p>
+          <div class="meta">
+            <span>Plano Básico</span><span class="badge badge-ok">Disponível</span>
+          </div>
+        </article>
+        <article class="card feature">
+          <span class="icon" aria-hidden="true"
+            ><svg viewBox="0 0 24 24">
+              <path d="M4 20l1.5-4A8 8 0 1 1 9 18.6z" />
+              <path d="M9 11.5h.01M12 11.5h.01M15 11.5h.01" /></svg
+          ></span>
+          <h3 class="h3-ground">Relatórios no WhatsApp</h3>
+          <p>
+            As fotos de evidência e o relatório diário da operação chegam no grupo que a sua equipe
+            já usa, ou direto no seu número. Saber do dia sem ligar para a loja.
+          </p>
+          <div class="meta">
+            <span>Plano Avançado</span><span class="badge badge-ok">Disponível</span>
+          </div>
+        </article>
+        <article class="card feature">
+          <span class="icon" aria-hidden="true"
+            ><svg viewBox="0 0 24 24">
+              <path d="M4 19V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v13" />
+              <path d="M4 19h16M8 9h8M8 13h5" /></svg
+          ></span>
+          <h3 class="h3-ground">Treinamento operacional</h3>
+          <p>
+            Um funcionário precisa saber como fazer e por que fazer. Orientações e procedimentos
+            centralizados, na tela em que o trabalho acontece.
+          </p>
+          <div class="meta">
+            <span>Em desenvolvimento</span><span class="badge badge-soon">Em breve</span>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="telas">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Como funciona</p>
+        <h2>Veja como o Tauros OS organiza sua operação.</h2>
+        <p class="lede">
+          Quatro momentos da rotina, do ponto de vista de quem administra e de quem executa.
+        </p>
+      </div>
+
+      <div class="grid screens">
+        <div>
+          <div class="card" aria-label="Conferência de tarefa, representação ilustrativa">
+            <div class="panel-head">
+              <div>
+                <div class="panel-title">Ilhas e geladeiras</div>
+                <div class="panel-sub">Executada por João S. · 07:52 · 2 fotos</div>
+              </div>
+              <span class="badge badge-info">Conferir</span>
+            </div>
+            <div class="photo">Foto da evidência</div>
+            <div class="actions">
+              <span class="btn btn-primary btn-sm" aria-hidden="true">Aprovar</span>
+              <span class="btn btn-ghost btn-sm" aria-hidden="true">Devolver com motivo</span>
+            </div>
+          </div>
+          <div class="screen-caption">
+            <b>Visão do encarregado</b
+            ><span
+              >Quem executou não aprova. A conferência registra quem aprovou, quando e por
+              quê.</span
+            >
+          </div>
+        </div>
+
+        <div>
+          <div class="card" aria-label="Escala da semana, representação ilustrativa">
+            <div class="panel-head">
+              <div>
+                <div class="panel-title">Escala · semana 44</div>
+                <div class="panel-sub">Turno 12x36 · 2 equipes</div>
+              </div>
+              <span class="badge badge-ok">Completa</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Posição</th>
+                  <th>Seg</th>
+                  <th>Ter</th>
+                  <th>Qua</th>
+                  <th>Qui</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Encarregado</td>
+                  <td>Lúcia</td>
+                  <td>Elber</td>
+                  <td>Lúcia</td>
+                  <td>Elber</td>
+                </tr>
+                <tr>
+                  <td>Açougue</td>
+                  <td>João</td>
+                  <td>Rafa</td>
+                  <td>João</td>
+                  <td>Rafa</td>
+                </tr>
+                <tr>
+                  <td>Produção</td>
+                  <td>Marcos</td>
+                  <td>Marcos</td>
+                  <td>Ana</td>
+                  <td>Ana</td>
+                </tr>
+                <tr>
+                  <td>Balcão</td>
+                  <td>Rita</td>
+                  <td>Rita</td>
+                  <td>Paulo</td>
+                  <td>Paulo</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="screen-caption">
+            <b>Rotina do colaborador</b
+            ><span
+              >Cada um sabe o seu turno e as suas tarefas. A troca de turno não apaga o que ficou
+              pendente.</span
+            >
+          </div>
+        </div>
+
+        <div>
+          <div class="card" aria-label="Análise de desossa, representação ilustrativa">
+            <div class="panel-head">
+              <div>
+                <div class="panel-title">Desossa · Porco Mineiro</div>
+                <div class="panel-sub">Carcaça 1.128,10 kg × R$ 11,55</div>
+              </div>
+              <span class="badge badge-ok">Margem 22,6%</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Corte</th>
+                  <th class="num">kg</th>
+                  <th class="num">R$/kg</th>
+                  <th class="num">Valor</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Pernil</td>
+                  <td class="num">295,86</td>
+                  <td class="num">15,00</td>
+                  <td class="num">4.437,90</td>
+                </tr>
+                <tr>
+                  <td>Lombo</td>
+                  <td class="num">118,40</td>
+                  <td class="num">19,90</td>
+                  <td class="num">2.356,16</td>
+                </tr>
+                <tr>
+                  <td>Costelinha</td>
+                  <td class="num">96,20</td>
+                  <td class="num">21,50</td>
+                  <td class="num">2.068,30</td>
+                </tr>
+                <tr>
+                  <td>Toucinho</td>
+                  <td class="num">142,70</td>
+                  <td class="num">9,80</td>
+                  <td class="num">1.398,46</td>
+                </tr>
+                <tr class="total">
+                  <td>Valor comercial</td>
+                  <td class="num">1.128,81</td>
+                  <td></td>
+                  <td class="num">16.829,56</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="screen-caption">
+            <b>Custo da carcaça</b
+            ><span
+              >Estimativa antes de comprar, lote real pela balança e margem comercial por corte
+              depois da desossa.</span
+            >
+          </div>
+        </div>
+
+        <div>
+          <div class="card" aria-label="Relatório diário no WhatsApp, representação ilustrativa">
+            <div class="panel-head">
+              <div>
+                <div class="panel-title">Grupo · Gestão Loja Centro</div>
+                <div class="panel-sub">Enviado pelo Tauros OS · 21:05</div>
+              </div>
+              <span class="badge badge-ok">Entregue</span>
+            </div>
+            <div class="chat">
+              <div class="bubble">
+                <b>Relatório do dia · ter, 28/10</b>
+                <div class="line"><span>Tarefas previstas</span><span>14</span></div>
+                <div class="line"><span>Concluídas e aprovadas</span><span>12</span></div>
+                <div class="line"><span>Devolvidas</span><span>1</span></div>
+                <div class="line">
+                  <span>Não realizadas</span><span>1 (túnel de congelados)</span>
+                </div>
+                <small>Fotos e detalhes no Tauros OS</small>
+              </div>
+              <div class="bubble">
+                Evidência aprovada: Ilhas e geladeiras · João S. · 2 fotos<small
+                  >Aprovado por Lúcia às 08:10</small
+                >
+              </div>
+            </div>
+          </div>
+          <div class="screen-caption">
+            <b>Visão do dono</b
+            ><span
+              >O resumo do dia e as fotos chegam no WhatsApp. Você sabe da loja sem ligar para a
+              loja.</span
+            >
+          </div>
+        </div>
+      </div>
+      <p class="plan-note">Telas em representação ilustrativa, com dados de exemplo.</p>
+    </div>
+  </section>
+
+  <section id="origem">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Origem</p>
+        <h2>Nascido dentro de um açougue.</h2>
+        <p class="lede">
+          O Tauros OS é o sistema que roda todos os dias na casa de carnes Tauros. Cada tela foi
+          feita para resolver um problema real do balcão, da produção e da compra, antes de virar
+          produto para outros açougues.
+        </p>
+      </div>
+      <div class="grid grid-3">
+        <article class="card case">
+          <p class="eyebrow">Na loja</p>
+          <h3 class="h3-ground">A rotina tem dono e hora.</h3>
+          <blockquote>
+            Câmara fria, limpeza, reposição e preço entram como tarefas com responsável e prazo. O
+            encarregado confere com foto, e o dono recebe o resumo do dia no WhatsApp.
+          </blockquote>
+        </article>
+        <article class="card case">
+          <p class="eyebrow">Na produção</p>
+          <h3 class="h3-ground">O produto da casa sai sempre igual.</h3>
+          <blockquote>
+            Linguiças, temperados e espetos seguem a receita cadastrada, com custo e fotos. Cada
+            lote fica registrado com quem fez e o que consumiu.
+          </blockquote>
+        </article>
+        <article class="card case">
+          <p class="eyebrow">Na compra</p>
+          <h3 class="h3-ground">A carcaça entra com custo conhecido.</h3>
+          <blockquote>
+            Antes de fechar o suíno, a conta do kg na câmara já está feita. Depois da desossa, a
+            margem por corte mostra onde o lote ganhou ou perdeu.
+          </blockquote>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="matheus">
+    <div class="wrap founder">
+      <div class="portrait" role="img" aria-label="Espaço para a foto de Matheus Passos">
+        <div class="stack" style="gap: 6px">
+          <p class="eyebrow">Matheus Passos</p>
+          <p class="muted" style="font-size: 14px">
+            Desenvolvedor e engenheiro de produção · dono da casa de carnes Tauros
+          </p>
+        </div>
+      </div>
+      <div class="stack" style="gap: 24px">
+        <p class="eyebrow">Quem fez</p>
+        <h2>Sete anos no ramo da carne. Um sistema feito de dentro.</h2>
+        <p class="lede">
+          Sou Matheus Passos, desenvolvedor e engenheiro de produção. Atuo no ramo da carne há 7
+          anos e sou dono da casa de carnes Tauros. O Tauros OS nasceu da minha própria operação:
+          das rotinas que só aconteciam quando eu estava na loja, da produção que saía diferente a
+          cada semana e da compra de suíno fechada sem saber o custo real do kg.
+        </p>
+        <p class="lede">
+          Cada módulo foi testado primeiro no meu balcão. O que está aqui é o que funciona na
+          prática, não o que ficou bonito no papel.
+        </p>
+        <div><a class="btn btn-ghost" href="#contato">Falar com o Matheus</a></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="metodo">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Metodologia</p>
+        <h2>Tecnologia sozinha não organiza uma empresa. É preciso ter método.</h2>
+      </div>
+      <div class="grid grid-3 steps">
+        <article class="card step">
+          <h3 class="h3-ground">Diagnóstico da operação</h3>
+          <p>
+            Em 30 minutos de onboarding, com o encarregado presente, mapeamos as rotinas que hoje
+            dependem do dono e criamos as 10 primeiras no sistema.
+          </p>
+        </article>
+        <article class="card step">
+          <h3 class="h3-ground">Padrão em funcionamento</h3>
+          <p>
+            Na primeira semana a equipe abre turno, executa e fotografa. O encarregado confere. O
+            relatório do dia chega no WhatsApp do dono.
+          </p>
+        </article>
+        <article class="card step">
+          <h3 class="h3-ground">Ajuste com dados</h3>
+          <p>
+            Com duas semanas de histórico, ajustamos horários, responsáveis e regras. No plano
+            Consultoria, um engenheiro de produção faz isso com você toda semana.
+          </p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="planos">
+    <div class="wrap">
+      <div class="section-head center">
+        <p class="eyebrow">Planos</p>
+        <h2>Planos para cada fase do seu açougue.</h2>
+        <p class="lede">
+          14 dias grátis em qualquer plano, sem cadastrar cartão. Cartão ou boleto; PIX pelo
+          comercial. Sem fidelidade.
+        </p>
+      </div>
+
+      <div class="grid grid-3">
+        <article class="card plan">
+          <div class="stack" style="gap: 8px">
+            <p class="eyebrow">Básico</p>
+            <div class="plan-price">R$ 199,90<small>/mês</small></div>
+            <p class="muted" style="font-size: 14px">1 loja · indicado para até 10 usuários</p>
+          </div>
+          <ul>
+            <li>Rotinas, tarefas, quadro do dia e Kanban</li>
+            <li>Conferência com foto e alertas de prazo</li>
+            <li>Equipe, turnos e escala 12x36</li>
+            <li>Receitas e produção</li>
+            <li>Custo da carcaça suína e desossa</li>
+            <li>Etiquetas do pedido Onbeef</li>
+          </ul>
+          <p class="fine">Para a loja que quer sair da memória do dono.</p>
+          <a class="btn btn-ghost" href="#contato">Começar teste grátis</a>
+        </article>
+
+        <article class="card card-mint plan">
+          <div class="stack" style="gap: 8px">
+            <div
+              style="display: flex; justify-content: space-between; align-items: center; gap: 8px"
+            >
+              <p class="eyebrow">Avançado</p>
+              <span class="badge badge-dark">Recomendado</span>
+            </div>
+            <div class="plan-price">R$ 499,90<small>/mês</small></div>
+            <p class="muted" style="font-size: 14px">Até 3 lojas · usuários ilimitados</p>
+          </div>
+          <ul>
+            <li>Tudo do Básico</li>
+            <li>Relatórios e fotos no WhatsApp</li>
+            <li>Relatório diário automático da operação</li>
+            <li>Até 3 lojas na mesma conta</li>
+            <li>Acesso antecipado a novos módulos</li>
+          </ul>
+          <p class="fine">Para quem quer saber do dia sem ligar para a loja.</p>
+          <a class="btn btn-dark" href="#contato">Começar teste grátis</a>
+        </article>
+
+        <article class="card plan">
+          <div class="stack" style="gap: 8px">
+            <p class="eyebrow">Consultoria</p>
+            <div class="plan-price">R$ 1.999,90<small>/mês</small></div>
+            <p class="muted" style="font-size: 14px">Até 5 lojas · usuários ilimitados</p>
+          </div>
+          <ul>
+            <li>Tudo do Avançado</li>
+            <li>1 reunião por semana com engenheiro de produção</li>
+            <li>Diagnóstico e ajuste contínuo da operação</li>
+            <li>Implantação acompanhada em cada loja</li>
+          </ul>
+          <p class="fine">Para desossas, frigoríficos e redes em crescimento.</p>
+          <a class="btn btn-ghost" href="#contato">Falar com o comercial</a>
+        </article>
+      </div>
+      <p class="plan-note">
+        O Tauros OS não é PDV, não emite nota fiscal e não integra com balança. Ele trabalha ao lado
+        do sistema de vendas que você já tem.
+      </p>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <div class="section-head center">
+        <p class="eyebrow">Perguntas frequentes</p>
+        <h2>Sua empresa não precisa ser grande para ser profissional.</h2>
+      </div>
+      <div class="faq">
+        <details>
+          <summary>Substitui meu PDV?</summary>
+          <p>
+            Não. O Tauros OS fica ao lado do seu sistema de vendas e organiza o que ele não
+            organiza: a equipe, a rotina, a produção e a compra da carcaça.
+          </p>
+        </details>
+        <details>
+          <summary>Controla estoque? Tem financeiro?</summary>
+          <p>
+            Ainda não fazem parte do que oferecemos. Estamos construindo e avisaremos os clientes
+            primeiro.
+          </p>
+        </details>
+        <details>
+          <summary>O custo da carcaça serve para bovino?</summary>
+          <p>Hoje é para suíno. Os demais módulos servem para qualquer açougue.</p>
+        </details>
+        <details>
+          <summary>O WhatsApp é oficial? Ele responde cliente?</summary>
+          <p>
+            Ele só envia relatórios e fotos para a sua equipe; não atende cliente. Você conecta o
+            número da loja ou usa a API oficial da Meta.
+          </p>
+        </details>
+        <details>
+          <summary>Funciona no celular?</summary>
+          <p>Sim. É web responsivo: celular, tablet e computador, com internet.</p>
+        </details>
+        <details>
+          <summary>Funciona com qualquer pedido online?</summary>
+          <p>As etiquetas hoje leem o pedido do Onbeef.</p>
+        </details>
+        <details>
+          <summary>Como pago? Tem fidelidade?</summary>
+          <p>
+            Cartão pelo site; PIX e boleto com o comercial. Sem fidelidade: cancele quando quiser.
+          </p>
+        </details>
+        <details>
+          <summary>Tenho mais de uma loja?</summary>
+          <p>Uma assinatura cobre até 3 lojas no Avançado e 5 no Consultoria.</p>
+        </details>
+        <details>
+          <summary>Meus dados ficam separados dos de outras lojas?</summary>
+          <p>Sim. Cada conta tem o próprio banco de dados.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section id="contato">
+    <div class="wrap contact">
+      <div class="stack" style="gap: 24px">
+        <p class="eyebrow">Contato</p>
+        <h2>Vamos organizar a operação do seu açougue?</h2>
+        <p class="lede">
+          Conte um pouco sobre sua operação. Montamos a demonstração em cima do seu caso e, se fizer
+          sentido, começamos o teste grátis com onboarding marcado.
+        </p>
+        <div class="card-nested stack" style="gap: 8px">
+          <span class="eyebrow">WhatsApp comercial</span>
+          <span class="wa-number">
+            <span id="wa-display">+55 (00) 00000-0000</span>
+            <button class="copy" type="button" id="wa-copy">Copiar</button>
+          </span>
+          <span class="muted" style="font-size: 13px">Horário comercial, segunda a sábado.</span>
+        </div>
+      </div>
+
+      <form class="card" id="lead-form" novalidate>
+        <div class="form-row">
+          <div class="field">
+            <label for="f-nome">Seu nome</label
+            ><input
+              id="f-nome"
+              name="nome"
+              type="text"
+              autocomplete="name"
+              placeholder="Marcos Silva"
+              required
+            />
+          </div>
+          <div class="field">
+            <label for="f-loja">Nome do açougue</label
+            ><input
+              id="f-loja"
+              name="loja"
+              type="text"
+              autocomplete="organization"
+              placeholder="Casa de Carnes Boa Vista"
+              required
+            />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field">
+            <label for="f-cidade">Cidade / UF</label
+            ><input id="f-cidade" name="cidade" type="text" placeholder="Belo Horizonte / MG" />
+          </div>
+          <div class="field">
+            <label for="f-equipe">Tamanho da equipe</label>
+            <select id="f-equipe" name="equipe">
+              <option value="">Selecione</option>
+              <option>Até 7 colaboradores</option>
+              <option>8 a 20 colaboradores</option>
+              <option>21 a 50 colaboradores</option>
+              <option>Mais de 50 colaboradores</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="f-dor">Hoje, o que mais te prende na operação?</label>
+          <textarea
+            id="f-dor"
+            name="dor"
+            placeholder="Ex.: a câmara fria só é conferida quando eu lembro; a linguiça sai diferente a cada semana…"
+          ></textarea>
+        </div>
+        <div class="form-foot">
+          <span class="form-status" id="form-status" aria-live="polite"></span>
+          <button class="btn btn-primary" type="submit">Quero começar minha transformação</button>
+        </div>
+        <p class="muted" style="font-size: 12px">
+          Ao enviar, abrimos uma conversa no WhatsApp com os dados acima. Nada é enviado sem a sua
+          confirmação.
+        </p>
+      </form>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-col">
+        <a class="brand" href="#topo"
+          ><span class="brand-mark"><span></span></span>Tauros OS</a
+        >
+        <p>Um software nascido de dentro de um açougue. A inteligência operacional da sua loja.</p>
+      </div>
+      <div class="foot-col">
+        <b>Produto</b>
+        <a href="#solucao">Funcionalidades</a>
+        <a href="#telas">Como funciona</a>
+        <a href="#planos">Planos</a>
+      </div>
+      <div class="foot-col">
+        <b>Empresa</b>
+        <a href="#matheus">Quem fez</a>
+        <a href="#origem">Origem</a>
+        <a href="#contato">Solicitar demonstração</a>
+      </div>
+      <div class="foot-col">
+        <b>Legal</b>
+        <a href="#contato">Termos de uso</a>
+        <a href="#contato">Política de privacidade</a>
+        <span>Razão social a preencher</span>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>© 2026 Tauros OS · tauros.io</span>
+      <span>Feito dentro de açougues, salas de desossa e frigoríficos.</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    // Número do WhatsApp comercial: preencher com DDI + DDD + número, só dígitos (ex.: 5531999999999).
+    var WA_NUMBER = '';
+    var display = document.getElementById('wa-display');
+    var copyBtn = document.getElementById('wa-copy');
+    var form = document.getElementById('lead-form');
+    var status = document.getElementById('form-status');
+
+    function formatNumber(n) {
+      if (!/^\d{12,13}$/.test(n)) return '+55 (00) 00000-0000';
+      var ddd = n.slice(2, 4);
+      var rest = n.slice(4);
+      var a = rest.slice(0, rest.length - 4);
+      var b = rest.slice(-4);
+      return '+' + n.slice(0, 2) + ' (' + ddd + ') ' + a + '-' + b;
+    }
+    display.textContent = formatNumber(WA_NUMBER);
+
+    copyBtn.addEventListener('click', function () {
+      var text = WA_NUMBER || display.textContent;
+      function fallback() {
+        var range = document.createRange();
+        range.selectNodeContents(display);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        copyBtn.textContent = 'Selecionado';
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () {
+          copyBtn.textContent = 'Copiado';
+          setTimeout(function () {
+            copyBtn.textContent = 'Copiar';
+          }, 1600);
+        }, fallback);
+      } else {
+        fallback();
+      }
+    });
+
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var nome = form.nome.value.trim();
+      var loja = form.loja.value.trim();
+      if (!nome || !loja) {
+        status.textContent = 'Preencha seu nome e o nome do açougue para continuar.';
+        (nome ? form.loja : form.nome).focus();
+        return;
+      }
+      var linhas = [
+        'Oi! Vim pela página do Tauros OS e quero uma demonstração.',
+        'Nome: ' + nome,
+        'Açougue: ' + loja,
+      ];
+      if (form.cidade.value.trim()) linhas.push('Cidade: ' + form.cidade.value.trim());
+      if (form.equipe.value) linhas.push('Equipe: ' + form.equipe.value);
+      if (form.dor.value.trim()) linhas.push('O que mais me prende: ' + form.dor.value.trim());
+      var texto = encodeURIComponent(linhas.join('\n'));
+      if (!WA_NUMBER) {
+        status.textContent = 'Número do WhatsApp comercial ainda não configurado nesta página.';
+        return;
+      }
+      var url = 'https://wa.me/' + WA_NUMBER + '?text=' + texto;
+      status.textContent = 'Abrindo o WhatsApp em uma nova aba…';
+      var a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    });
+  })();
+</script>
